@@ -2,7 +2,8 @@
 import { generateMap, spawnPoints } from './mapgen.js';
 import {
   SHIP_TYPES, START_FLEET, START_GOLD, PORT_HP,
-  SHIP_COLLISION_DIST, LOOT_REACH
+  SHIP_COLLISION_DIST, LOOT_REACH,
+  PIRATE, PIRATE_DESPAWN_CHANCE, PIRATE_SPAWN_CHANCE, PIRATE_MOVE_CHANCE
 } from './ships.js';
 
 const COLORS = ['#c0392b', '#2980b9', '#27ae60', '#8e44ad'];
@@ -48,7 +49,7 @@ export function addPlayer(game, playerId, nick) {
     color: COLORS[game.players.length],
     gold: START_GOLD, portHp: PORT_HP,
     alive: true, placement: null,
-    stats: newStats(), votedSkip: false
+    stats: newStats()
   });
   pushLog(game, `${nick} присоединился к баттлу (${game.players.length}/${game.config.maxPlayers})`);
   return { ok: true };
@@ -72,10 +73,63 @@ export function startGame(game, playerId) {
       });
     });
   });
+  for (let i = 0; i < game.players.length; i++) spawnPirate(game, true);
   game.status = 'active';
-  game.turn = { idx: 0, number: 1, deadline: turnDeadline(game) };
+  game.turn = { idx: 0, number: 1, deadline: turnDeadline(game), nudged: false };
   pushLog(game, `⚔️ Баттл начался! Первым ходит ${game.players[0].nick}`, 'battle');
   return { ok: true };
+}
+
+// --- пираты ---
+
+function randomWaterSpot(game) {
+  const m = game.map;
+  for (let i = 0; i < 60; i++) {
+    const x = Math.round(m.w * 0.1 + Math.random() * m.w * 0.8);
+    const y = Math.round(m.h * 0.1 + Math.random() * m.h * 0.8);
+    if (m.bases.some(b => dist(x, y, b.x, b.y) < b.radius + 280)) continue;
+    if (shipPlacementBlocked(game, x, y, null)) continue;
+    return { x, y };
+  }
+  return null;
+}
+
+function spawnPirate(game, silent = false) {
+  const spot = randomWaterSpot(game);
+  if (!spot) return;
+  game.ships.push({
+    id: 'p' + (shipSeq++) + '_' + Math.random().toString(36).slice(2, 6),
+    owner: -1, type: 'pirate',
+    x: spot.x, y: spot.y,
+    hp: PIRATE.hp,
+    bounty: (8 + Math.floor(Math.random() * 19)) * 10 // 80..260 золота
+  });
+  if (!silent) pushLog(game, '🏴‍☠️ На горизонте появился пиратский корабль!');
+}
+
+// Пираты живут своей жизнью между ходами игроков.
+function movePirates(game) {
+  const maxPirates = game.players.length;
+  for (const pir of [...game.ships.filter(s => s.owner === -1)]) {
+    if (Math.random() < PIRATE_DESPAWN_CHANCE) {
+      game.ships = game.ships.filter(s => s.id !== pir.id);
+      pushLog(game, '🌫 Пиратский корабль растворился в тумане…');
+      continue;
+    }
+    if (Math.random() > PIRATE_MOVE_CHANCE) continue;
+    const step = 30 + Math.random() * (PIRATE.move - 30);
+    const startAng = Math.random() * Math.PI * 2;
+    for (let i = 0; i < 8; i++) {
+      const ang = startAng + (i / 8) * Math.PI * 2;
+      const nx = Math.round(pir.x + Math.cos(ang) * step);
+      const ny = Math.round(pir.y + Math.sin(ang) * step);
+      if (!shipPlacementBlocked(game, nx, ny, pir.id)) { pir.x = nx; pir.y = ny; break; }
+    }
+  }
+  if (game.ships.filter(s => s.owner === -1).length < maxPirates &&
+      Math.random() < PIRATE_SPAWN_CHANCE) {
+    spawnPirate(game);
+  }
 }
 
 function turnDeadline(game) {
@@ -87,7 +141,7 @@ function currentPlayer(game) {
 }
 
 function advanceTurn(game) {
-  game.players.forEach(p => { p.votedSkip = false; });
+  movePirates(game);
   const n = game.players.length;
   let next = game.turn.idx;
   for (let i = 0; i < n; i++) {
@@ -97,6 +151,7 @@ function advanceTurn(game) {
   game.turn.idx = next;
   game.turn.number++;
   game.turn.deadline = turnDeadline(game);
+  game.turn.nudged = false;
 }
 
 function shipPlacementBlocked(game, x, y, ignoreShipId) {
@@ -112,6 +167,13 @@ function shipPlacementBlocked(game, x, y, ignoreShipId) {
 
 function sinkShip(game, ship, killer) {
   game.ships = game.ships.filter(s => s.id !== ship.id);
+  if (ship.owner === -1) {
+    killer.gold += ship.bounty;
+    killer.stats.shipsSunk++;
+    killer.stats.goldCollected += ship.bounty;
+    pushLog(game, `💥 Пиратский корабль потоплен! ${killer.nick} забирает награду ${ship.bounty} золота`, 'battle');
+    return;
+  }
   const owner = game.players[ship.owner];
   owner.stats.shipsLost++;
   if (killer) {
@@ -123,17 +185,22 @@ function sinkShip(game, ship, killer) {
   }
 }
 
+// killer = null означает добровольную сдачу.
 function eliminatePlayer(game, victimIdx, killer) {
   const victim = game.players[victimIdx];
   victim.alive = false;
   victim.placement = game.players.filter(p => p.alive).length + 1;
-  const tribute = Math.floor(victim.gold / 2);
-  victim.gold -= tribute;
-  killer.gold += tribute;
-  killer.stats.goldCollected += tribute;
+  if (killer) {
+    const tribute = Math.floor(victim.gold / 2);
+    victim.gold -= tribute;
+    killer.gold += tribute;
+    killer.stats.goldCollected += tribute;
+    pushLog(game, `🏴‍☠️ Порт игрока ${victim.nick} разрушен! ${killer.nick} забирает ${tribute} золота. ${victim.nick} выбывает`, 'battle');
+  } else {
+    pushLog(game, `🏳️ ${victim.nick} спускает флаг и покидает баттл`, 'battle');
+  }
   // Флот побеждённого уходит на дно вместе с портом.
   game.ships = game.ships.filter(s => s.owner !== victimIdx);
-  pushLog(game, `🏴‍☠️ Порт игрока ${victim.nick} разрушен! ${killer.nick} забирает ${tribute} золота. ${victim.nick} выбывает`, 'battle');
 
   const alive = game.players.filter(p => p.alive);
   if (alive.length === 1) {
@@ -143,6 +210,45 @@ function eliminatePlayer(game, victimIdx, killer) {
     game.turn.deadline = null;
     pushLog(game, `👑 ${alive[0].nick} побеждает в баттле!`, 'battle');
   }
+}
+
+// Добровольная сдача (или выход из лобби).
+export function leaveGame(game, playerId) {
+  if (game.status === 'lobby') {
+    const idx = game.players.findIndex(p => p.id === playerId);
+    if (idx === -1) return { ok: false, error: 'Вы не участник' };
+    const [left] = game.players.splice(idx, 1);
+    // освобождаем цвета по порядку
+    const COLORS_ALL = COLORS;
+    game.players.forEach((p, i) => { p.color = COLORS_ALL[i]; });
+    pushLog(game, `🚪 ${left.nick} покинул лобби`);
+    return { ok: true };
+  }
+  if (game.status !== 'active') return { ok: false, error: 'Игра уже завершена' };
+  const idx = game.players.findIndex(p => p.id === playerId);
+  if (idx === -1) return { ok: false, error: 'Вы не участник' };
+  if (!game.players[idx].alive) return { ok: false, error: 'Вы уже выбыли' };
+  const wasTheirTurn = game.turn.idx === idx;
+  eliminatePlayer(game, idx, null);
+  if (game.status === 'active' && wasTheirTurn) advanceTurn(game);
+  return { ok: true };
+}
+
+// «Поторопить» AFK-игрока: письмо + жёсткие 10 минут на ход.
+export const NUDGE_MS = 10 * 60 * 1000;
+export function nudge(game, playerId) {
+  if (game.status !== 'active') return { ok: false, error: 'Игра не активна' };
+  const requester = game.players.find(p => p.id === playerId);
+  if (!requester || !requester.alive) return { ok: false, error: 'Вы не участник' };
+  const targetIdx = game.turn.idx;
+  if (game.players[targetIdx].id === playerId) return { ok: false, error: 'Сейчас ваш ход' };
+  if (game.turn.nudged) return { ok: false, error: 'Игрока уже поторопили — таймер идёт' };
+  if (game.turn.deadline && game.turn.deadline - Date.now() <= NUDGE_MS)
+    return { ok: false, error: 'Таймер хода и так меньше 10 минут' };
+  game.turn.nudged = true;
+  game.turn.deadline = Date.now() + NUDGE_MS;
+  pushLog(game, `📯 ${requester.nick} торопит игрока ${game.players[targetIdx].nick} — 10 минут на ход!`);
+  return { ok: true, targetIdx };
 }
 
 // Применение хода. action.type: buy | collect | move | attack | skip
@@ -226,8 +332,10 @@ export function applyAction(game, playerId, action) {
         target.hp -= st.dmg;
         player.stats.shotsFired++;
         player.stats.damageDealt += st.dmg;
-        const victim = game.players[target.owner];
-        pushLog(game, `🔥 ${player.nick}: ${st.name} бьёт по ${SHIP_TYPES[target.type].name} игрока ${victim.nick} (−${st.dmg} HP)`, 'battle');
+        const targetName = target.owner === -1
+          ? 'пиратскому кораблю'
+          : `${SHIP_TYPES[target.type].name} игрока ${game.players[target.owner].nick}`;
+        pushLog(game, `🔥 ${player.nick}: ${st.name} бьёт по ${targetName} (−${st.dmg} HP)`, 'battle');
         if (target.hp <= 0) sinkShip(game, target, player);
       } else if (action.targetType === 'port') {
         const targetIdx = action.targetId;
@@ -275,24 +383,6 @@ function findFreeSpotNearBase(game, base) {
   return null;
 }
 
-// Голосование за пропуск хода AFK-игрока (когда таймер выключен).
-export function voteSkip(game, playerId) {
-  if (game.status !== 'active') return { ok: false, error: 'Игра не активна' };
-  const voter = game.players.find(p => p.id === playerId);
-  if (!voter || !voter.alive) return { ok: false, error: 'Вы не участник' };
-  if (game.players[game.turn.idx].id === playerId) return { ok: false, error: 'Сейчас ваш ход — просто пропустите его' };
-  voter.votedSkip = true;
-  const others = game.players.filter((p, i) => p.alive && i !== game.turn.idx);
-  const votes = others.filter(p => p.votedSkip).length;
-  if (votes >= others.length) {
-    pushLog(game, `⏭ Ход игрока ${currentPlayer(game).nick} пропущен голосованием`);
-    advanceTurn(game);
-  } else {
-    pushLog(game, `🗳 ${voter.nick} голосует за пропуск хода (${votes}/${others.length})`);
-  }
-  return { ok: true };
-}
-
 // Автопропуск по таймеру.
 export function timeoutTurn(game) {
   if (game.status !== 'active' || !game.turn.deadline) return false;
@@ -312,12 +402,12 @@ export function publicState(game) {
     players: game.players.map(p => ({
       id: p.id, nick: p.nick, color: p.color, gold: p.gold,
       portHp: p.portHp, alive: p.alive, placement: p.placement,
-      stats: p.stats, votedSkip: p.votedSkip
+      stats: p.stats
     })),
     ships: game.ships,
     turn: game.turn,
     log: game.log,
     winner: game.winner,
-    shipTypes: SHIP_TYPES
+    shipTypes: { ...SHIP_TYPES, pirate: PIRATE }
   };
 }

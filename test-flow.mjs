@@ -41,10 +41,26 @@ r = await emit(A, 'start');
 if (!r.ok) fail('старт не удался: ' + r.error);
 await wait(300);
 if (A.state.status !== 'active') fail('игра не активна');
-if (A.state.ships.length !== 6) fail('ожидалось 6 стартовых кораблей, есть ' + A.state.ships.length);
+const playerShips = A.state.ships.filter(s => s.owner >= 0);
+const pirates = A.state.ships.filter(s => s.owner === -1);
+if (playerShips.length !== 6) fail('ожидалось 6 стартовых кораблей, есть ' + playerShips.length);
+if (!pirates.length) fail('пираты не заспавнились');
+if (pirates.some(p => !p.bounty || p.bounty < 80)) fail('у пиратов нет награды');
 if (!A.state.map.lootIslands.length) fail('нет лут-островов');
 if (A.state.map.fishZones.length < 2) fail('мало рыбных мест');
-ok(`карта: ${A.state.map.lootIslands.length} лут-островов, ${A.state.map.fishZones.length} рыбных мест, флоты на воде`);
+ok(`карта: ${A.state.map.lootIslands.length} лут-островов, ${A.state.map.fishZones.length} рыбных мест, ${pirates.length} пиратов`);
+
+// «поторопить»: нельзя торопить, когда твой ход; можно — когда ход соперника
+let rn = await emit(A, 'nudge');
+if (rn.ok) fail('Алиса поторопила саму себя');
+rn = await emit(B, 'nudge');
+if (!rn.ok) fail('Боб не смог поторопить: ' + rn.error);
+await wait(200);
+const dl = A.state.turn.deadline - Date.now();
+if (dl < 9 * 60_000 || dl > 10 * 60_000) fail('дедлайн после nudge неверный: ' + dl);
+rn = await emit(B, 'nudge');
+if (rn.ok) fail('повторный nudge прошёл');
+ok('«поторопить» работает: 10 минут на ход, повтор запрещён');
 
 // не свой ход
 r = await emit(B, 'action', { type: 'skip' });
@@ -164,6 +180,53 @@ const lb = await (await fetch(BASE + '/api/leaderboard')).json();
 if (!lb.length) fail('лидерборд пуст после игры');
 if (lb[0].nick !== 'Алиса' || lb[0].wins !== 1) fail('лидерборд неверный: ' + JSON.stringify(lb));
 ok('лидерборд обновился: ' + lb.map(x => `${x.nick}:${x.points}очк`).join(', '));
+
+// --- вторая игра: выход из лобби и сдача ---
+const res2 = await fetch(BASE + '/api/games', {
+  method: 'POST', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ token: 'tokA', nick: 'Алиса', maxPlayers: 3, turnTimer: 0 })
+});
+const game2 = (await res2.json()).gameId;
+
+function connect2(token, nick) {
+  return new Promise((resolve, reject) => {
+    const s = io(BASE);
+    const ctx = { socket: s, state: null };
+    s.on('state', x => { ctx.state = x; });
+    s.on('connect', () => {
+      s.emit('join', { gameId: game2, token, nick }, r => r.ok ? resolve(ctx) : reject(new Error(r.error)));
+    });
+  });
+}
+const A2 = await connect2('tokA', 'Алиса');
+const B2 = await connect2('tokB', 'Боб');
+const C2 = await connect2('tokC', 'Чарли');
+await wait(200);
+if (A2.state.players.length !== 3) fail('в лобби-2 не 3 игрока');
+
+// Чарли передумал и вышел из лобби
+let r2 = await emit(C2, 'leave');
+if (!r2.ok) fail('выход из лобби не сработал: ' + r2.error);
+await wait(200);
+if (A2.state.players.length !== 2) fail('слот не освободился после выхода');
+ok('выход из лобби освобождает слот');
+
+r2 = await emit(A2, 'start');
+if (!r2.ok) fail('старт игры-2: ' + r2.error);
+await wait(200);
+
+// Боб сдаётся → Алиса побеждает
+r2 = await emit(B2, 'leave');
+if (!r2.ok) fail('сдача не сработала: ' + r2.error);
+await wait(300);
+if (A2.state.status !== 'finished') fail('игра-2 не завершилась после сдачи');
+if (A2.state.players[A2.state.winner]?.nick !== 'Алиса') fail('после сдачи победил не тот');
+if (A2.state.ships.some(s => s.owner === 1)) fail('флот сдавшегося не утонул');
+ok('сдача работает: Боб спустил флаг, Алиса победила');
+
+const lb2 = await (await fetch(BASE + '/api/leaderboard')).json();
+if (lb2[0].wins !== 2) fail('победа после сдачи не записалась в лидерборд');
+ok('результат сдачи записан в лидерборд');
 
 console.log('\n🎉 Все проверки пройдены');
 process.exit(0);

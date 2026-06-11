@@ -57,6 +57,23 @@ export const SHIP_TYPES = {
   }
 };
 
+// Нейтральные пираты: бродят по карте, исчезают и появляются. Награда — за потопление.
+export const PIRATE = {
+  name: 'Пиратский корабль',
+  icon: '🏴‍☠️',
+  npc: true,
+  price: 0,
+  hp: 80,
+  dmg: 0,
+  fireRange: 0,
+  move: 80, // медленнее шхуны (170)
+  fishing: 0,
+  desc: 'Нейтральный бродяга. Потопи его и забери награду.'
+};
+export const PIRATE_DESPAWN_CHANCE = 0.08;  // шанс раствориться в тумане за ход
+export const PIRATE_SPAWN_CHANCE = 0.16;    // шанс появления нового за ход (если есть место)
+export const PIRATE_MOVE_CHANCE = 0.75;     // шанс, что пират сдвинется за ход
+
 // Стартовый флот: пара шхун и один фрегат («крейсер»), как в оригинале.
 export const START_FLEET = ['shkhuna', 'shkhuna', 'fregat'];
 export const START_GOLD = 250;

@@ -33,12 +33,25 @@ CREATE TABLE IF NOT EXISTS results (
   finished_at INTEGER NOT NULL,
   PRIMARY KEY (game_id, player_token)
 );
+CREATE TABLE IF NOT EXISTS sessions (
+  token TEXT PRIMARY KEY,
+  pid TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
 `);
 
+// миграция: колонка email у игроков (для пинга «поторопить»)
+try { db.exec('ALTER TABLE players ADD COLUMN email TEXT'); } catch { /* уже есть */ }
+
 const upsertPlayerStmt = db.prepare(`
-  INSERT INTO players (token, nick, created_at) VALUES (?, ?, ?)
-  ON CONFLICT(token) DO UPDATE SET nick = excluded.nick
+  INSERT INTO players (token, nick, created_at, email) VALUES (?, ?, ?, ?)
+  ON CONFLICT(token) DO UPDATE SET
+    nick = excluded.nick,
+    email = COALESCE(excluded.email, players.email)
 `);
+const getEmailStmt = db.prepare('SELECT email FROM players WHERE token = ?');
+const createSessionStmt = db.prepare('INSERT OR REPLACE INTO sessions (token, pid, created_at) VALUES (?, ?, ?)');
+const getSessionStmt = db.prepare('SELECT pid FROM sessions WHERE token = ?');
 const saveGameStmt = db.prepare(`
   INSERT INTO games (id, status, state, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
   ON CONFLICT(id) DO UPDATE SET status = excluded.status, state = excluded.state, updated_at = excluded.updated_at
@@ -62,8 +75,20 @@ const leaderboardStmt = db.prepare(`
   LIMIT 50
 `);
 
-export function upsertPlayer(token, nick) {
-  upsertPlayerStmt.run(token, nick, Date.now());
+export function upsertPlayer(token, nick, email = null) {
+  upsertPlayerStmt.run(token, nick, Date.now(), email);
+}
+
+export function getPlayerEmail(pid) {
+  return getEmailStmt.get(pid)?.email ?? null;
+}
+
+export function createSession(token, pid) {
+  createSessionStmt.run(token, pid, Date.now());
+}
+
+export function getSessionPid(token) {
+  return getSessionStmt.get(token)?.pid ?? null;
 }
 
 export function saveGame(game) {

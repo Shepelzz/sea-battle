@@ -16,6 +16,11 @@
       <h2>✏️ Новый баттл</h2>
       <label for="nick">Твой ник</label>
       <input type="text" id="nick" maxlength="20" placeholder="Капитан...">
+      <div id="authBox" class="hidden" style="margin-top:12px; display:flex; align-items:center; gap:12px; flex-wrap:wrap">
+        <div id="googleBtn"></div>
+        <span id="authStatus" class="muted"></span>
+        <button class="small hidden" id="logoutBtn" type="button">Выйти</button>
+      </div>
       <div style="display:flex; gap:24px; flex-wrap:wrap">
         <div style="flex:1; min-width:140px">
           <label for="maxPlayers">Игроков</label>
@@ -46,6 +51,8 @@
         <li>За ход — <b>одно</b> действие: купить корабли, собрать добычу, передвинуть один корабль «по линейке» или выстрелить.</li>
         <li>Баркасы ловят рыбу в рыбных местах, любой корабль может залутать остров с кладом, если дотянется.</li>
         <li>Потопил корабль — лутаешь золото с обломков. Разбил порт — соперник выбывает, а ты забираешь половину его казны.</li>
+        <li>По морю бродят нейтральные пираты 🏴‍☠️ — они медленно дрейфуют между ходами, могут исчезать в тумане и появляться вновь. Потопи пирата и забери награду.</li>
+        <li>Застрял соперник? «📯 Поторопить» — ему уйдёт письмо и останется 10 минут на ход. Сам застрял безнадёжно — можно спустить флаг 🏳️.</li>
         <li>Последний выживший порт побеждает. 👑</li>
       </ul>
     </div>

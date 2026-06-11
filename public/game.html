@@ -33,7 +33,8 @@
         <div style="display:flex; flex-wrap:wrap; gap:8px">
           <button class="small" id="btnCollect">💰 Собрать добычу</button>
           <button class="small" id="btnSkip">⏭ Пропустить</button>
-          <button class="small" id="btnVoteSkip">🗳 Голос за пропуск</button>
+          <button class="small" id="btnNudge">📯 Поторопить</button>
+          <button class="small danger" id="btnSurrender">🏳️ Сдаться</button>
         </div>
         <p class="muted" id="hint" style="margin:8px 0 0">Кликни по своему кораблю, чтобы плыть или стрелять.</p>
       </div>
@@ -62,6 +63,10 @@
       <input type="text" id="nickInput" maxlength="20" placeholder="Капитан...">
       <p class="error" id="nickError"></p>
       <button class="primary" id="nickBtn" style="margin-top:10px">Войти в баттл</button>
+      <div id="googleAuthBox" class="hidden" style="margin-top:14px">
+        <p class="muted" style="margin:0 0 6px">…или войди через Google — тогда придёт письмо, если соперники будут тебя торопить:</p>
+        <div id="googleBtn"></div>
+      </div>
     </div>
   </div>
 
@@ -77,8 +82,9 @@
         <button class="small" id="copyBtn">📋</button>
       </div>
       <p class="error" id="lobbyError"></p>
-      <div style="margin-top:14px; display:flex; gap:10px; align-items:center">
+      <div style="margin-top:14px; display:flex; gap:10px; align-items:center; flex-wrap:wrap">
         <button class="primary" id="startBtn">⚔️ Начать баттл</button>
+        <button class="small" id="leaveLobbyBtn">🚪 Выйти из лобби</button>
         <span class="muted" id="lobbyWait"></span>
       </div>
     </div>

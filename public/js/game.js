@@ -23,7 +23,11 @@ function getToken() {
 const socket = io();
 
 function join(nick) {
-  socket.emit('join', { gameId, token: getToken(), nick }, res => {
+  socket.emit('join', {
+    gameId, token: getToken(),
+    session: localStorage.getItem('sb_session') || undefined,
+    nick
+  }, res => {
     if (!res.ok) {
       $('#nickOverlay').classList.remove('hidden');
       $('#nickError').textContent = res.error;
@@ -40,6 +44,35 @@ socket.on('connect', () => {
   if (nick) join(nick);
   else $('#nickOverlay').classList.remove('hidden');
 });
+
+// Кнопка Google в окне ника (если сервер настроен и гость ещё не вошёл).
+(async () => {
+  try {
+    const cfg = await (await fetch('/api/config')).json();
+    if (!cfg.googleClientId || localStorage.getItem('sb_session')) return;
+    const s = document.createElement('script');
+    s.src = 'https://accounts.google.com/gsi/client';
+    s.onload = () => {
+      $('#googleAuthBox').classList.remove('hidden');
+      google.accounts.id.initialize({
+        client_id: cfg.googleClientId,
+        callback: async resp => {
+          const r = await fetch('/api/auth/google', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ credential: resp.credential, nick: $('#nickInput').value.trim() })
+          });
+          const data = await r.json();
+          if (!r.ok) { $('#nickError').textContent = data.error; return; }
+          localStorage.setItem('sb_session', data.session);
+          localStorage.setItem('sb_nick', data.nick);
+          join(data.nick);
+        }
+      });
+      google.accounts.id.renderButton($('#googleBtn'), { theme: 'outline', size: 'large', text: 'signin_with' });
+    };
+    document.head.appendChild(s);
+  } catch { /* без Google тоже работаем */ }
+})();
 
 $('#nickBtn').addEventListener('click', () => {
   const nick = $('#nickInput').value.trim();
@@ -284,10 +317,12 @@ function render() {
 }
 
 function drawShip(s, selected) {
-  const p = state.players[s.owner];
+  const isPirate = s.owner === -1;
+  const p = isPirate ? null : state.players[s.owner];
   const st = ST(s.type);
   const px = sx(s.x), py = sy(s.y);
   const size = Math.max(9, (10 + st.hp / 28) * view.scale * 1.6);
+  const hullColor = isPirate ? '#33363c' : p.color;
 
   if (selected) {
     ctx.beginPath();
@@ -305,7 +340,7 @@ function drawShip(s, selected) {
   ctx.lineTo(px + size * 0.7, py - size * 0.45);
   ctx.lineTo(px - size * 0.7, py - size * 0.45);
   ctx.closePath();
-  ctx.fillStyle = p.color;
+  ctx.fillStyle = hullColor;
   ctx.fill();
   ctx.strokeStyle = '#2b3a55';
   ctx.lineWidth = 1.4;
@@ -319,9 +354,18 @@ function drawShip(s, selected) {
   ctx.moveTo(px, py - size * 1.5);
   ctx.quadraticCurveTo(px + size * 0.9, py - size * 1.1, px, py - size * 0.5);
   ctx.closePath();
-  ctx.fillStyle = '#fdfbf3';
+  ctx.fillStyle = isPirate ? '#33363c' : '#fdfbf3';
   ctx.fill();
   ctx.stroke();
+
+  if (isPirate) {
+    ctx.font = `${Math.max(10, 13 * view.scale * 1.6)}px serif`;
+    ctx.textAlign = 'center';
+    ctx.fillText('🏴‍☠️', px, py - size * 1.55);
+    ctx.font = `bold ${Math.max(10, 12 * view.scale * 1.6)}px Neucha, cursive`;
+    ctx.fillStyle = '#2b3a55';
+    ctx.fillText(`💰${s.bounty}`, px, py + size * 0.6 + 22);
+  }
 
   hpBar(px, py + size * 0.6 + 4, size * 2, s.hp / st.hp, '#27ae60');
 }
@@ -378,8 +422,21 @@ $('#btnCancel').addEventListener('click', deselect);
 
 $('#btnCollect').addEventListener('click', () => sendAction({ type: 'collect' }));
 $('#btnSkip').addEventListener('click', () => sendAction({ type: 'skip' }));
-$('#btnVoteSkip').addEventListener('click', () => {
-  socket.emit('voteSkip', res => { if (!res.ok) toast(res.error); });
+$('#btnNudge').addEventListener('click', () => {
+  socket.emit('nudge', res => {
+    if (!res.ok) toast(res.error);
+    else toast(res.emailSent ? '📯 Письмо отправлено, у игрока 10 минут' : '📯 У игрока 10 минут на ход');
+  });
+});
+$('#btnSurrender').addEventListener('click', () => {
+  if (!confirm('Точно спустить флаг? Твой флот утонет, а ты выбываешь из баттла.')) return;
+  socket.emit('leave', res => { if (!res.ok) toast(res.error); });
+});
+$('#leaveLobbyBtn').addEventListener('click', () => {
+  socket.emit('leave', res => {
+    if (!res.ok) toast(res.error);
+    else location.href = '/';
+  });
 });
 $('#btnBuy').addEventListener('click', () => {
   const ships = Object.entries(basket).flatMap(([t, n]) => Array(n).fill(t));
@@ -416,7 +473,7 @@ function renderSidebar() {
     $('#btnCollect').disabled = !isMyTurn();
     $('#btnSkip').disabled = !isMyTurn();
     $('#btnBuy').disabled = !isMyTurn();
-    $('#btnVoteSkip').classList.toggle('hidden', isMyTurn());
+    $('#btnNudge').classList.toggle('hidden', isMyTurn() || state.turn.nudged);
     $('#hint').textContent = isMyTurn()
       ? 'Одно действие за ход: купить, собрать, передвинуть один корабль или выстрелить.'
       : `Ждём ход игрока ${current?.nick}…`;
@@ -430,7 +487,7 @@ function renderSidebar() {
 
 function renderShop(me) {
   const total = Object.entries(basket).reduce((s, [t, n]) => s + ST(t).price * n, 0);
-  $('#shopList').innerHTML = Object.entries(state.shipTypes).map(([t, st]) => `
+  $('#shopList').innerHTML = Object.entries(state.shipTypes).filter(([, st]) => !st.npc).map(([t, st]) => `
     <div class="shop-item" title="${st.desc}">
       <span class="nm">${st.icon} ${st.name} <span class="muted">· ${st.price}з · ${st.hp}хп · ${st.dmg}дмг${st.fishing ? ' · 🐟' : ''}</span></span>
       <button class="small" data-shop="${t}" data-d="-1">−</button>
