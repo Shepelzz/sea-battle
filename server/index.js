@@ -85,7 +85,11 @@ const games = new Map();
 function getGame(id) {
   if (games.has(id)) return games.get(id);
   const state = db.loadGame(id);
-  if (state) { games.set(id, state); return state; }
+  if (state) {
+    games.set(id, state);
+    armTurnTimer(state); // после рестарта сервера возобновляем таймер хода
+    return state;
+  }
   return null;
 }
 

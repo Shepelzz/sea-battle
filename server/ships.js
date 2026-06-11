@@ -64,12 +64,15 @@ export const PIRATE = {
   npc: true,
   price: 0,
   hp: 80,
-  dmg: 0,
-  fireRange: 0,
+  dmg: 12,
+  fireRange: 130,
   move: 80, // медленнее шхуны (170)
   fishing: 0,
-  desc: 'Нейтральный бродяга. Потопи его и забери награду.'
+  desc: 'Нейтральный бродяга. Потопи его и забери награду. Но смотри — может дать сдачи.'
 };
+export const PIRATE_REVENGE_SHOT = 0.35; // шанс выстрела в обидчика за ход
+export const PIRATE_FLEE_CHANCE = 0.5;   // иначе — шанс удрать
+export const PIRATE_CALM_CHANCE = 0.25;  // шанс остыть и забыть обиду
 export const PIRATE_DESPAWN_CHANCE = 0.08;  // шанс раствориться в тумане за ход
 export const PIRATE_SPAWN_CHANCE = 0.16;    // шанс появления нового за ход (если есть место)
 export const PIRATE_MOVE_CHANCE = 0.75;     // шанс, что пират сдвинется за ход

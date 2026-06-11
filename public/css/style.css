@@ -124,7 +124,16 @@ tr:first-child td { font-weight: bold; }
   overflow: hidden;
   background: var(--paper);
 }
-#map { display: block; cursor: crosshair; }
+#map { display: block; cursor: crosshair; touch-action: none; }
+
+.panel-head { display: flex; align-items: center; gap: 8px; }
+.panel-head .turn-banner { font-size: 1.25rem; padding: 6px 10px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gold-chip { white-space: nowrap; font-weight: bold; font-size: 17px; }
+.gold-chip:empty { display: none; }
+#panelToggle { display: none; }
+#actionsRow { display: flex; flex-wrap: wrap; gap: 8px; }
+#actionsRow.hidden { display: none; }
+#panelBody { display: flex; flex-direction: column; gap: 12px; }
 
 aside.panel {
   width: 340px;
@@ -165,14 +174,36 @@ aside.panel {
 .player-row.current { background: var(--sea-hl); }
 .player-row .gold { margin-left: auto; white-space: nowrap; }
 
-.shop-item {
-  display: flex; align-items: center; gap: 6px;
-  padding: 5px 2px;
-  border-bottom: 1px dashed var(--grid-strong);
-  font-size: 15.5px;
+/* верфь-модалка */
+.shop-note { max-width: 640px !important; }
+.shop-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
 }
-.shop-item .nm { flex: 1; }
-.shop-item .cnt { min-width: 22px; text-align: center; font-weight: bold; }
+.ship-card {
+  border: 1.6px solid var(--ink);
+  border-radius: 10px 5px 12px 6px / 6px 12px 5px 10px;
+  background: var(--paper);
+  padding: 10px 12px;
+}
+.ship-card.unaffordable { opacity: .55; }
+.ship-card .head { display: flex; align-items: baseline; gap: 8px; }
+.ship-card .head .nm { font-family: var(--font-title); font-size: 1.3rem; font-weight: 700; flex: 1; }
+.ship-card .head .price { font-weight: bold; white-space: nowrap; }
+.ship-card .stats {
+  display: flex; flex-wrap: wrap; gap: 4px 12px;
+  font-size: 14.5px; color: var(--ink-light);
+  margin: 4px 0 8px;
+}
+.ship-card .qty { display: flex; align-items: center; gap: 10px; }
+.ship-card .qty .cnt { min-width: 26px; text-align: center; font-weight: bold; font-size: 18px; }
+.ship-card .qty button { min-width: 42px; }
+.shop-footer {
+  display: flex; align-items: center; justify-content: flex-end; gap: 14px;
+  margin-top: 12px; padding-top: 10px;
+  border-top: 1.4px dashed var(--grid-strong);
+}
 
 #log {
   font-size: 14.5px;
@@ -266,6 +297,28 @@ aside.panel {
     transparent 0, transparent 13px, #8a7a45 13px, #8a7a45 14px);
 }
 @media (max-width: 900px) {
-  .game-layout { flex-direction: column; }
-  aside.panel { width: 100%; min-width: 0; max-height: 45vh; border-left: none; border-top: 2px solid var(--ink); }
+  /* карта — весь экран, панель — шторка поверх неё снизу */
+  .game-layout { display: block; }
+  #mapWrap { position: fixed; inset: 0; height: 100dvh; }
+  aside.panel {
+    position: fixed; left: 0; right: 0; bottom: 0; width: 100%; min-width: 0;
+    max-height: 72dvh; overflow-y: auto; z-index: 40;
+    border-left: none; border-top: 2px solid var(--ink);
+    padding: 8px 12px calc(10px + env(safe-area-inset-bottom));
+    box-shadow: 0 -4px 14px rgba(43, 58, 85, .18);
+  }
+  aside.panel.collapsed #panelBody { display: none; }
+  #panelToggle { display: inline-block; }
+  .panel-head .turn-banner { font-size: 1.1rem; padding: 5px 8px; }
+  /* действия с кораблём и тосты — сверху, чтобы не прятались за панелью */
+  .action-bar { bottom: auto; top: 12px; padding: 8px 10px; gap: 6px; max-width: 96vw; flex-wrap: wrap; justify-content: center; }
+  .toast { top: 68px; max-width: 92vw; }
+}
+
+/* крупные элементы под палец */
+@media (pointer: coarse) {
+  button.small { font-size: 17px; padding: 9px 14px; }
+  .shop-item button.small { min-width: 42px; }
+  .player-row { padding: 7px 2px; }
+  input[type="text"], select { font-size: 19px; padding: 8px 6px; }
 }

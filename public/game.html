@@ -15,43 +15,43 @@
         <span id="shipActionsTitle" style="align-self:center"></span>
         <button class="small" id="btnMove">🧭 Плыть</button>
         <button class="small danger" id="btnFire">🔥 Стрелять</button>
+        <button class="small hidden" id="btnCollectHere">💰 Собрать</button>
         <button class="small" id="btnCancel">✖</button>
       </div>
     </div>
 
-    <aside class="panel">
-      <div class="turn-banner" id="turnBanner">Подключение…</div>
+    <aside class="panel" id="panel">
+      <div class="panel-head">
+        <div class="turn-banner" id="turnBanner">Подключение…</div>
+        <span class="gold-chip" id="myGold"></span>
+        <button class="small" id="muteBtn" title="Звук">🔊</button>
+        <button class="small" id="panelToggle" title="Меню">☰</button>
+      </div>
       <div id="timerRow" class="muted" style="text-align:center"></div>
+
+      <div id="actionsRow" class="hidden">
+        <button class="small primary" id="btnShop">🛒 Верфь</button>
+        <button class="small" id="btnSkip">⏭ Пропустить</button>
+        <button class="small" id="btnNudge">📯 Поторопить</button>
+      </div>
+
+      <div id="panelBody">
+      <p class="muted" id="hint" style="margin:0">Кликни по своему кораблю, чтобы плыть или стрелять.</p>
 
       <div>
         <h3 style="margin-bottom:4px">⚓ Капитаны</h3>
         <div id="playersList"></div>
       </div>
 
-      <div id="myActions">
-        <h3 style="margin-bottom:4px">✏️ Мой ход</h3>
-        <div style="display:flex; flex-wrap:wrap; gap:8px">
-          <button class="small" id="btnCollect">💰 Собрать добычу</button>
-          <button class="small" id="btnSkip">⏭ Пропустить</button>
-          <button class="small" id="btnNudge">📯 Поторопить</button>
-          <button class="small danger" id="btnSurrender">🏳️ Сдаться</button>
-        </div>
-        <p class="muted" id="hint" style="margin:8px 0 0">Кликни по своему кораблю, чтобы плыть или стрелять.</p>
-      </div>
-
-      <div id="shopBox">
-        <h3 style="margin-bottom:4px">🛒 Верфь</h3>
-        <div id="shopList"></div>
-        <div style="display:flex; align-items:center; gap:10px; margin-top:8px">
-          <button class="small primary" id="btnBuy">Купить</button>
-          <span id="shopTotal" class="muted"></span>
-        </div>
-      </div>
-
       <div>
         <h3 style="margin-bottom:4px">📜 Журнал</h3>
         <div id="log"></div>
       </div>
+
+      <div style="text-align:right">
+        <button class="small danger" id="btnSurrender">🏳️ Сдаться</button>
+      </div>
+      </div><!-- /panelBody -->
     </aside>
   </div>
 
@@ -90,6 +90,23 @@
     </div>
   </div>
 
+  <!-- верфь -->
+  <div class="overlay hidden" id="shopOverlay">
+    <div class="note taped shop-note">
+      <div style="display:flex; align-items:center; gap:10px">
+        <h2 style="margin:0; flex:1">🛒 Верфь</h2>
+        <span class="gold-chip" id="shopGold"></span>
+        <button class="small" id="shopClose">✖</button>
+      </div>
+      <p class="muted" style="margin:6px 0 10px">Новые корабли появятся у твоего порта. Покупка нескольких — одно действие за ход.</p>
+      <div class="shop-grid" id="shopList"></div>
+      <div class="shop-footer">
+        <span id="shopTotal" class="muted"></span>
+        <button class="primary" id="btnBuy">Купить</button>
+      </div>
+    </div>
+  </div>
+
   <!-- финальная таблица -->
   <div class="overlay hidden" id="finishOverlay">
     <div class="note taped">
@@ -106,6 +123,8 @@
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/fx-params.js"></script>
+  <script src="/js/audio.js"></script>
   <script src="/js/game.js"></script>
 </body>
 </html>

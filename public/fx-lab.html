@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Лаборатория эффектов — Морской бой</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .lab-canvas { width: 100%; border: 1.6px solid var(--ink); border-radius: 8px; background: var(--paper); display: block; }
+    .btn-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+    .sliders { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 4px 24px; }
+    .slider-row { display: flex; align-items: center; gap: 8px; font-size: 15px; }
+    .slider-row label { margin: 0; flex: 1; color: var(--ink); }
+    .slider-row input[type=range] { flex: 1.2; accent-color: #2b3a55; }
+    .slider-row .val { min-width: 44px; text-align: right; font-weight: bold; }
+    h3 { margin: 14px 0 6px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>🧪 Лаборатория эффектов</h1>
+    <p class="muted">Жми кнопки — смотри и слушай. Крути ползунки — всё меняется на лету. «Применить в игре» сохраняет настройки в этом браузере (игра их подхватит сразу). Подобрал идеал — жми «Экспорт» и присылай мне значения, вошью в дефолт для всех.</p>
+
+    <div class="note taped tilt-l">
+      <h2>🎬 Сцена</h2>
+      <canvas class="lab-canvas" id="stage" height="380"></canvas>
+      <div class="btn-row">
+        <button class="small" id="aMove">🧭 Ход с разворотом</button>
+        <button class="small" id="aShot">🔥 Выстрел (попадание)</button>
+        <button class="small danger" id="aSink">💥 Выстрел с потоплением</button>
+        <button class="small danger" id="aPort">🏰 Разрушение порта</button>
+        <button class="small" id="aLoot">🏝 Лут острова</button>
+        <button class="small" id="aFish">🐟 Улов (3 баркаса)</button>
+      </div>
+      <div class="slider-row" style="max-width: 380px">
+        <label>Масштаб карты (проверка зума)</label>
+        <input type="range" id="zoom" min="0.3" max="2.5" step="0.05" value="1">
+        <span class="val" id="zoomVal">1.0</span>
+      </div>
+    </div>
+
+    <div class="note tilt-r">
+      <h2>🎚 Настройки анимаций</h2>
+      <h3>🧭 Ход и пенный след</h3>
+      <div class="sliders" data-group="sail"></div>
+      <h3>🔥 Ядро</h3>
+      <div class="sliders" data-group="shell"></div>
+      <h3>💥 Взрывы</h3>
+      <div class="sliders" data-group="boom"></div>
+      <h3>💰 Всплывающее золото</h3>
+      <div class="sliders" data-group="gold"></div>
+      <div class="btn-row" style="margin-top:16px">
+        <button class="primary" id="saveBtn">💾 Применить в игре</button>
+        <button class="small" id="resetBtn">↩️ Сбросить на дефолт</button>
+        <button class="small" id="exportBtn">📋 Экспорт настроек</button>
+      </div>
+      <textarea id="exportBox" class="hidden" style="width:100%; height:120px; font-family:monospace; font-size:12px; margin-top:8px"></textarea>
+    </div>
+
+    <div class="note taped tilt-l">
+      <h2>🔊 Звуки</h2>
+      <div class="btn-row" id="soundBtns"></div>
+      <div class="sliders" style="margin-top:10px">
+        <div class="slider-row">
+          <label>Громкость музыки</label>
+          <input type="range" id="volMusic" min="0" max="1" step="0.05">
+          <span class="val" id="volMusicVal"></span>
+        </div>
+        <div class="slider-row">
+          <label>Громкость эффектов</label>
+          <input type="range" id="volSfx" min="0" max="1" step="0.05">
+          <span class="val" id="volSfxVal"></span>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="small" id="musicBtn">▶️ Музыка («Дрейф»)</button>
+      </div>
+      <p class="muted">Громкости тоже сохраняются в браузере и действуют в игре.</p>
+    </div>
+
+    <p><a class="btn" href="/">🏠 На главную</a></p>
+  </div>
+
+  <script src="/js/fx-params.js"></script>
+  <script src="/js/audio.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+const canvas = $('#stage');
+const ctx = canvas.getContext('2d');
+let zoom = 1;
+
+// ---- мини-сцена (копия отрисовки из игры, параметры — общие через FX) ----
+const SHIP_LEN = { barkas: 34, shkhuna: 42, brig: 50, fregat: 60, linkor: 72, pirate: 50 };
+const SHIP_MASTS = { barkas: 0, shkhuna: 1, brig: 2, fregat: 3, linkor: 3, pirate: 2 };
+const COLORS = ['#c0392b', '#2980b9'];
+const headings = new Map();
+
+const scene = {
+  ships: [
+    { id: 'A', owner: 0, type: 'fregat', x: 200, y: 230, hp: 170, maxHp: 170 },
+    { id: 'B', owner: 1, type: 'shkhuna', x: 470, y: 170, hp: 60, maxHp: 60 },
+    { id: 'P', owner: -1, type: 'pirate', x: 380, y: 320, hp: 80, maxHp: 80, bounty: 180 },
+    { id: 'F1', owner: 0, type: 'barkas', x: 130, y: 95, hp: 30, maxHp: 30 },
+    { id: 'F2', owner: 0, type: 'barkas', x: 190, y: 75, hp: 30, maxHp: 30 },
+    { id: 'F3', owner: 0, type: 'barkas', x: 160, y: 135, hp: 30, maxHp: 30 }
+  ],
+  island: { x: 560, y: 320, r: 36, loot: 220 },
+  fish: { x: 160, y: 105, r: 70 },
+  port: { x: 600, y: 90, hp: 1 }
+};
+headings.set('A', 0.3);
+
+let effects = [];
+const animPos = new Map();
+let W = 0;
+const sx = x => x * zoom + (W - 700 * zoom) / 2;
+const sy = y => y * zoom + 10;
+
+function addEffect(e) { effects.push({ ...e, start: performance.now() + (e.delay || 0) }); }
+
+function bezPt(e, t) {
+  const u = 1 - t;
+  return { x: u*u*e.fx + 2*u*t*e.cx + t*t*e.tx, y: u*u*e.fy + 2*u*t*e.cy + t*t*e.ty };
+}
+function bezAng(e, t) {
+  const dx = 2*(1-t)*(e.cx-e.fx) + 2*t*(e.tx-e.cx);
+  const dy = 2*(1-t)*(e.cy-e.fy) + 2*t*(e.ty-e.cy);
+  return Math.atan2(dy, dx);
+}
+
+function currentHeading(s) {
+  if (animPos.get(s.id)?.ang !== undefined) return animPos.get(s.id).ang;
+  return headings.get(s.id) ?? 0;
+}
+
+function drawShip(s, hidden) {
+  if (hidden) return;
+  const isPirate = s.owner === -1;
+  const pos = animPos.get(s.id) || s;
+  const px = sx(pos.x), py = sy(pos.y);
+  const k = zoom;
+  const L = (SHIP_LEN[s.type] || 46) * k;
+  const Wd = L * 0.36;
+  const hull = isPirate ? '#33363c' : COLORS[s.owner];
+
+  ctx.save();
+  ctx.translate(px, py);
+  ctx.rotate(pos.ang !== undefined ? pos.ang : currentHeading(s));
+  ctx.beginPath();
+  ctx.moveTo(-L/2, 0);
+  ctx.quadraticCurveTo(-L/2 + L*0.12, -Wd/2, 0, -Wd/2);
+  ctx.quadraticCurveTo(L/2 - L*0.06, -Wd/2 + 2*k, L/2 + L*0.11, 0);
+  ctx.quadraticCurveTo(L/2 - L*0.06, Wd/2 - 2*k, 0, Wd/2);
+  ctx.quadraticCurveTo(-L/2 + L*0.12, Wd/2, -L/2, 0);
+  ctx.closePath();
+  ctx.fillStyle = hull; ctx.fill();
+  ctx.strokeStyle = '#2b3a55'; ctx.lineWidth = Math.max(0.8, 1.6*k); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(-L/2 + L*0.09, 0);
+  ctx.quadraticCurveTo(0, -Wd/2 + Wd*0.3, L/2 - L*0.03, 0);
+  ctx.quadraticCurveTo(0, Wd/2 - Wd*0.3, -L/2 + L*0.09, 0);
+  ctx.closePath();
+  ctx.fillStyle = '#e8d9a8'; ctx.fill(); ctx.lineWidth = Math.max(0.6, k); ctx.stroke();
+  const masts = SHIP_MASTS[s.type] ?? 1;
+  if (!masts) {
+    ctx.strokeStyle = '#2b3a55';
+    for (let i = -1; i <= 1; i++) {
+      ctx.beginPath(); ctx.moveTo(i*L/5, -Wd/2 + Wd*0.18); ctx.lineTo(i*L/5, Wd/2 - Wd*0.18); ctx.stroke();
+    }
+  } else {
+    const mastXs = masts === 1 ? [0] : masts === 2 ? [-L/6, L/6] : [-L/4, 0, L/4];
+    for (const mx of mastXs) {
+      ctx.strokeStyle = '#2b3a55'; ctx.lineWidth = Math.max(1, 2*k);
+      ctx.beginPath(); ctx.moveTo(mx, -Wd/2 - Wd*0.42); ctx.lineTo(mx, Wd/2 + Wd*0.42); ctx.stroke();
+      ctx.beginPath(); ctx.arc(mx, 0, Math.max(1.2, Wd*0.16), 0, Math.PI*2);
+      ctx.fillStyle = '#2b3a55'; ctx.fill();
+    }
+  }
+  ctx.beginPath();
+  ctx.moveTo(-L/2 - 1, 0); ctx.lineTo(-L/2 - L*0.2, -Wd*0.3); ctx.lineTo(-L/2 - L*0.2, Wd*0.3);
+  ctx.closePath();
+  ctx.fillStyle = isPirate ? '#111' : COLORS[s.owner]; ctx.fill();
+  ctx.restore();
+
+  if (isPirate) {
+    ctx.font = `${Math.max(9, 16*k)}px serif`; ctx.textAlign = 'center';
+    ctx.fillText('🏴‍☠️', px, py - L*0.5);
+  }
+  // hp bar
+  const w = Math.max(16, L*0.9);
+  ctx.fillStyle = 'rgba(255,255,255,.75)'; ctx.fillRect(px - w/2, py + L*0.42 + 4, w, 5);
+  ctx.fillStyle = '#27ae60'; ctx.fillRect(px - w/2, py + L*0.42 + 4, w * s.hp / s.maxHp, 5);
+  ctx.strokeStyle = '#2b3a55'; ctx.lineWidth = 0.8; ctx.strokeRect(px - w/2, py + L*0.42 + 4, w, 5);
+}
+
+function drawEffects(under) {
+  const now = performance.now();
+  for (const e of effects) {
+    if (now < e.start) continue;
+    if (under !== (e.kind === 'sail')) continue;
+    const p = Math.min(1, (now - e.start) / e.dur);
+    if (e.kind === 'sail') {
+      const moveP = Math.min(1, (now - e.start) / e.moveDur);
+      const k = moveP < 0.5 ? 2*moveP*moveP : 1 - Math.pow(-2*moveP + 2, 2)/2;
+      const fade = moveP < 1 ? 1 : 1 - (now - e.start - e.moveDur) / (e.dur - e.moveDur);
+      const steps = 16;
+      ctx.lineCap = 'round';
+      for (let i = 1; i <= steps; i++) {
+        const a = bezPt(e, k*(i-1)/steps), b = bezPt(e, k*i/steps);
+        const fresh = i/steps;
+        ctx.beginPath(); ctx.moveTo(sx(a.x), sy(a.y)); ctx.lineTo(sx(b.x), sy(b.y));
+        ctx.strokeStyle = `rgba(120,170,210,${(FX.sail.wakeAlpha*fresh + 0.08)*fade})`;
+        ctx.lineWidth = Math.max(1.5, FX.sail.wakeWidth*zoom)*(0.35 + 0.65*fresh);
+        ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(sx(a.x), sy(a.y)); ctx.lineTo(sx(b.x), sy(b.y));
+        ctx.strokeStyle = `rgba(255,255,255,${0.5*fresh*fade})`;
+        ctx.lineWidth = Math.max(0.8, FX.sail.foamWidth*zoom)*fresh;
+        ctx.stroke();
+      }
+    } else if (e.kind === 'shell') {
+      const x = e.fx + (e.tx - e.fx)*p;
+      const y = e.fy + (e.ty - e.fy)*p - Math.sin(p*Math.PI)*FX.shell.arc;
+      ctx.beginPath(); ctx.arc(sx(x), sy(y), Math.max(2.5, FX.shell.size*zoom), 0, Math.PI*2);
+      ctx.fillStyle = '#2b3a55'; ctx.fill();
+    } else if (e.kind === 'boom') {
+      const r = (e.big ? FX.boom.big : FX.boom.small)*(0.35 + 0.65*p)*zoom;
+      ctx.globalAlpha = 1 - p;
+      ctx.beginPath(); ctx.arc(sx(e.x), sy(e.y), r, 0, Math.PI*2);
+      ctx.fillStyle = '#e67e22'; ctx.fill();
+      ctx.beginPath(); ctx.arc(sx(e.x), sy(e.y), r*0.55, 0, Math.PI*2);
+      ctx.fillStyle = '#f1c40f'; ctx.fill();
+      ctx.strokeStyle = '#c0392b'; ctx.lineWidth = 2;
+      for (let i = 0; i < FX.boom.shards; i++) {
+        const a = (i/FX.boom.shards)*Math.PI*2 + (e.big ? 0.4 : 0);
+        ctx.beginPath();
+        ctx.moveTo(sx(e.x) + Math.cos(a)*r*1.1, sy(e.y) + Math.sin(a)*r*1.1);
+        ctx.lineTo(sx(e.x) + Math.cos(a)*r*1.4, sy(e.y) + Math.sin(a)*r*1.4);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    } else if (e.kind === 'gold') {
+      const gx = sx(e.x), gy = sy(e.y) - 26*zoom - FX.gold.rise*p;
+      const scale = 1 + FX.gold.grow*p;
+      ctx.globalAlpha = p < 0.12 ? p/0.12 : Math.max(0, 1 - Math.max(0, (p - 0.5)/0.5));
+      ctx.font = `bold ${Math.max(14, FX.gold.font*zoom)*scale}px Neucha, cursive`;
+      ctx.textAlign = 'center'; ctx.lineWidth = 3.5;
+      ctx.strokeStyle = '#fdfbf3'; ctx.fillStyle = '#a87900';
+      ctx.strokeText(`+${e.amount} 💰`, gx, gy);
+      ctx.fillText(`+${e.amount} 💰`, gx, gy);
+      ctx.globalAlpha = 1;
+    }
+  }
+}
+
+let hiddenShips = new Set();
+function render(now) {
+  const dpr = window.devicePixelRatio || 1;
+  W = canvas.clientWidth;
+  if (canvas.width !== W * dpr) {
+    canvas.width = W * dpr; canvas.height = 380 * dpr;
+    canvas.style.height = '380px';
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, 380);
+  ctx.fillStyle = '#fdfbf3'; ctx.fillRect(0, 0, W, 380);
+  ctx.strokeStyle = 'rgba(116,160,199,.35)'; ctx.lineWidth = 1;
+  for (let x = 0; x < W; x += 40*zoom) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 380); ctx.stroke(); }
+  for (let y = 0; y < 380; y += 40*zoom) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+  // рыбное место
+  const f = scene.fish;
+  ctx.beginPath(); ctx.arc(sx(f.x), sy(f.y), f.r*zoom, 0, Math.PI*2);
+  ctx.fillStyle = 'rgba(120,170,210,.16)'; ctx.fill();
+  ctx.setLineDash([7,6]); ctx.strokeStyle = 'rgba(80,130,180,.6)'; ctx.stroke(); ctx.setLineDash([]);
+  ctx.font = `${Math.max(14, 22*zoom)}px serif`; ctx.textAlign = 'center';
+  ctx.fillText('🐟', sx(f.x), sy(f.y) + 6);
+
+  // остров с лутом
+  const isl = scene.island;
+  ctx.beginPath(); ctx.arc(sx(isl.x), sy(isl.y), isl.r*zoom, 0, Math.PI*2);
+  ctx.fillStyle = '#e8d9a8'; ctx.fill();
+  ctx.strokeStyle = '#8a7a45'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.font = `${Math.max(12, 18*zoom)}px serif`;
+  ctx.fillText('💰', sx(isl.x), sy(isl.y) + 5);
+
+  // порт (флаг противника)
+  const pt = scene.port;
+  ctx.beginPath(); ctx.arc(sx(pt.x), sy(pt.y), 30*zoom, 0, Math.PI*2);
+  ctx.fillStyle = '#e8d9a8'; ctx.fill(); ctx.strokeStyle = '#8a7a45'; ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(sx(pt.x), sy(pt.y) - 24*zoom); ctx.lineTo(sx(pt.x), sy(pt.y));
+  ctx.strokeStyle = '#2b3a55'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(sx(pt.x), sy(pt.y) - 24*zoom);
+  ctx.lineTo(sx(pt.x) + 14, sy(pt.y) - 18*zoom);
+  ctx.lineTo(sx(pt.x), sy(pt.y) - 12*zoom);
+  ctx.closePath(); ctx.fillStyle = COLORS[1]; ctx.fill();
+
+  // анимации перемещений
+  animPos.clear();
+  const tnow = performance.now();
+  for (const e of effects) {
+    if (e.kind !== 'sail') continue;
+    if (tnow < e.start) { animPos.set(e.shipId, { x: e.fx, y: e.fy }); continue; }
+    const p = Math.min(1, (tnow - e.start) / e.moveDur);
+    if (p >= 1) continue;
+    const k = p < 0.5 ? 2*p*p : 1 - Math.pow(-2*p + 2, 2)/2;
+    const ptt = bezPt(e, k);
+    animPos.set(e.shipId, { x: ptt.x, y: ptt.y, ang: bezAng(e, k) });
+  }
+  effects = effects.filter(e => tnow < e.start + e.dur);
+
+  drawEffects(true);
+  for (const s of scene.ships) drawShip(s, hiddenShips.has(s.id));
+  drawEffects(false);
+  requestAnimationFrame(render);
+}
+requestAnimationFrame(render);
+
+// ---- сценки (тайминги и звуки 1-в-1 как в игре) ----
+let togglePos = false;
+$('#aMove').addEventListener('click', () => {
+  const s = scene.ships[0];
+  const tx = togglePos ? 180 : 330, ty = togglePos ? 230 : 300;
+  togglePos = !togglePos;
+  const prevAng = headings.get(s.id) ?? 0;
+  const d = Math.hypot(tx - s.x, ty - s.y);
+  const lead = Math.min(d * 0.45, FX.sail.lead);
+  const cx = s.x + Math.cos(prevAng) * lead, cy = s.y + Math.sin(prevAng) * lead;
+  headings.set(s.id, Math.atan2(ty - cy, tx - cx));
+  Sound.playAt('move', 0);
+  addEffect({ kind: 'sail', shipId: s.id, fx: s.x, fy: s.y, cx, cy, tx, ty, moveDur: FX.sail.moveDur, dur: FX.sail.moveDur + FX.sail.wakeFade });
+  s.x = tx; s.y = ty;
+});
+
+function shotSeq(from, to, sink) {
+  Sound.playAt('shot', 0);
+  addEffect({ kind: 'shell', fx: from.x, fy: from.y, tx: to.x, ty: to.y, dur: FX.shell.dur });
+  Sound.playAt('hit', FX.shell.dur - 20);
+  addEffect({ kind: 'boom', x: to.x, y: to.y, big: false, dur: FX.boom.durSmall, delay: FX.shell.dur - 20 });
+  if (sink) {
+    const t = FX.shell.dur + 140;
+    Sound.playAt('wreck', t);
+    addEffect({ kind: 'boom', x: to.x, y: to.y, big: true, dur: FX.boom.durBig, delay: t });
+    addEffect({ kind: 'gold', x: to.x, y: to.y, amount: 55, dur: FX.gold.dur, delay: t + 350 });
+    setTimeout(() => Sound.playAt('coin', 0), t + 350);
+    setTimeout(() => hiddenShips.add(to.id), t); // тонет, только когда ядро долетело
+    setTimeout(() => hiddenShips.delete(to.id), t + 2600); // в лаборатории корабль «всплывает» обратно
+  }
+}
+$('#aShot').addEventListener('click', () => shotSeq(scene.ships[0], scene.ships[1], false));
+$('#aSink').addEventListener('click', () => shotSeq(scene.ships[0], scene.ships[1], true));
+$('#aPort').addEventListener('click', () => {
+  shotSeq(scene.ships[0], scene.port, false);
+  const t = FX.shell.dur + 140;
+  Sound.playAt('wreck', t);
+  addEffect({ kind: 'boom', x: scene.port.x, y: scene.port.y, big: true, dur: FX.boom.durBig, delay: t });
+  Sound.playAt('coin', t + 350);
+  addEffect({ kind: 'gold', x: scene.port.x, y: scene.port.y, amount: 480, dur: FX.gold.dur, delay: t + 350 });
+});
+$('#aLoot').addEventListener('click', () => {
+  Sound.playAt('coin', 0);
+  addEffect({ kind: 'gold', x: scene.island.x, y: scene.island.y, amount: scene.island.loot, dur: FX.gold.dur });
+});
+$('#aFish').addEventListener('click', () => {
+  ['F1','F2','F3'].forEach((id, i) => {
+    const s = scene.ships.find(x => x.id === id);
+    Sound.playAt('coin', i * 180);
+    addEffect({ kind: 'gold', x: s.x, y: s.y, amount: 30, dur: FX.gold.dur, delay: i * 180 });
+  });
+});
+
+// ---- ползунки настроек ----
+const SLIDER_DEFS = {
+  sail: [
+    ['moveDur', 'Длительность хода, мс', 200, 2000, 50],
+    ['wakeFade', 'След тает, мс', 100, 3000, 100],
+    ['lead', 'Крутизна разворота', 0, 150, 5],
+    ['wakeWidth', 'Ширина волны', 2, 24, 1],
+    ['foamWidth', 'Ширина пены', 1, 10, 0.5],
+    ['wakeAlpha', 'Яркость следа', 0.1, 1, 0.05]
+  ],
+  shell: [
+    ['dur', 'Время полёта ядра, мс', 150, 1200, 25],
+    ['arc', 'Высота дуги', 0, 100, 4],
+    ['size', 'Размер ядра', 2, 10, 0.5]
+  ],
+  boom: [
+    ['small', 'Вспышка попадания', 10, 80, 2],
+    ['big', 'Взрыв потопления', 20, 120, 4],
+    ['durSmall', 'Длительность попадания, мс', 150, 1200, 50],
+    ['durBig', 'Длительность взрыва, мс', 300, 2000, 50],
+    ['shards', 'Осколков', 0, 16, 1]
+  ],
+  gold: [
+    ['dur', 'Время жизни, мс', 600, 4000, 100],
+    ['rise', 'Высота всплытия', 10, 150, 5],
+    ['grow', 'Рост размера', 0, 1.5, 0.05],
+    ['font', 'Размер шрифта', 10, 32, 1]
+  ]
+};
+
+for (const [group, defs] of Object.entries(SLIDER_DEFS)) {
+  const box = document.querySelector(`[data-group="${group}"]`);
+  for (const [key, label, min, max, step] of defs) {
+    const row = document.createElement('div');
+    row.className = 'slider-row';
+    row.innerHTML = `<label>${label}</label>
+      <input type="range" min="${min}" max="${max}" step="${step}" value="${FX[group][key]}">
+      <span class="val">${FX[group][key]}</span>`;
+    const input = row.querySelector('input');
+    const val = row.querySelector('.val');
+    input.addEventListener('input', () => {
+      FX[group][key] = +input.value;
+      val.textContent = input.value;
+    });
+    box.appendChild(row);
+  }
+}
+
+$('#zoom').addEventListener('input', e => {
+  zoom = +e.target.value;
+  $('#zoomVal').textContent = zoom.toFixed(2);
+});
+
+$('#saveBtn').addEventListener('click', () => {
+  FX_SAVE();
+  Sound.setVolumes(+$('#volMusic').value, +$('#volSfx').value);
+  $('#saveBtn').textContent = '✔ Сохранено';
+  setTimeout(() => { $('#saveBtn').textContent = '💾 Применить в игре'; }, 1500);
+});
+$('#resetBtn').addEventListener('click', FX_RESET);
+$('#exportBtn').addEventListener('click', () => {
+  const box = $('#exportBox');
+  box.classList.remove('hidden');
+  box.value = JSON.stringify({ fx: FX, volumes: { music: +$('#volMusic').value, sfx: +$('#volSfx').value } }, null, 2);
+  box.select();
+  try { document.execCommand('copy'); } catch {}
+});
+
+// ---- звуки ----
+const SOUND_LIST = [
+  ['shot', '🔥 Выстрел'], ['hit', '💢 Попадание'], ['wreck', '🪵 Кораблекрушение'],
+  ['coin', '💰 Монета'], ['coins', '🪙 Покупка (горсть)'], ['move', '🌊 Плеск хода'],
+  ['myturn', '🔔 Твой ход'], ['horn', '📯 Горн'], ['pirate', '🏴‍☠️ Пират'],
+  ['win', '👑 Победа'], ['lose', '😞 Поражение'], ['click', '✏️ Клик']
+];
+for (const [name, label] of SOUND_LIST) {
+  const b = document.createElement('button');
+  b.className = 'small';
+  b.textContent = label;
+  b.addEventListener('click', () => Sound.play(name));
+  $('#soundBtns').appendChild(b);
+}
+
+$('#volMusic').value = Sound.volumes.music;
+$('#volSfx').value = Sound.volumes.sfx;
+$('#volMusicVal').textContent = Sound.volumes.music;
+$('#volSfxVal').textContent = Sound.volumes.sfx;
+$('#volMusic').addEventListener('input', e => {
+  Sound.setVolumes(+e.target.value, null);
+  $('#volMusicVal').textContent = e.target.value;
+});
+$('#volSfx').addEventListener('input', e => {
+  Sound.setVolumes(null, +e.target.value);
+  $('#volSfxVal').textContent = e.target.value;
+});
+let musicOn = false;
+$('#musicBtn').addEventListener('click', () => {
+  if (!musicOn) { Sound.startMusic(); musicOn = true; $('#musicBtn').textContent = '🎵 Играет (выключить — 🔇 в игре)'; }
+});
+</script>
+</body>
+</html>
