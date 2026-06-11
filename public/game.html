@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Баттл — Морской бой</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="game-layout">
+    <div id="mapWrap">
+      <canvas id="map"></canvas>
+      <div class="toast" id="toast"></div>
+      <div class="action-bar hidden" id="shipActions">
+        <span id="shipActionsTitle" style="align-self:center"></span>
+        <button class="small" id="btnMove">🧭 Плыть</button>
+        <button class="small danger" id="btnFire">🔥 Стрелять</button>
+        <button class="small" id="btnCancel">✖</button>
+      </div>
+    </div>
+
+    <aside class="panel">
+      <div class="turn-banner" id="turnBanner">Подключение…</div>
+      <div id="timerRow" class="muted" style="text-align:center"></div>
+
+      <div>
+        <h3 style="margin-bottom:4px">⚓ Капитаны</h3>
+        <div id="playersList"></div>
+      </div>
+
+      <div id="myActions">
+        <h3 style="margin-bottom:4px">✏️ Мой ход</h3>
+        <div style="display:flex; flex-wrap:wrap; gap:8px">
+          <button class="small" id="btnCollect">💰 Собрать добычу</button>
+          <button class="small" id="btnSkip">⏭ Пропустить</button>
+          <button class="small" id="btnVoteSkip">🗳 Голос за пропуск</button>
+        </div>
+        <p class="muted" id="hint" style="margin:8px 0 0">Кликни по своему кораблю, чтобы плыть или стрелять.</p>
+      </div>
+
+      <div id="shopBox">
+        <h3 style="margin-bottom:4px">🛒 Верфь</h3>
+        <div id="shopList"></div>
+        <div style="display:flex; align-items:center; gap:10px; margin-top:8px">
+          <button class="small primary" id="btnBuy">Купить</button>
+          <span id="shopTotal" class="muted"></span>
+        </div>
+      </div>
+
+      <div>
+        <h3 style="margin-bottom:4px">📜 Журнал</h3>
+        <div id="log"></div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- ввод ника -->
+  <div class="overlay hidden" id="nickOverlay">
+    <div class="note taped">
+      <h2>Кто на борту?</h2>
+      <label for="nickInput">Твой ник</label>
+      <input type="text" id="nickInput" maxlength="20" placeholder="Капитан...">
+      <p class="error" id="nickError"></p>
+      <button class="primary" id="nickBtn" style="margin-top:10px">Войти в баттл</button>
+    </div>
+  </div>
+
+  <!-- лобби -->
+  <div class="overlay hidden" id="lobbyOverlay">
+    <div class="note taped">
+      <h2>🏴‍☠️ Сбор флота</h2>
+      <p class="muted" id="lobbyConfig"></p>
+      <div class="slots" id="lobbySlots"></div>
+      <p>Зови друзей — кидай им ссылку:</p>
+      <div class="invite-link">
+        <span id="inviteUrl"></span>
+        <button class="small" id="copyBtn">📋</button>
+      </div>
+      <p class="error" id="lobbyError"></p>
+      <div style="margin-top:14px; display:flex; gap:10px; align-items:center">
+        <button class="primary" id="startBtn">⚔️ Начать баттл</button>
+        <span class="muted" id="lobbyWait"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- финальная таблица -->
+  <div class="overlay hidden" id="finishOverlay">
+    <div class="note taped">
+      <h2 id="finishTitle">Баттл окончен!</h2>
+      <table>
+        <thead><tr><th>Место</th><th>Капитан</th><th>Урон</th><th>Потопил</th><th>Потерял</th><th>Добыча</th></tr></thead>
+        <tbody id="finishTable"></tbody>
+      </table>
+      <div style="margin-top:16px; display:flex; gap:10px">
+        <a class="btn" href="/">🏠 На главную</a>
+        <button class="small" id="finishClose">Посмотреть карту</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/game.js"></script>
+</body>
+</html>

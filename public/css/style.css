@@ -1,0 +1,271 @@
+/* «Морской бой на листке в клетку» — эстетика школьной тетради */
+@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Neucha&display=swap');
+
+:root {
+  --paper: #fdfbf3;
+  --paper-dark: #f4f0e2;
+  --grid: rgba(116, 160, 199, 0.35);
+  --grid-strong: rgba(116, 160, 199, 0.55);
+  --ink: #2b3a55;            /* синяя шариковая ручка */
+  --ink-light: #5b6f93;
+  --pencil: #6b6f76;         /* простой карандаш */
+  --red-pen: #c0392b;        /* красная ручка */
+  --sand: #e8d9a8;
+  --sea-hl: rgba(120, 170, 210, 0.18);
+  --margin-line: rgba(214, 92, 92, 0.6);
+  --shadow: 2px 3px 0 rgba(43, 58, 85, 0.12);
+  --font-hand: 'Neucha', 'Comic Sans MS', cursive;
+  --font-title: 'Caveat', 'Neucha', cursive;
+}
+
+* { box-sizing: border-box; }
+
+html, body { height: 100%; }
+
+body {
+  margin: 0;
+  font-family: var(--font-hand);
+  font-size: 18px;
+  color: var(--ink);
+  background-color: var(--paper);
+  /* тетрадная клетка */
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+h1, h2, h3 { font-family: var(--font-title); font-weight: 700; margin: 0 0 .4em; }
+h1 { font-size: 3rem; transform: rotate(-1.2deg); }
+h2 { font-size: 2rem; }
+
+a { color: var(--ink); }
+
+.wrap { max-width: 960px; margin: 0 auto; padding: 32px 20px 60px; }
+
+.note {
+  background: var(--paper);
+  border: 1.6px solid var(--ink);
+  border-radius: 6px 14px 8px 12px / 12px 7px 13px 6px; /* неровный «нарисованный» контур */
+  box-shadow: var(--shadow);
+  padding: 18px 22px;
+  margin-bottom: 24px;
+  position: relative;
+}
+.note.tilt-l { transform: rotate(-0.6deg); }
+.note.tilt-r { transform: rotate(0.5deg); }
+
+/* кусочек скотча сверху */
+.note.taped::before {
+  content: '';
+  position: absolute;
+  top: -12px; left: 50%;
+  width: 90px; height: 24px;
+  transform: translateX(-50%) rotate(-2deg);
+  background: rgba(220, 218, 200, 0.6);
+  border-left: 1px dashed rgba(0,0,0,.08);
+  border-right: 1px dashed rgba(0,0,0,.08);
+}
+
+label { display: block; margin: 10px 0 4px; color: var(--ink-light); }
+
+input[type="text"], select {
+  font-family: var(--font-hand);
+  font-size: 18px;
+  color: var(--ink);
+  background: transparent;
+  border: none;
+  border-bottom: 1.6px solid var(--ink);
+  padding: 4px 6px;
+  width: 100%;
+  outline: none;
+}
+input[type="text"]:focus, select:focus { border-bottom-color: var(--red-pen); }
+
+button, .btn {
+  font-family: var(--font-hand);
+  font-size: 18px;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1.8px solid var(--ink);
+  border-radius: 10px 4px 12px 5px / 5px 11px 4px 12px;
+  box-shadow: var(--shadow);
+  padding: 8px 20px;
+  cursor: pointer;
+  transition: transform .08s ease, box-shadow .08s ease;
+  text-decoration: none;
+  display: inline-block;
+}
+button:hover, .btn:hover { transform: translate(-1px, -1px) rotate(-0.4deg); box-shadow: 3px 4px 0 rgba(43,58,85,.16); }
+button:active, .btn:active { transform: translate(1px, 1px); box-shadow: 1px 1px 0 rgba(43,58,85,.12); }
+button:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+
+button.primary { background: var(--ink); color: var(--paper); }
+button.danger { border-color: var(--red-pen); color: var(--red-pen); }
+button.small { font-size: 15px; padding: 4px 12px; }
+
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 6px 10px; border-bottom: 1px dashed var(--grid-strong); }
+th { font-family: var(--font-title); font-size: 1.2rem; color: var(--ink-light); }
+tr:first-child td { font-weight: bold; }
+
+.muted { color: var(--pencil); font-size: 15px; }
+.error { color: var(--red-pen); min-height: 1.4em; }
+
+/* ============ страница игры ============ */
+.game-layout {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+#mapWrap {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: var(--paper);
+}
+#map { display: block; cursor: crosshair; }
+
+aside.panel {
+  width: 340px;
+  min-width: 340px;
+  border-left: 2px solid var(--ink);
+  background: var(--paper-dark);
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 28px 28px;
+  overflow-y: auto;
+  padding: 14px 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.turn-banner {
+  border: 2px solid var(--ink);
+  border-radius: 8px 14px 6px 12px / 12px 6px 14px 8px;
+  padding: 8px 12px;
+  text-align: center;
+  font-family: var(--font-title);
+  font-size: 1.5rem;
+  background: var(--paper);
+}
+.turn-banner.my-turn { border-color: var(--red-pen); color: var(--red-pen); animation: pulse 1.6s infinite; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 5px rgba(192, 57, 43, .12); } }
+
+.player-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 2px;
+  border-bottom: 1px dashed var(--grid-strong);
+  font-size: 16px;
+}
+.player-row .dot { width: 14px; height: 14px; border-radius: 50% 40% 55% 45%; border: 1.4px solid var(--ink); flex: none; }
+.player-row.dead { opacity: .45; text-decoration: line-through; }
+.player-row.current { background: var(--sea-hl); }
+.player-row .gold { margin-left: auto; white-space: nowrap; }
+
+.shop-item {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 2px;
+  border-bottom: 1px dashed var(--grid-strong);
+  font-size: 15.5px;
+}
+.shop-item .nm { flex: 1; }
+.shop-item .cnt { min-width: 22px; text-align: center; font-weight: bold; }
+
+#log {
+  font-size: 14.5px;
+  color: var(--pencil);
+  max-height: 220px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column-reverse;
+}
+#log .battle { color: var(--red-pen); }
+#log div { padding: 2px 0; border-bottom: 1px dotted var(--grid); }
+
+.action-bar {
+  position: absolute;
+  left: 50%; bottom: 18px;
+  transform: translateX(-50%);
+  display: flex; gap: 10px;
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  border-radius: 14px 6px 12px 8px / 8px 12px 6px 14px;
+  padding: 10px 14px;
+  box-shadow: var(--shadow);
+}
+
+.toast {
+  position: absolute;
+  top: 16px; left: 50%;
+  transform: translateX(-50%);
+  background: var(--red-pen);
+  color: #fff;
+  font-size: 17px;
+  padding: 8px 18px;
+  border-radius: 10px 5px 12px 6px / 6px 12px 5px 10px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .25s;
+  z-index: 30;
+}
+.toast.show { opacity: 1; }
+
+/* модалки (лобби, ник, финал) */
+.overlay {
+  position: fixed; inset: 0;
+  background: rgba(43, 58, 85, 0.35);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 50;
+  padding: 20px;
+}
+.overlay .note { max-width: 560px; width: 100%; margin: 0; max-height: 90vh; overflow-y: auto; }
+.hidden { display: none !important; }
+
+.invite-link {
+  display: flex; gap: 8px; align-items: center;
+  background: var(--paper-dark);
+  border: 1.4px dashed var(--pencil);
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 15px;
+  word-break: break-all;
+}
+
+.slots { display: flex; gap: 10px; margin: 14px 0; flex-wrap: wrap; }
+.slot {
+  width: 116px; height: 64px;
+  border: 1.6px dashed var(--pencil);
+  border-radius: 10px 5px 12px 6px / 6px 12px 5px 10px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  color: var(--pencil);
+  font-size: 15px;
+}
+.slot.filled { border-style: solid; color: var(--ink); background: var(--paper); }
+.slot .dot { width: 12px; height: 12px; border-radius: 50%; margin-bottom: 4px; border: 1px solid var(--ink); }
+
+.medal { font-size: 1.3em; }
+
+/* линейка-декор на главной */
+.ruler {
+  height: 34px;
+  background: linear-gradient(#f7e9b8, #eedc9c);
+  border: 1.4px solid #b3a05f;
+  border-radius: 4px;
+  position: relative;
+  margin: 18px 0 26px;
+  transform: rotate(-0.8deg);
+  overflow: hidden;
+}
+.ruler::before {
+  content: '';
+  position: absolute; inset: 0;
+  background-image: repeating-linear-gradient(90deg,
+    transparent 0, transparent 13px, #8a7a45 13px, #8a7a45 14px);
+}
+@media (max-width: 900px) {
+  .game-layout { flex-direction: column; }
+  aside.panel { width: 100%; min-width: 0; max-height: 45vh; border-left: none; border-top: 2px solid var(--ink); }
+}

@@ -1,0 +1,15 @@
+node_modules/
+.idea/
+.claude/
+
+# DB files
+*.db
+*.db-shm
+*.db-wal
+
+# Build artifacts
+sea-battle-deploy.zip
+
+# Environment
+.env
+.env.*

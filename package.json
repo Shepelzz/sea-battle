@@ -1,0 +1,19 @@
+{
+  "name": "sea-battle",
+  "version": "1.0.0",
+  "description": "Улучшенный морской бой — браузерная пошаговая игра с линейкой",
+  "main": "server/index.js",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.4.1",
+    "express": "^4.21.2",
+    "socket.io": "^4.8.1"
+  }
+}
