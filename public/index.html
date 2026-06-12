@@ -14,34 +14,91 @@
 
     <div class="note taped tilt-l">
       <h2>✏️ Новый баттл</h2>
-      <label for="nick">Твой ник</label>
-      <input type="text" id="nick" maxlength="20" placeholder="Капитан...">
-      <div id="authBox" class="hidden" style="margin-top:12px; display:flex; align-items:center; gap:12px; flex-wrap:wrap">
-        <div id="googleBtn"></div>
-        <span id="authStatus" class="muted"></span>
-        <button class="small hidden" id="logoutBtn" type="button">Выйти</button>
+
+      <!-- выбор режима -->
+      <div class="mode-btns" id="modeBtns">
+        <button class="mode-btn" data-mode="online">🌐 Онлайн по ссылке
+          <span class="muted">создай баттл и кидай друзьям ссылку</span></button>
+        <button class="mode-btn" data-mode="hotseat">📱 На одном устройстве
+          <span class="muted">передавайте телефон по кругу</span></button>
+        <button class="mode-btn" data-mode="bot">🤖 Против компьютера
+          <span class="muted">одиночная игра с ботами</span></button>
       </div>
-      <div style="display:flex; gap:24px; flex-wrap:wrap">
-        <div style="flex:1; min-width:140px">
-          <label for="maxPlayers">Игроков</label>
-          <select id="maxPlayers">
-            <option value="2">2 игрока</option>
-            <option value="3">3 игрока</option>
-            <option value="4">4 игрока</option>
-          </select>
+
+      <!-- редактор: онлайн -->
+      <div id="editorOnline" class="hidden">
+        <button class="small" data-back type="button">← Режимы</button>
+        <label for="nick">Твой ник</label>
+        <input type="text" id="nick" maxlength="20" placeholder="Капитан...">
+        <div id="authBox" class="hidden" style="margin-top:12px; display:flex; align-items:center; gap:12px; flex-wrap:wrap">
+          <div id="googleBtn"></div>
+          <span id="authStatus" class="muted"></span>
+          <button class="small hidden" id="logoutBtn" type="button">Выйти</button>
         </div>
-        <div style="flex:1; min-width:140px">
-          <label for="turnTimer">Таймер на ход</label>
-          <select id="turnTimer">
-            <option value="0">Без таймера (неспешно)</option>
-            <option value="60">1 минута</option>
-            <option value="120">2 минуты</option>
-            <option value="300">5 минут</option>
-          </select>
+        <div style="display:flex; gap:24px; flex-wrap:wrap">
+          <div style="flex:1; min-width:140px">
+            <label for="maxPlayers">Игроков</label>
+            <select id="maxPlayers">
+              <option value="2">2 игрока</option>
+              <option value="3">3 игрока</option>
+              <option value="4">4 игрока</option>
+            </select>
+          </div>
+          <div style="flex:1; min-width:140px">
+            <label for="turnTimer">Таймер на ход</label>
+            <select id="turnTimer">
+              <option value="0">Без таймера (неспешно)</option>
+              <option value="60">1 минута</option>
+              <option value="120">2 минуты</option>
+              <option value="300">5 минут</option>
+            </select>
+          </div>
         </div>
+        <p class="error" id="createError"></p>
+        <button class="primary" id="createBtn">Создать баттл и получить ссылку</button>
       </div>
-      <p class="error" id="createError"></p>
-      <button class="primary" id="createBtn">Создать баттл и получить ссылку</button>
+
+      <!-- редактор: на одном устройстве -->
+      <div id="editorHotseat" class="hidden">
+        <button class="small" data-back type="button">← Режимы</button>
+        <label for="hotseatCount">Сколько игроков</label>
+        <select id="hotseatCount">
+          <option value="2">2 игрока</option>
+          <option value="3">3 игрока</option>
+          <option value="4">4 игрока</option>
+        </select>
+        <div id="hotseatNames"></div>
+        <p class="muted" style="margin-top:10px">Без таймера: ходите по очереди и передавайте устройство.</p>
+        <p class="error" id="hotseatError"></p>
+        <button class="primary" id="hotseatBtn">⚔️ Начать баттл</button>
+      </div>
+
+      <!-- редактор: против компьютера -->
+      <div id="editorBot" class="hidden">
+        <button class="small" data-back type="button">← Режимы</button>
+        <label for="botNick">Твой ник</label>
+        <input type="text" id="botNick" maxlength="20" placeholder="Капитан...">
+        <div style="display:flex; gap:24px; flex-wrap:wrap">
+          <div style="flex:1; min-width:140px">
+            <label for="botCount">Противников</label>
+            <select id="botCount">
+              <option value="1">1 бот</option>
+              <option value="2">2 бота</option>
+              <option value="3">3 бота</option>
+            </select>
+          </div>
+          <div style="flex:1; min-width:140px">
+            <label for="botLevel">Сложность</label>
+            <select id="botLevel">
+              <option value="easy">🐣 Юнга — для разминки</option>
+              <option value="mid" selected>⚓ Боцман — честный бой</option>
+              <option value="hard">💀 Адмирал — придётся попотеть</option>
+            </select>
+          </div>
+        </div>
+        <p class="error" id="botError"></p>
+        <button class="primary" id="botBtn">⚔️ В бой!</button>
+      </div>
     </div>
 
     <div class="note tilt-r">

@@ -279,6 +279,26 @@ aside.panel {
 
 .medal { font-size: 1.3em; }
 
+/* меню режимов на главной */
+.mode-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 420px;
+  margin: 8px auto;
+}
+.mode-btn {
+  font-size: 21px;
+  padding: 14px 18px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: center;
+}
+.mode-btn .muted { font-size: 14px; }
+.mode-btn:disabled { transform: none; }
+
 /* линейка-декор на главной */
 .ruler {
   height: 34px;

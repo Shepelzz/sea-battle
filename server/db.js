@@ -103,6 +103,7 @@ export function loadGame(id) {
 export function saveResults(game) {
   const now = Date.now();
   for (const p of game.players) {
+    if (p.isBot) continue; // боты в лидерборд не попадают
     saveResultStmt.run(
       game.id, p.id, p.placement ?? game.players.length, p.placement === 1 ? 1 : 0,
       p.stats.damageDealt, p.stats.shipsSunk, p.stats.shipsLost, p.stats.goldCollected, now

@@ -73,28 +73,56 @@ const Sound = (() => {
     }
   }
 
+  const ARP_STEP = 0.42;
+  const LOOP_DUR = 8 * ARP_STEP * 4; // 4 круга по 8 нот
+
   function scheduleLoop(startT) {
     const arpAm = ['A2','E3','A3','B3','C4','E4','C4','B3'];
     const arpF  = ['F2','C3','F3','G3','A3','C4','A3','G3'];
-    const step = 0.42;
     for (let r = 0; r < 4; r++) {
       const seq = (r === 2) ? arpF : arpAm;
-      seq.forEach((n, i) => harp(n, startT + r * seq.length * step + i * step, 0.1));
+      seq.forEach((n, i) => harp(n, startT + r * seq.length * ARP_STEP + i * ARP_STEP, 0.1));
     }
-    pad(['A2','E3'], startT, arpAm.length * step * 2);
-    pad(['F2','C3'], startT + arpAm.length * step * 2, arpAm.length * step * 2);
-    const loopDur = arpAm.length * step * 4;
-    musicTimer = setTimeout(() => scheduleLoop(ctx.currentTime + 0.05), (loopDur - 0.3) * 1000);
+    pad(['A2','E3'], startT, arpAm.length * ARP_STEP * 2);
+    pad(['F2','C3'], startT + arpAm.length * ARP_STEP * 2, arpAm.length * ARP_STEP * 2);
   }
 
+  // Планировщик опирается на время АУДИО-контекста, а не на setTimeout:
+  // когда вкладка в фоне и контекст замер, новые круги не планируются —
+  // музыка не «наслаивается» при возвращении (баг задвоения на мобильных).
+  let nextLoopT = 0;
   function startMusic() {
     if (started) return;
     started = true;
     ensureCtx();
-    scheduleLoop(ctx.currentTime + 0.1);
+    nextLoopT = ctx.currentTime + 0.1;
+    musicTimer = setInterval(() => {
+      if (!ctx || ctx.state !== 'running' || muted) return;
+      // догоняем, если контекст долго стоял в фоне
+      if (nextLoopT < ctx.currentTime - 0.05) nextLoopT = ctx.currentTime + 0.1;
+      if (nextLoopT - ctx.currentTime < 0.5) {
+        scheduleLoop(nextLoopT);
+        nextLoopT += LOOP_DUR;
+      }
+    }, 250);
   }
 
   // --- эффекты ---
+  // шина «удара»: мягкий перегруз для мощи попаданий
+  let punch = null;
+  function punchBus() {
+    if (punch) return punch;
+    const ws = ctx.createWaveShaper();
+    const curve = new Float32Array(1024);
+    for (let i = 0; i < 1024; i++) { const x = i / 512 - 1; curve[i] = Math.tanh(2.6 * x); }
+    ws.curve = curve;
+    const g = ctx.createGain();
+    g.gain.value = 0.85;
+    ws.connect(g).connect(sfxGain);
+    punch = ws;
+    return punch;
+  }
+
   function noiseBuffer(dur, brown = false) {
     const b = ctx.createBuffer(1, Math.max(1, ctx.sampleRate * dur) | 0, ctx.sampleRate);
     const d = b.getChannelData(0);
@@ -108,7 +136,7 @@ const Sound = (() => {
   }
 
   function noiseHit(dur, fStart, fEnd, vol, type = 'lowpass', opts = {}) {
-    const { at = 0.003, delay = 0, brown = false, q = 1 } = opts;
+    const { at = 0.003, delay = 0, brown = false, q = 1, hard = false } = opts;
     const t = ctx.currentTime + delay;
     const src = ctx.createBufferSource();
     src.buffer = noiseBuffer(dur, brown);
@@ -121,12 +149,12 @@ const Sound = (() => {
     g.gain.setValueAtTime(0.0001, t);
     g.gain.linearRampToValueAtTime(vol, t + at);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    src.connect(f).connect(g).connect(sfxGain);
+    src.connect(f).connect(g).connect(hard ? punchBus() : sfxGain);
     src.start(t);
     src.stop(t + dur + 0.05);
   }
 
-  function tone(freq, dur, type, vol, delay = 0, slideTo = null, at = 0.01) {
+  function tone(freq, dur, type, vol, delay = 0, slideTo = null, at = 0.01, hard = false) {
     const t = ctx.currentTime + delay;
     const osc = ctx.createOscillator();
     osc.type = type;
@@ -136,7 +164,7 @@ const Sound = (() => {
     g.gain.setValueAtTime(0.0001, t);
     g.gain.linearRampToValueAtTime(vol, t + at);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    osc.connect(g).connect(sfxGain);
+    osc.connect(g).connect(hard ? punchBus() : sfxGain);
     osc.start(t);
     osc.stop(t + dur + 0.05);
   }
@@ -144,6 +172,43 @@ const Sound = (() => {
   // бульк уходящего под воду
   function glug(f, vol, delay) {
     tone(f, 0.12, 'sine', vol, delay, f * 0.45);
+  }
+
+  // «цок» монеты: импульс шума через высокодобротные резонаторы металла
+  function clink(base = 1, vol = 0.3, dur = 0.11, delay = 0) {
+    const t = ctx.currentTime + delay;
+    const src = ctx.createBufferSource();
+    src.buffer = noiseBuffer(0.005);
+    const drive = ctx.createGain();
+    drive.gain.value = 16 * vol;
+    src.connect(drive);
+    [6300, 9100, 12100].forEach((f0, i) => {
+      const f = f0 * base * (1 + (Math.random() - 0.5) * 0.06);
+      if (f > 15500) return;
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = f;
+      bp.Q.value = 30;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(1 / (i + 1), t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + dur + i * 0.03);
+      drive.connect(bp).connect(g).connect(sfxGain);
+    });
+    noiseHit(0.006, 4500, null, vol * 0.5, 'highpass', { at: 0.001, delay }); // тик касания
+    src.start(t);
+  }
+
+  // брызги: россыпь крошечных шумовых зёрен
+  function spray(n, t0, t1, vmin = 0.02, vmax = 0.08) {
+    for (let i = 0; i < n; i++) {
+      noiseHit(
+        0.008 + Math.random() * 0.014,
+        2000 + Math.random() * 4000, null,
+        vmin + Math.random() * (vmax - vmin),
+        'highpass',
+        { at: 0.001, delay: t0 + Math.random() * (t1 - t0) }
+      );
+    }
   }
 
   const SFX = {
@@ -155,8 +220,17 @@ const Sound = (() => {
       tone(60, 0.9, 'sine', 0.28, 0.28, 28, 0.04);                       // эхо
       noiseHit(1.1, 220, 50, 0.22, 'lowpass', { brown: true, at: 0.06, delay: 0.3 });
     },
-    // попадание ядра: короткий взрыв
-    hit()    { noiseHit(0.3, 800, 90, 0.7); tone(180, 0.18, 'sine', 0.4, 0, 60); },
+    // попадание ядра: «борт раскалывается» — удар с двойным треском и щепками
+    hit()    {
+      tone(90, 0.35, 'sine', 0.85, 0, 35, 0.002, true);
+      noiseHit(0.1, 4200, 900, 1, 'lowpass', { at: 0.001, hard: true });
+      noiseHit(0.12, 3400, 600, 0.9, 'lowpass', { at: 0.001, delay: 0.09, hard: true });
+      for (let i = 0; i < 9; i++) {
+        noiseHit(0.02 + Math.random() * 0.03, 1500 + Math.random() * 3300, null,
+          0.15 + Math.random() * 0.25, 'bandpass', { q: 5, at: 0.001, delay: 0.05 + Math.random() * 0.35 });
+      }
+      tone(95, 0.35, 'sawtooth', 0.07, 0.15, 70, 0.08); // скрип корпуса
+    },
     // кораблекрушение: пар шипит, волна накрывает, пузыри ко дну
     // (взрывной «бум» здесь не нужен — его отыгрывает попадание ядра)
     wreck()  {
@@ -166,13 +240,23 @@ const Sound = (() => {
         glug(170 + Math.random() * 210, 0.12 + Math.random() * 0.1, 0.9 + Math.random() * 1.3);
       }
     },
-    coin()   { tone(880, 0.09, 'square', 0.2); tone(1320, 0.14, 'square', 0.2, 0.09); },
-    // горсть монет на стол — для покупки
+    // монета: короткий металлический «цок»
+    coin()   { clink(1, 0.35, 0.12); },
+    // покупка: кошель шлёпнулся на стол + горсть монет
     coins()  {
-      [988, 1175, 880, 1319, 1047].forEach((f, i) =>
-        tone(f, 0.07 + Math.random() * 0.03, 'square', 0.16, i * 0.06));
+      tone(150, 0.1, 'sine', 0.35, 0, 75, 0.003);
+      noiseHit(0.08, 350, null, 0.3, 'lowpass', { at: 0.005 });
+      for (let i = 0; i < 9; i++) {
+        clink(0.8 + Math.random() * 0.4, 0.08 + Math.random() * 0.14,
+          0.05 + Math.random() * 0.05, (0.02 + Math.random() * 0.38) * (0.3 + i / 9));
+      }
     },
-    move()   { noiseHit(0.4, 300, 1200, 0.18, 'bandpass'); },
+    // плеск хода: гребок с брызгами
+    move()   {
+      noiseHit(0.5, 400, 1700, 0.5, 'bandpass', { q: 1.4, at: 0.08 });
+      noiseHit(0.35, 1500, 450, 0.35, 'bandpass', { q: 1.4, at: 0.05, delay: 0.28 });
+      spray(22, 0.05, 0.55);
+    },
     myturn() { tone(NOTE(M.E5), 0.12, 'triangle', 0.35); tone(NOTE(M.A5), 0.22, 'triangle', 0.35, 0.13); },
     horn()   { tone(196, 0.5, 'sawtooth', 0.25); tone(98, 0.5, 'sawtooth', 0.18); },
     pirate() { tone(110, 0.3, 'triangle', 0.3, 0, 82); tone(165, 0.25, 'triangle', 0.2, 0.28, 110); },

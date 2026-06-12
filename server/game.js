@@ -213,7 +213,7 @@ function advanceTurn(game) {
   game.turn.nudged = false;
 }
 
-function shipPlacementBlocked(game, x, y, ignoreShipId) {
+export function shipPlacementBlocked(game, x, y, ignoreShipId) {
   const m = game.map;
   if (x < 12 || y < 12 || x > m.w - 12 || y > m.h - 12) return 'За краем карты';
   for (const b of m.bases) if (dist(x, y, b.x, b.y) < b.radius + 14) return 'Нельзя встать на остров';
@@ -296,7 +296,9 @@ export function leaveGame(game, playerId) {
     return { ok: true };
   }
   if (game.status !== 'active') return { ok: false, error: 'Игра уже завершена' };
-  const idx = game.players.findIndex(p => p.id === playerId);
+  let idx = game.players.findIndex(p => p.id === playerId);
+  // хотсит: «сдаться» сдаёт того, чей сейчас ход
+  if (idx === -1 && game.config.hotseat && playerId === game.hotseatOwner) idx = game.turn.idx;
   if (idx === -1) return { ok: false, error: 'Вы не участник' };
   if (!game.players[idx].alive) return { ok: false, error: 'Вы уже выбыли' };
   const wasTheirTurn = game.turn.idx === idx;
@@ -310,6 +312,7 @@ export function leaveGame(game, playerId) {
 export const NUDGE_MS = 10 * 60 * 1000;
 export function nudge(game, playerId) {
   if (game.status !== 'active') return { ok: false, error: 'Игра не активна' };
+  if (game.config.hotseat) return { ok: false, error: 'В игре на одном устройстве это не нужно' };
   const requester = game.players.find(p => p.id === playerId);
   if (!requester || !requester.alive) return { ok: false, error: 'Вы не участник' };
   const targetIdx = game.turn.idx;
@@ -326,7 +329,9 @@ export function nudge(game, playerId) {
 // Применение хода. action.type: buy | collect | move | attack | skip
 export function applyAction(game, playerId, action) {
   if (game.status !== 'active') return { ok: false, error: 'Игра не активна' };
-  const pIdx = game.players.findIndex(p => p.id === playerId);
+  let pIdx = game.players.findIndex(p => p.id === playerId);
+  // хотсит: владелец устройства ходит за того, чья очередь
+  if (pIdx === -1 && game.config.hotseat && playerId === game.hotseatOwner) pIdx = game.turn.idx;
   if (pIdx === -1) return { ok: false, error: 'Вы не участник игры' };
   if (pIdx !== game.turn.idx) return { ok: false, error: 'Сейчас не ваш ход' };
   const player = game.players[pIdx];
@@ -485,7 +490,7 @@ export function publicState(game) {
     players: game.players.map(p => ({
       id: p.id, nick: p.nick, color: p.color, gold: p.gold,
       portHp: p.portHp, alive: p.alive, placement: p.placement,
-      stats: p.stats
+      stats: p.stats, isBot: p.isBot || false
     })),
     ships: game.ships,
     turn: game.turn,

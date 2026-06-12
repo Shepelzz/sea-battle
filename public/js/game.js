@@ -7,6 +7,7 @@ const ctx = canvas.getContext('2d');
 let state = null;          // последнее состояние с сервера
 let myId = null;
 let spectator = false;
+let hotseatOwner = false;  // режим «на одном устройстве»: ходим за всех
 let selectedShipId = null;
 let mode = 'idle';         // idle | move | attack
 let hoverPt = null;        // позиция курсора в координатах карты
@@ -36,6 +37,7 @@ function join(nick) {
     }
     myId = res.playerId;
     spectator = res.spectator;
+    hotseatOwner = !!res.hotseatOwner;
     $('#nickOverlay').classList.add('hidden');
   });
 }
@@ -257,7 +259,11 @@ function drawEffects(under = false) {
 
 // --- helpers ---
 const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
-const myIdx = () => state ? state.players.findIndex(p => p.id === myId) : -1;
+const myIdx = () => {
+  if (!state) return -1;
+  if (state.config?.hotseat && hotseatOwner) return state.turn.idx; // ходим за текущего
+  return state.players.findIndex(p => p.id === myId);
+};
 const isMyTurn = () => state && state.status === 'active' && myIdx() === state.turn.idx && state.players[myIdx()]?.alive;
 const ST = t => state.shipTypes[t];
 
@@ -837,7 +843,10 @@ $('#btnNudge').addEventListener('click', () => {
   });
 });
 $('#btnSurrender').addEventListener('click', () => {
-  if (!confirm('Точно спустить флаг? Твой флот утонет, а ты выбываешь из баттла.')) return;
+  const q = state?.config?.hotseat
+    ? `${state.players[state.turn.idx]?.nick} спускает флаг? Флот утонет, игрок выбывает.`
+    : 'Точно спустить флаг? Твой флот утонет, а ты выбываешь из баттла.';
+  if (!confirm(q)) return;
   socket.emit('leave', res => { if (!res.ok) toast(res.error); });
 });
 $('#leaveLobbyBtn').addEventListener('click', () => {
@@ -861,15 +870,16 @@ function renderSidebar() {
   const banner = $('#turnBanner');
   if (state.status === 'lobby') banner.textContent = '⏳ Сбор флота…';
   else if (state.status === 'finished') banner.textContent = '🏁 Баттл окончен';
+  else if (state.config?.hotseat) banner.textContent = `✏️ Ходит: ${current?.nick} (№${state.turn.number})`;
   else if (isMyTurn()) banner.textContent = '🔥 Твой ход!';
   else banner.textContent = `Ход: ${current?.nick ?? '…'} (№${state.turn.number})`;
-  banner.classList.toggle('my-turn', isMyTurn());
+  banner.classList.toggle('my-turn', isMyTurn() && !state.config?.hotseat);
 
   // игроки
   $('#playersList').innerHTML = state.players.map((p, i) => `
     <div class="player-row ${p.alive ? '' : 'dead'} ${state.status === 'active' && i === state.turn.idx ? 'current' : ''}">
       <span class="dot" style="background:${p.color}"></span>
-      <span>${escapeHtml(p.nick)}${p.id === myId ? ' (ты)' : ''}</span>
+      <span>${p.isBot ? '🤖 ' : ''}${escapeHtml(p.nick)}${p.id === myId ? ' (ты)' : ''}</span>
       <span class="gold">💰${p.gold} · 🏠${p.portHp}</span>
     </div>`).join('');
 
@@ -883,7 +893,8 @@ function renderSidebar() {
   if (showActions) {
     $('#btnShop').disabled = !isMyTurn();
     $('#btnSkip').disabled = !isMyTurn();
-    $('#btnNudge').classList.toggle('hidden', isMyTurn() || state.turn.nudged);
+    $('#btnNudge').classList.toggle('hidden',
+      isMyTurn() || state.turn.nudged || !!state.players[state.turn.idx]?.isBot);
     $('#hint').textContent = isMyTurn()
       ? 'Одно действие за ход: купить, собрать, передвинуть один корабль или выстрелить.'
       : `Ждём ход игрока ${current?.nick}…`;

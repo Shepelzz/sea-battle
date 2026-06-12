@@ -15,6 +15,7 @@ import {
   createGame, addPlayer, startGame, applyAction, leaveGame, nudge,
   timeoutTurn, publicState
 } from './game.js';
+import { chooseBotAction, BOT_NAMES } from './bot.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -88,6 +89,7 @@ function getGame(id) {
   if (state) {
     games.set(id, state);
     armTurnTimer(state); // после рестарта сервера возобновляем таймер хода
+    maybeBotTurn(state); // ...и ход бота, если сервер уснул на его очереди
     return state;
   }
   return null;
@@ -96,6 +98,31 @@ function getGame(id) {
 function persistAndBroadcast(game) {
   db.saveGame(game);
   io.to('game:' + game.id).emit('state', publicState(game));
+  maybeBotTurn(game);
+}
+
+// --- ходы ботов ---
+const BOT_DELAY_MS = +(process.env.BOT_DELAY_MS || 1500);
+const botTimers = new Map();
+
+function maybeBotTurn(game) {
+  if (game.status !== 'active') return;
+  const cur = game.players[game.turn.idx];
+  if (!cur?.isBot || botTimers.has(game.id)) return;
+  botTimers.set(game.id, setTimeout(() => {
+    botTimers.delete(game.id);
+    const g = getGame(game.id);
+    if (!g || g.status !== 'active') return;
+    const bot = g.players[g.turn.idx];
+    if (!bot?.isBot) return;
+    let action;
+    try { action = chooseBotAction(g, g.turn.idx, bot.botLevel); }
+    catch (e) { console.error('bot:', e.message); action = { type: 'skip' }; }
+    let r = applyAction(g, bot.id, action);
+    if (!r.ok) r = applyAction(g, bot.id, { type: 'skip' }); // страховка от невалидного хода
+    if (g.status === 'finished') db.saveResults(g);
+    persistAndBroadcast(g);
+  }, BOT_DELAY_MS));
 }
 
 // --- REST ---
@@ -121,10 +148,50 @@ app.post('/api/auth/google', async (req, res) => {
 });
 
 app.post('/api/games', (req, res) => {
-  const { token, session, nick, maxPlayers, turnTimer } = req.body || {};
+  const { token, session, nick, maxPlayers, turnTimer, mode, nicks } = req.body || {};
   const pid = resolvePid({ token, session });
-  if (!pid || !nick?.trim()) return res.status(400).json({ error: 'Нужны ник и токен' });
+  if (!pid) return res.status(400).json({ error: 'Нужен токен' });
   const id = crypto.randomBytes(5).toString('base64url');
+
+  // хотсит: все игроки вводятся сразу, лобби нет — игра стартует мгновенно
+  if (mode === 'hotseat') {
+    const names = (Array.isArray(nicks) ? nicks : []).map(s => String(s || '').trim()).filter(Boolean);
+    if (names.length < 2 || names.length > 4) return res.status(400).json({ error: 'Нужно 2–4 имени игроков' });
+    const game = createGame(id, { maxPlayers: names.length, turnTimer: 0 });
+    game.config.hotseat = true;
+    game.hotseatOwner = pid;
+    names.forEach((n, i) => {
+      db.upsertPlayer(pid + '#' + i, n);
+      addPlayer(game, pid + '#' + i, n);
+    });
+    startGame(game, pid + '#0');
+    games.set(id, game);
+    db.saveGame(game);
+    return res.json({ gameId: id });
+  }
+
+  // против компьютера: человек + 1-3 бота, старт сразу
+  if (mode === 'bot') {
+    const level = ['easy', 'mid', 'hard'].includes(req.body.level) ? req.body.level : 'mid';
+    const botCount = Math.min(3, Math.max(1, +req.body.bots || 1));
+    if (!nick?.trim()) return res.status(400).json({ error: 'Нужен ник' });
+    const game = createGame(id, { maxPlayers: 1 + botCount, turnTimer: 0 });
+    game.config.botGame = true;
+    db.upsertPlayer(pid, nick.trim());
+    addPlayer(game, pid, nick.trim());
+    for (let i = 0; i < botCount; i++) {
+      addPlayer(game, 'bot:' + id + ':' + i, BOT_NAMES[level][i]);
+      const bp = game.players[game.players.length - 1];
+      bp.isBot = true;
+      bp.botLevel = level;
+    }
+    startGame(game, pid);
+    games.set(id, game);
+    db.saveGame(game);
+    return res.json({ gameId: id });
+  }
+
+  if (!nick?.trim()) return res.status(400).json({ error: 'Нужны ник и токен' });
   const game = createGame(id, { maxPlayers: +maxPlayers, turnTimer: +turnTimer });
   db.upsertPlayer(pid, nick.trim());
   addPlayer(game, pid, nick.trim());
@@ -148,6 +215,16 @@ io.on('connection', socket => {
     if (!game) return ack?.({ ok: false, error: 'Игра не найдена' });
     const pid = resolvePid({ token, session });
     if (!pid || !nick?.trim()) return ack?.({ ok: false, error: 'Введите ник' });
+    // хотсит: владелец устройства управляет всеми игроками
+    const isHotseatOwner = !!(game.config?.hotseat && game.hotseatOwner === pid);
+    if (isHotseatOwner) {
+      joinedGameId = gameId;
+      myPid = pid;
+      socket.join('game:' + gameId);
+      ack?.({ ok: true, playerId: pid, spectator: false, hotseatOwner: true });
+      socket.emit('state', publicState(game));
+      return;
+    }
     db.upsertPlayer(pid, nick.trim());
     const result = addPlayer(game, pid, nick.trim());
     // Не участник, но игра идёт — пускаем смотреть.
