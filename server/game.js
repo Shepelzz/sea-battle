@@ -519,10 +519,16 @@ export function applyAction(game, playerId, action) {
 }
 
 function findFreeSpotNearBase(game, base) {
-  for (let ring = 0; ring < 4; ring++) {
+  // корабли встают со стороны базы, ОБРАЩЁННОЙ К ЦЕНТРУ карты (а не всегда на восток) —
+  // иначе игроку в правом углу флот спавнило в угол, в стену. Перебор веером от направления
+  // к центру: 0, ±шаг, ±2·шаг… — первое свободное место всегда на «центровой» стороне.
+  const cx = game.map.w / 2, cy = game.map.h / 2;
+  const toCenter = Math.atan2(cy - base.y, cx - base.x);
+  const N = 14, step = (Math.PI * 2) / N;
+  for (let ring = 0; ring < 5; ring++) {
     const r = base.radius + 45 + ring * 34;
-    for (let i = 0; i < 14; i++) {
-      const ang = (i / 14) * Math.PI * 2;
+    for (let i = 0; i < N; i++) {
+      const ang = toCenter + (i % 2 ? 1 : -1) * Math.ceil(i / 2) * step;
       const x = Math.round(base.x + Math.cos(ang) * r);
       const y = Math.round(base.y + Math.sin(ang) * r);
       if (!shipPlacementBlocked(game, x, y, null)) return { x, y };
