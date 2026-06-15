@@ -653,7 +653,7 @@ function render() {
 
     // тач-прицел: крестик-цель + маркер пальца с тонкой линией (палец не закрывает цель)
     if (aim && aim.dest) {
-      drawCrosshair(sx(hoverPt.x), sy(hoverPt.y), aim.clamped ? '#caa43a' : '#2b3a55');
+      drawCrosshair(sx(hoverPt.x), sy(hoverPt.y), aim.clamped ? '#c0392b' : '#2b3a55');
       if (aim.finger) {
         ctx.beginPath();
         ctx.setLineDash([2, 4]);
@@ -865,13 +865,12 @@ function updateAim(screenPt) {
   const range = ST(sel.type).move;
   if (fd < 1) { aim.dest = { x: sel.x, y: sel.y }; aim.clamped = false; }
   else {
-    let len = fd * AIM_RATIO;
-    aim.clamped = len > range;
-    if (aim.clamped) len = range;
+    const len = fd * AIM_RATIO;    // крестик на «середине» пути до пальца
+    aim.clamped = len > range;     // середина вышла за круг хода — ход недопустим
     const k = len / fd;
-    aim.dest = { x: sel.x + dx * k, y: sel.y + dy * k };
+    aim.dest = { x: sel.x + dx * k, y: sel.y + dy * k }; // истинная середина (может быть вне круга)
   }
-  hoverPt = aim.dest; // переиспользуем рендер «линейки» (луч + призрак + подпись)
+  hoverPt = aim.dest; // рендер «линейки» сам красит красным, если точка вне радиуса
 }
 
 canvas.addEventListener('pointermove', e => {
@@ -908,9 +907,11 @@ canvas.addEventListener('pointermove', e => {
     }
   }
 
-  // наведение для «линейки» (мышь)
-  hoverPt = toMap(p.x, p.y);
-  if (mode === 'move') render();
+  // наведение для «линейки» — только мышь (на тач курса-наведения нет, есть drag-aim)
+  if (e.pointerType === 'mouse') {
+    hoverPt = toMap(p.x, p.y);
+    if (mode === 'move') render();
+  }
 });
 
 function endPointer(e) {
@@ -920,6 +921,7 @@ function endPointer(e) {
     aim = null; hoverPt = null;
     pointers.delete(e.pointerId);
     if (pointers.size === 0) { drag = null; pinchDist = 0; }
+    if (a.clamped) { toast('🚫 Слишком далеко — точка вне круга хода'); render(); return; }
     if (a.dest && dist(a.sel.x, a.sel.y, a.dest.x, a.dest.y) > 4) {
       sendAction({ type: 'move', shipId: a.sel.id, x: Math.round(a.dest.x), y: Math.round(a.dest.y) });
     } else {
@@ -959,6 +961,9 @@ function handleTap(pos, isTouch) {
   const clickedShip = state.ships.find(s => dist(pt.x, pt.y, s.x, s.y) < tapR);
 
   if (mode === 'move' && selectedShipId) {
+    // на тач курс прокладывается только перетаскиванием от корабля (тык-в-точку убран —
+    // он путал). Мышь — как раньше, тык до пикселя.
+    if (isTouch) { toast('🧭 Потяни от корабля, чтобы проложить курс'); return; }
     sendAction({ type: 'move', shipId: selectedShipId, x: pt.x, y: pt.y });
     return;
   }
@@ -1011,7 +1016,13 @@ function canBroadside(ship) {
   return inRange.length >= 2;
 }
 
-$('#btnMove').addEventListener('click', () => { mode = 'move'; Sound.play('click'); render(); });
+$('#btnMove').addEventListener('click', () => {
+  mode = 'move'; Sound.play('click');
+  // на сенсорных устройствах сразу подсказываем способ (drag-aim неочевиден)
+  if (window.matchMedia && matchMedia('(pointer: coarse)').matches)
+    toast('🧭 Потяни от корабля, чтобы проложить курс');
+  render();
+});
 $('#btnFire').addEventListener('click', () => { mode = 'attack'; Sound.play('click'); render(); });
 $('#btnBroadside').addEventListener('click', () => { if (selectedShipId) sendAction({ type: 'broadside', shipId: selectedShipId }); });
 $('#btnCancel').addEventListener('click', deselect);
