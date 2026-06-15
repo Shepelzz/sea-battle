@@ -533,14 +533,19 @@ export function timeoutTurn(game) {
 }
 
 // Состояние для отправки клиентам (без приватных данных).
-export function publicState(game) {
+// viewerPid — кому шлём: чужое золото скрываем (true-приватность). В хотсите
+// все цифры идут владельцу, а на клиенте показывается только текущий игрок.
+// На финале (баттл окончен) всё раскрываем — это итоговая таблица.
+export function publicState(game, viewerPid) {
+  const reveal = game.config.hotseat || game.status === 'finished';
   return {
     id: game.id,
     status: game.status,
     config: game.config,
     map: game.map,
     players: game.players.map(p => ({
-      id: p.id, nick: p.nick, color: p.color, gold: p.gold,
+      id: p.id, nick: p.nick, color: p.color,
+      gold: (reveal || p.id === viewerPid) ? p.gold : null,
       portHp: p.portHp, alive: p.alive, placement: p.placement,
       stats: p.stats, isBot: p.isBot || false
     })),

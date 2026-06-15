@@ -96,10 +96,38 @@ function getGame(id) {
   return null;
 }
 
+// Персональная рассылка состояния: каждому сокету — со своей видимостью золота.
+async function broadcastState(game) {
+  const sockets = await io.in('game:' + game.id).fetchSockets();
+  for (const s of sockets) s.emit('state', publicState(game, s.data.pid));
+}
+
 function persistAndBroadcast(game) {
   db.saveGame(game);
-  io.to('game:' + game.id).emit('state', publicState(game));
+  broadcastState(game);
   maybeBotTurn(game);
+  broadcastLobbies(); // слоты/статус лобби могли измениться
+}
+
+// --- браузер открытых лобби ---
+const LOBBY_MAX_AGE = 60 * 60 * 1000; // не показываем заброшенные старше часа
+function lobbyListData() {
+  const now = Date.now();
+  const list = [];
+  for (const g of games.values()) {
+    if (g.status === 'lobby' && g.config.listed && g.players.length > 0 &&
+        now - g.createdAt < LOBBY_MAX_AGE) {
+      list.push({
+        id: g.id, host: g.players[0].nick,
+        players: g.players.length, max: g.config.maxPlayers,
+        turnTimer: g.config.turnTimer, createdAt: g.createdAt
+      });
+    }
+  }
+  return list.sort((a, b) => b.createdAt - a.createdAt);
+}
+function broadcastLobbies() {
+  io.to('lobbies').emit('lobbyList', lobbyListData());
 }
 
 // --- ходы ботов ---
@@ -194,11 +222,13 @@ app.post('/api/games', (req, res) => {
 
   if (!nick?.trim()) return res.status(400).json({ error: 'Нужны ник и токен' });
   const game = createGame(id, { maxPlayers: +maxPlayers, turnTimer: +turnTimer });
+  game.config.listed = true; // онлайн-игра попадает в браузер лобби
   db.upsertPlayer(pid, nick.trim());
   addPlayer(game, pid, nick.trim());
   games.set(id, game);
   db.saveGame(game);
   res.json({ gameId: id });
+  broadcastLobbies();
 });
 
 app.get('/api/leaderboard', (_req, res) => res.json(db.getLeaderboard()));
@@ -211,6 +241,13 @@ io.on('connection', socket => {
   let joinedGameId = null;
   let myPid = null;
 
+  // подписка на браузер лобби (с главной страницы)
+  socket.on('lobbies:subscribe', ack => {
+    socket.join('lobbies');
+    ack?.(lobbyListData());
+  });
+  socket.on('lobbies:unsubscribe', () => socket.leave('lobbies'));
+
   socket.on('join', ({ gameId, token, session, nick }, ack) => {
     const game = getGame(gameId);
     if (!game) return ack?.({ ok: false, error: 'Игра не найдена' });
@@ -221,9 +258,10 @@ io.on('connection', socket => {
     if (isHotseatOwner) {
       joinedGameId = gameId;
       myPid = pid;
+      socket.data.pid = pid;
       socket.join('game:' + gameId);
       ack?.({ ok: true, playerId: pid, spectator: false, hotseatOwner: true });
-      socket.emit('state', publicState(game));
+      socket.emit('state', publicState(game, pid));
       return;
     }
     db.upsertPlayer(pid, nick.trim());
@@ -233,10 +271,12 @@ io.on('connection', socket => {
     if (!result.ok && !spectator) return ack?.({ ok: false, error: result.error });
     joinedGameId = gameId;
     myPid = pid;
+    socket.data.pid = pid;
     socket.join('game:' + gameId);
     db.saveGame(game);
     ack?.({ ok: true, playerId: pid, spectator });
-    io.to('game:' + gameId).emit('state', publicState(game));
+    broadcastState(game);
+    broadcastLobbies(); // обновить число игроков в витрине
   });
 
   socket.on('start', (ack) => {
@@ -287,6 +327,22 @@ io.on('connection', socket => {
       || `http://localhost:${PORT}`;
     sendNudgeEmail(email, target.nick, `${origin}/game/${game.id}`)
       .then(sent => ack?.({ ok: true, emailSent: sent }));
+  });
+
+  // отключение: если все ушли из ещё не начавшегося лобби — убираем его из списка
+  socket.on('disconnect', async () => {
+    if (!joinedGameId) return;
+    const game = games.get(joinedGameId);
+    if (!game || game.status !== 'lobby') return;
+    setTimeout(async () => {
+      const g = games.get(joinedGameId);
+      if (!g || g.status !== 'lobby') return;
+      const sockets = await io.in('game:' + joinedGameId).fetchSockets();
+      if (sockets.length === 0) { // в лобби никого не осталось — снимаем с витрины
+        games.delete(joinedGameId);
+        broadcastLobbies();
+      }
+    }, 1500); // даём шанс на переподключение/перезагрузку
   });
 });
 

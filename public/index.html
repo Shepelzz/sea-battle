@@ -17,8 +17,12 @@
 
       <!-- выбор режима -->
       <div class="mode-btns" id="modeBtns">
-        <button class="mode-btn" data-mode="online">🌐 Онлайн по ссылке
-          <span class="muted">создай баттл и кидай друзьям ссылку</span></button>
+        <div class="online-row">
+          <button class="mode-btn" data-mode="online">🌐 Онлайн
+            <span class="muted">создай баттл и зови друзей</span></button>
+          <button class="mode-btn join-btn" id="browseLobbiesBtn" title="Открытые лобби">👥
+            <span class="muted">найти игру</span></button>
+        </div>
         <button class="mode-btn" data-mode="hotseat">📱 На одном устройстве
           <span class="muted">передавайте телефон по кругу</span></button>
         <button class="mode-btn" data-mode="bot">🤖 Против компьютера
@@ -127,6 +131,21 @@
       <p class="muted" style="margin-top:8px">Очки: победа — 3, второе место — 1.</p>
     </div>
   </div>
+
+  <!-- попап со списком открытых лобби -->
+  <div class="overlay hidden" id="lobbiesOverlay">
+    <div class="note taped">
+      <div style="display:flex; align-items:center; gap:10px">
+        <h2 style="margin:0; flex:1">👥 Открытые лобби</h2>
+        <button class="small" id="lobbiesClose">✖</button>
+      </div>
+      <p class="muted" style="margin:6px 0 10px">Зайди в чужой баттл — попадёшь в его лобби. Когда хост начнёт, игра стартует у всех.</p>
+      <div id="lobbiesList"></div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/favicon.js"></script>
   <script src="/js/home.js"></script>
 </body>
 </html>

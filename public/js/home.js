@@ -8,6 +8,7 @@ function getToken() {
 }
 
 $('#nick').value = localStorage.getItem('sb_nick') || '';
+setFavicon('menu');
 
 // --- выбор режима ---
 function showMode(mode) {
@@ -20,6 +21,42 @@ document.querySelectorAll('.mode-btn[data-mode]').forEach(b =>
   b.addEventListener('click', () => showMode(b.dataset.mode)));
 document.querySelectorAll('[data-back]').forEach(b =>
   b.addEventListener('click', () => showMode(null)));
+
+// --- браузер открытых лобби ---
+const socket = io();
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function renderLobbies(list) {
+  const box = $('#lobbiesList');
+  if (!list.length) {
+    box.innerHTML = '<p class="muted">Пока нет открытых лобби. Создай свой через «🌐 Онлайн» — и он появится здесь у всех!</p>';
+    return;
+  }
+  const timerTxt = t => t ? `⏱ ${t / 60} мин/ход` : 'без таймера';
+  box.innerHTML = list.map(l => {
+    const full = l.players >= l.max;
+    return `<div class="lobby-item ${full ? 'full' : ''}">
+      <div class="info">
+        <div class="host">🏴‍☠️ ${escapeHtml(l.host)}</div>
+        <div class="meta">👤 ${l.players}/${l.max} · ${timerTxt(l.turnTimer)}</div>
+      </div>
+      <button class="small primary" data-join="${l.id}" ${full ? 'disabled' : ''}>${full ? 'Полно' : 'Войти'}</button>
+    </div>`;
+  }).join('');
+  box.querySelectorAll('[data-join]').forEach(b =>
+    b.addEventListener('click', () => { location.href = '/game/' + b.dataset.join; }));
+}
+socket.on('lobbyList', renderLobbies);
+
+$('#browseLobbiesBtn').addEventListener('click', () => {
+  $('#lobbiesOverlay').classList.remove('hidden');
+  socket.emit('lobbies:subscribe', list => renderLobbies(list || []));
+});
+$('#lobbiesClose').addEventListener('click', () => {
+  $('#lobbiesOverlay').classList.add('hidden');
+  socket.emit('lobbies:unsubscribe');
+});
 
 // --- хотсит: поля имён по числу игроков ---
 function renderHotseatNames() {
@@ -169,7 +206,3 @@ $('#botBtn').addEventListener('click', async () => {
       </tr>`).join('');
   } catch { /* лидерборд не критичен */ }
 })();
-
-function escapeHtml(s) {
-  return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}

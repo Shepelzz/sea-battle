@@ -98,9 +98,26 @@ socket.on('state', s => {
   }
   render();
   Sound.onState(prev, s, myIdx());
+  updateTab();
   // первый раз в активной игре и ты участник — показываем обучение
   if (s.status === 'active' && s.map && !spectator && myIdx() >= 0) Tutorial.start();
 });
+
+// иконка и заголовок вкладки сигналят, чей ход (видно из соседней вкладки)
+function updateTab() {
+  if (!state) return;
+  if (state.status === 'lobby') {
+    setFavicon('lobby'); document.title = '⏳ Лобби — Морской бой';
+  } else if (state.status === 'finished') {
+    setFavicon('over'); document.title = '🏁 Баттл окончен — Морской бой';
+  } else if (state.status === 'active' && !spectator && isMyTurn()) {
+    setFavicon('myturn'); document.title = '🟢 Твой ход! — Морской бой';
+  } else if (state.status === 'active') {
+    setFavicon('wait');
+    const cur = state.players[state.turn.idx]?.nick ?? '…';
+    document.title = `🔴 Ход: ${cur} — Морской бой`;
+  }
+}
 
 // ============ АНИМАЦИИ ============
 let effects = [];          // активные эффекты {kind, ..., start, dur}
@@ -902,6 +919,8 @@ $('#muteBtn').textContent = Sound.muted ? '🔇' : '🔊';
 $('#muteBtn').addEventListener('click', () => {
   $('#muteBtn').textContent = Sound.toggleMute() ? '🔇' : '🔊';
 });
+// TODO: инфобаза (правила/флот/механики) в модалке
+$('#infoBtn').addEventListener('click', () => toast('📖 Инфобаза скоро появится'));
 $('#panelToggle').addEventListener('click', () => {
   const collapsed = $('#panel').classList.toggle('collapsed');
   $('#panelToggle').textContent = collapsed ? '☰' : '✕';
@@ -959,16 +978,21 @@ function renderSidebar() {
   else banner.textContent = `Ход: ${current?.nick ?? '…'} (№${state.turn.number})`;
   banner.classList.toggle('my-turn', isMyTurn() && !state.config?.hotseat);
 
+  // приватность: чьи цифры (золото/HP порта) видно
+  // онлайн/боты — только свои; хотсит — только у того, чей ход; в конце — все
+  const canSee = i => state.status === 'finished' ||
+    (state.config?.hotseat ? i === state.turn.idx : state.players[i].id === myId);
+
   // игроки
-  $('#playersList').innerHTML = state.players.map((p, i) => `
-    <div class="player-row ${p.alive ? '' : 'dead'} ${state.status === 'active' && i === state.turn.idx ? 'current' : ''}">
+  $('#playersList').innerHTML = state.players.map((p, i) => {
+    const show = state.status !== 'lobby' && canSee(i);
+    const stats = show ? `💰${p.gold} · 🏠${p.portHp}` : '';
+    return `<div class="player-row ${p.alive ? '' : 'dead'} ${state.status === 'active' && i === state.turn.idx ? 'current' : ''}">
       <span class="dot" style="background:${p.color}"></span>
       <span>${p.isBot ? '🤖 ' : ''}${escapeHtml(p.nick)}${p.id === myId ? ' (ты)' : ''}</span>
-      <span class="gold">💰${p.gold} · 🏠${p.portHp}</span>
-    </div>`).join('');
-
-  // золото в шапке панели
-  $('#myGold').textContent = me && state.status !== 'lobby' ? `💰${me.gold}` : '';
+      <span class="gold">${stats}</span>
+    </div>`;
+  }).join('');
 
   // мои действия
   const showActions = !spectator && state.status === 'active' && me?.alive;

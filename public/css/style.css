@@ -329,6 +329,23 @@ aside.panel {
 }
 .mode-btn .muted { font-size: 14px; }
 .mode-btn:disabled { transform: none; }
+.online-row { display: flex; gap: 12px; }
+.online-row .mode-btn[data-mode="online"] { flex: 1; }
+.online-row .join-btn { flex: 0 0 30%; font-size: 26px; }
+
+/* список лобби */
+.lobby-item {
+  display: flex; align-items: center; gap: 12px;
+  border: 1.6px solid var(--ink);
+  border-radius: 10px 5px 12px 6px / 6px 12px 5px 10px;
+  background: var(--paper);
+  padding: 10px 14px; margin-bottom: 10px;
+}
+.lobby-item .info { flex: 1; }
+.lobby-item .host { font-family: var(--font-title); font-size: 1.3rem; font-weight: 700; }
+.lobby-item .meta { font-size: 14px; color: var(--ink-light); }
+.lobby-item.full { opacity: .55; }
+#lobbiesList .muted { padding: 14px 4px; }
 
 /* линейка-декор на главной */
 .ruler {
