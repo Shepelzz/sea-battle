@@ -1,7 +1,7 @@
 // HTTP + WebSocket сервер. Игра живёт по ссылке /game/<id>.
 //
 // Необязательные переменные окружения:
-//   DB_PATH — путь к файлу базы (держи ВНЕ папки сайта, чтобы деплой не затирал игры)
+//   DATABASE_URL (или DB_HOST/DB_USER/DB_PASSWORD/DB_NAME) — подключение к MySQL (см. db.js)
 //   GOOGLE_CLIENT_ID — включает «Войти через Google»
 //   SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM — включают письма «поторопить»
 //   BASE_URL — адрес сайта для ссылок в письмах (например https://game.example.ua)
@@ -73,27 +73,24 @@ async function sendNudgeEmail(email, nick, gameUrl) {
 // сервер везде использует его производный id.
 const pidOf = token => crypto.createHash('sha256').update(String(token)).digest('hex').slice(0, 16);
 
+// Серверные сессии Google-входа: token -> pid. Держим в памяти (предзагружаем на старте,
+// дополняем при логине) — чтобы resolvePid оставался синхронным.
+const sessionPids = new Map();
+
 function resolvePid({ token, session }) {
   if (session) {
-    const pid = db.getSessionPid(session);
+    const pid = sessionPids.get(session);
     if (pid) return pid;
   }
   return token ? pidOf(token) : null;
 }
 
-// Активные игры в памяти; SQLite — источник истины (переживает рестарт).
+// Игры в памяти — источник истины в рантайме (single-instance). Все игры предзагружаются
+// из MySQL на старте, а изменения асинхронно сохраняются обратно (durability на деплой).
 const games = new Map();
 
 function getGame(id) {
-  if (games.has(id)) return games.get(id);
-  const state = db.loadGame(id);
-  if (state) {
-    games.set(id, state);
-    armTurnTimer(state); // после рестарта сервера возобновляем таймер хода
-    maybeBotTurn(state); // ...и ход бота, если сервер уснул на его очереди
-    return state;
-  }
-  return null;
+  return games.get(id) || null;
 }
 
 // Персональная рассылка состояния: каждому сокету — со своей видимостью золота.
@@ -115,7 +112,7 @@ function lobbyListData() {
   const now = Date.now();
   const list = [];
   for (const g of games.values()) {
-    if (g.status === 'lobby' && g.config.listed && g.players.length > 0 &&
+    if (g.status === 'lobby' && g.config?.listed && g.players.length > 0 &&
         now - g.createdAt < LOBBY_MAX_AGE) {
       list.push({
         id: g.id, host: g.players[0].nick,
@@ -168,6 +165,7 @@ app.post('/api/auth/google', async (req, res) => {
     const finalNick = (nick || '').trim() || payload.name || payload.email.split('@')[0];
     db.upsertPlayer(pid, finalNick, payload.email);
     const session = crypto.randomBytes(24).toString('base64url');
+    sessionPids.set(session, pid);
     db.createSession(session, pid);
     res.json({ session, nick: finalNick, email: payload.email });
   } catch (e) {
@@ -231,7 +229,7 @@ app.post('/api/games', (req, res) => {
   broadcastLobbies();
 });
 
-app.get('/api/leaderboard', (_req, res) => res.json(db.getLeaderboard()));
+app.get('/api/leaderboard', async (_req, res) => res.json(await db.getLeaderboard()));
 
 app.get('/game/:id', (_req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'game.html')));
 
@@ -313,7 +311,7 @@ io.on('connection', socket => {
   });
 
   // Поторопить AFK-игрока: письмо + 10 минут на ход.
-  socket.on('nudge', (ack) => {
+  socket.on('nudge', async (ack) => {
     const game = joinedGameId && getGame(joinedGameId);
     if (!game) return ack?.({ ok: false, error: 'Нет игры' });
     const result = nudge(game, myPid);
@@ -321,7 +319,7 @@ io.on('connection', socket => {
     armTurnTimer(game);
     persistAndBroadcast(game);
     const target = game.players[result.targetIdx];
-    const email = db.getPlayerEmail(target.id);
+    const email = await db.getPlayerEmail(target.id);
     const origin = process.env.BASE_URL
       || socket.handshake.headers.origin
       || `http://localhost:${PORT}`;
@@ -361,7 +359,30 @@ function armTurnTimer(game) {
   }, ms));
 }
 
-server.listen(PORT, () => {
-  console.log(`⚓ Sea Battle: http://localhost:${PORT}`);
-  console.log(`   игр в базе: ${db.countGames()} (переживут перезапуск/деплой)`);
-});
+// Старт: подключаемся к MySQL, поднимаем все игры и сессии в память, возобновляем
+// таймеры/ходы ботов, и только потом слушаем порт.
+async function bootstrap() {
+  try {
+    await db.init();
+    for (const s of await db.getAllSessions()) sessionPids.set(s.token, s.pid);
+    let active = 0;
+    for (const state of await db.getAllGames()) {
+      games.set(state.id, state);
+      if (state.status === 'active') {
+        armTurnTimer(state); // возобновляем таймер хода после рестарта/деплоя
+        maybeBotTurn(state);  // ...и ход бота, если он не успел сходить
+        active++;
+      }
+    }
+    console.log(`   поднято игр из MySQL: ${games.size} (активных: ${active}) — переживут деплой`);
+  } catch (e) {
+    console.error('❌ Не удалось подключиться к MySQL:', e.message);
+    console.error('   Проверь DATABASE_URL / DB_HOST / DB_USER / DB_PASSWORD / DB_NAME (и DB_SSL при необходимости).');
+    process.exit(1);
+  }
+  server.listen(PORT, () => {
+    console.log(`⚓ Sea Battle: http://localhost:${PORT}`);
+  });
+}
+
+bootstrap();
