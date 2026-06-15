@@ -240,7 +240,7 @@ aside.panel {
 
 .toast {
   position: absolute;
-  top: 16px; left: 50%;
+  top: calc(env(safe-area-inset-top, 0px) + 6px); left: 50%;
   transform: translateX(-50%);
   background: var(--red-pen);
   color: #fff;
@@ -427,9 +427,11 @@ aside.panel {
   aside.panel.collapsed #panelBody { display: none; }
   #panelToggle { display: inline-block; }
   .panel-head .turn-banner { font-size: 1.1rem; padding: 5px 8px; }
-  /* действия с кораблём и тосты — сверху, чтобы не прятались за панелью */
+  /* действия с кораблём — сверху по умолчанию; .at-bottom = снизу (зависит от того, в какой
+     половине поля стоит выбранный корабль, чтобы панель его не перекрывала). Тосты — сверху. */
   .action-bar { bottom: auto; top: 12px; padding: 8px 10px; gap: 6px; max-width: 96vw; flex-wrap: wrap; justify-content: center; }
-  .toast { top: 68px; max-width: 92vw; }
+  .action-bar.at-bottom { top: auto; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
+  .toast { top: calc(env(safe-area-inset-top, 0px) + 6px); max-width: 92vw; }
 }
 
 /* крупные элементы под палец */

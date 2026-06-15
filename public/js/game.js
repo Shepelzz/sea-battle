@@ -1086,6 +1086,7 @@ function handleTap(pos, isTouch) {
     mode = 'idle';
     Sound.play('click');
     $('#shipActions').classList.remove('hidden');
+    positionActionBar(clickedShip); // панель — на противоположной кораблю половине экрана
     $('#shipActionsTitle').textContent = ST(clickedShip.type).icon + ' ' + ST(clickedShip.type).name;
     // «Собрать» — если корабль дотягивается до клада (рыбалка теперь капает сама)
     $('#btnCollectHere').classList.toggle('hidden', !canShipCollect(clickedShip));
@@ -1095,6 +1096,15 @@ function handleTap(pos, isTouch) {
   } else {
     deselect();
   }
+}
+
+// На мобиле панель действий ставим на половину экрана, ПРОТИВОПОЛОЖНУЮ кораблю —
+// чтобы не перекрывать его и путь к нему. Корабль в нижней половине → панель сверху, и наоборот.
+function positionActionBar(ship) {
+  const bar = $('#shipActions');
+  if (!matchMedia('(max-width: 900px)').matches) { bar.classList.remove('at-bottom'); return; }
+  const shipInLowerHalf = sy(ship.y) > canvas.clientHeight / 2;
+  bar.classList.toggle('at-bottom', !shipInLowerHalf);
 }
 
 function canShipCollect(ship) {
