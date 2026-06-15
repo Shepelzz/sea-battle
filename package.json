@@ -8,8 +8,10 @@
     "node": ">=18"
   },
   "scripts": {
-    "start": "node server/index.js",
-    "dev": "node --watch server/index.js"
+    "start": "node --env-file-if-exists=.env server/index.js",
+    "dev": "node --env-file-if-exists=.env --watch server/index.js",
+    "db:up": "docker run -d --name sb-mysql -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=seabattle -p 3307:3306 -v sb-mysql-data:/var/lib/mysql mysql:8",
+    "db:down": "docker rm -f sb-mysql"
   },
   "dependencies": {
     "express": "^4.21.2",

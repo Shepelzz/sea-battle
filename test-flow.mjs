@@ -132,23 +132,27 @@ await wait(200);
   ok('сбор добычи согласован с картой (' + (canCollect ? 'добыча была и собрана' : 'пустой сбор отклонён') + ')');
 }
 
-// гоняем бой: двигаем фрегат Алисы к базе Боба и расстреливаем порт
+// гоняем бой: двигаем фрегат Алисы к базе Боба и проверяем механику осады
+// (порт прочный — 840 HP — и огрызается; одиночный фрегат базу не валит by design,
+//  полный снос порта до победы покрыт симулятором sim.mjs. Тут проверяем урон по
+//  порту + ответный огонь, а победу/статы — через сдачу Боба ниже.)
 console.log('— марш к базе Боба и осада порта —');
-let turns = 0;
-while (A.state.status === 'active' && turns < 400) {
+let turns = 0, portShots = 0;
+let portHpAtFirstShot = null, fregatHpAtFirstShot = null;
+while (A.state.status === 'active' && turns < 400 && portShots < 4) {
   turns++;
-  // ход Алисы
   const st = A.state;
-  const me = st.players[0];
   if (st.turn.idx === 0) {
     const fregat = st.ships.find(s => s.owner === 0 && s.type === 'fregat');
-    if (!fregat) fail('фрегат Алисы пропал');
+    if (!fregat) fail('фрегат Алисы пропал ещё до осады');
     const enemyBase = st.map.bases[1];
     const d = Math.hypot(fregat.x - enemyBase.x, fregat.y - enemyBase.y);
     const fireReach = st.shipTypes.fregat.fireRange + enemyBase.radius * 0.5;
     if (d <= fireReach) {
+      if (portShots === 0) { portHpAtFirstShot = st.players[1].portHp; fregatHpAtFirstShot = fregat.hp; }
       r = await emit(A, 'action', { type: 'attack', shipId: fregat.id, targetType: 'port', targetId: 1 });
       if (!r.ok) fail('осада порта: ' + r.error);
+      portShots++;
     } else {
       const step = Math.min(st.shipTypes.fregat.move - 2, d - fireReach + 2);
       const baseAng = Math.atan2(enemyBase.y - fregat.y, enemyBase.x - fregat.x);
@@ -167,10 +171,22 @@ while (A.state.status === 'active' && turns < 400) {
   }
   await wait(60);
 }
-if (A.state.status !== 'finished') fail('игра не закончилась за 400 ходов');
+if (portShots < 4) fail('не удалось подвести фрегат и обстрелять порт');
+// порт получил урон, и порт огрызнулся по фрегату
+const portNow = A.state.players[1].portHp;
+const fregatNow = A.state.ships.find(s => s.owner === 0 && s.type === 'fregat')?.hp ?? 0;
+if (!(portNow < portHpAtFirstShot)) fail('порт не получил урона');
+if (!(fregatNow < fregatHpAtFirstShot)) fail('порт не огрызнулся по атакующему фрегату');
+ok(`осада: порт ${portHpAtFirstShot}→${portNow} за ${portShots} залпа, фрегат огрёб ответку ${fregatHpAtFirstShot}→${fregatNow}`);
+
+// победу засчитываем через сдачу Боба (полный снос 840-HP порта — в sim.mjs)
+r = await emit(B, 'leave');
+if (!r.ok) fail('сдача Боба: ' + r.error);
+await wait(300);
+if (A.state.status !== 'finished') fail('игра не завершилась после сдачи Боба');
 if (A.state.winner !== 0) fail('победил не тот');
 const fin = A.state.players;
-ok(`победа Алисы за ${turns} ходов; места: ${fin.map(p => p.nick + '=' + p.placement).join(', ')}`);
+ok(`победа Алисы (Боб сдался); места: ${fin.map(p => p.nick + '=' + p.placement).join(', ')}`);
 if (fin[0].placement !== 1 || fin[1].placement !== 2) fail('места распределены неверно');
 if (fin[0].stats.damageDealt <= 0) fail('статистика урона пуста');
 ok('статистика: урон=' + fin[0].stats.damageDealt + ', золото Алисы=' + fin[0].gold);

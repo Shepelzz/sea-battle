@@ -52,10 +52,12 @@ export function chooseBotAction(game, pIdx, level = 'mid') {
   const myPower = powerOf(pIdx);
   const foePower = foeShips.reduce((s, x) => s + x.hp + SHIP_TYPES[x.type].dmg, 0);
 
-  // угроза базе: вражеские боевые корабли рядом с моим портом
+  // угроза базе: вражеские боевые корабли ВПЛОТНУЮ к моему порту (реальная осада,
+  // а не далёкий разведчик — иначе бот панически обороняется и партия не двигается)
   const myBase = game.map.bases[pIdx];
+  const threatR = myBase.radius + 240;
   const invaders = foeShips.filter(f =>
-    SHIP_TYPES[f.type].dmg > 0 && dist(f.x, f.y, myBase.x, myBase.y) < 430);
+    SHIP_TYPES[f.type].dmg > 0 && dist(f.x, f.y, myBase.x, myBase.y) < threatR);
   const underSiege = invaders.length > 0 && level !== 'easy';
 
   // жертва — слабейший противник; решимость меряем с НИМ, а не с суммой всех
@@ -78,6 +80,9 @@ export function chooseBotAction(game, pIdx, level = 'mid') {
       let score = st.dmg * 0.8;
       if (kills) score += 30 + (t.owner === -1 ? t.bounty * 0.3 : SHIP_TYPES[t.type].price * 0.2);
       if (t.owner === -1 && !kills && level !== 'easy') score -= 15; // пираты мстят
+      // ЗАЩИТА БАЗЫ: первым делом топим того, кто подошёл бить наш порт (ответка на атаку)
+      if (level !== 'easy' && t.owner >= 0 && SHIP_TYPES[t.type].dmg > 0 &&
+          dist(t.x, t.y, myBase.x, myBase.y) < threatR) score += 35;
       if (level === 'hard') {
         if (t.owner !== -1 && SHIP_TYPES[t.type].fishing) score += 12; // душим экономику
         score += ((t.maxHp || tdef.hp) - t.hp) * 0.12;                // фокус раненых
@@ -113,11 +118,8 @@ export function chooseBotAction(game, pIdx, level = 'mid') {
     });
   }
 
-  // --- сбор добычи ---
+  // --- сбор добычи (только клад с островов; рыбалка теперь капает пассивно) ---
   let gain = 0;
-  for (const s of myShips.filter(s => SHIP_TYPES[s.type].fishing > 0)) {
-    if (game.map.fishZones.some(z => dist(s.x, s.y, z.x, z.y) <= z.radius)) gain += SHIP_TYPES[s.type].fishing;
-  }
   for (const isl of game.map.lootIslands.filter(i => !i.looted)) {
     if (myShips.some(s => dist(s.x, s.y, isl.x, isl.y) <= isl.radius + LOOT_REACH)) gain += isl.loot;
   }
@@ -187,10 +189,11 @@ export function chooseBotAction(game, pIdx, level = 'mid') {
       continue;
     }
 
-    // оборона: перехватываем гостей у своего порта — высший приоритет
-    if (underSiege) {
+    // оборона: перехватываем гостей у своего порта — выше осады/лута/охоты,
+    // боевые корабли идут домой бить захватчиков, а не «занимаются своим».
+    if (underSiege && st.dmg > 0) {
       const inv = nearest(ship, invaders, f => [f.x, f.y]);
-      if (inv) addMove(ship, inv.x, inv.y, 30);
+      if (inv) addMove(ship, inv.x, inv.y, 35);
     }
 
     // к ближайшему кладу — лут важнее бесконечной рыбалки

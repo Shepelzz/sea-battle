@@ -578,7 +578,7 @@ function render() {
     ctx.fillStyle = '#2b3a55';
     ctx.textAlign = 'center';
     ctx.fillText(p.nick, sx(b.x), sy(b.y + b.radius) + 16);
-    if (p.alive) hpBar(sx(b.x), sy(b.y + b.radius) + 22, 56, p.portHp / (state.portMax || 420), '#27ae60');
+    if (p.alive) hpBar(sx(b.x), sy(b.y + b.radius) + 22, 56, p.portHp / (state.portMax || 840), '#27ae60');
     else { ctx.font = `${20 * view.scale + 8}px serif`; ctx.fillText('💀', sx(b.x), sy(b.y) + 6); }
   });
 
@@ -893,7 +893,7 @@ function handleTap(pos, isTouch) {
     Sound.play('click');
     $('#shipActions').classList.remove('hidden');
     $('#shipActionsTitle').textContent = ST(clickedShip.type).icon + ' ' + ST(clickedShip.type).name;
-    // «Собрать» — если корабль дотягивается до клада или рыбачит в рыбном месте
+    // «Собрать» — если корабль дотягивается до клада (рыбалка теперь капает сама)
     $('#btnCollectHere').classList.toggle('hidden', !canShipCollect(clickedShip));
     // «Залп» — тяжёлый корабль и в радиусе 2+ вражеских кораблей
     $('#btnBroadside').classList.toggle('hidden', !canBroadside(clickedShip));
@@ -904,9 +904,7 @@ function handleTap(pos, isTouch) {
 }
 
 function canShipCollect(ship) {
-  const st = ST(ship.type);
-  if (st.fishing > 0 &&
-      state.map.fishZones.some(z => dist(ship.x, ship.y, z.x, z.y) <= z.radius)) return true;
+  // рыбалка теперь пассивная (капает в начале хода) — «Собрать» только для клада с островов
   return state.map.lootIslands.some(i => !i.looted &&
     dist(ship.x, ship.y, i.x, i.y) <= i.radius + (state.lootReach || 55));
 }
@@ -1075,7 +1073,7 @@ function renderShop() {
         <span title="Урон за выстрел">⚔️ ${st.dmg}</span>
         <span title="Дальность стрельбы">🎯 ${(st.fireRange / 40).toFixed(1)} кл.</span>
         <span title="Дальность хода">🧭 ${(st.move / 40).toFixed(1)} кл.</span>
-        ${st.fishing ? `<span title="Улов за сбор в рыбном месте">🐟 +${st.fishing}</span>` : ''}
+        ${st.fishing ? `<span title="Доход за каждый ход в рыбном месте">🐟 +${st.fishing}/ход</span>` : ''}
         ${st.portBonus ? `<span title="Урон по порту ×${st.portBonus}">🏰 ×${st.portBonus}</span>` : ''}
       </div>
       <div class="qty">
@@ -1269,12 +1267,12 @@ const Tutorial = (() => {
         target: myShip ? { world: { x: myShip.x, y: myShip.y, r: 26 } } : null },
       { text: 'Фрегат и линкор умеют <b>💥 Залп</b>: бьют по <b>всем вражеским боевым кораблям</b> в радиусе разом (на 20% слабее). Незаменимо против стаи. Рыбацкие баркасы залп не трогает.',
         target: heavyShip ? { world: { x: heavyShip.x, y: heavyShip.y, r: 26 } } : null },
-      { text: 'В <b>Верфи</b> покупаешь корабли за золото 💰: шустрые шхуны и бриги, мощные фрегаты, рыбацкие баркасы — и <b>линкор</b>, который крушит порты вдвойне 🏰.',
+      { text: 'В <b>Верфи</b> покупаешь корабли за золото 💰: шустрые шхуны и бриги, мощные фрегаты, рыбацкие баркасы — и <b>линкор</b>, который бьёт по портам сильнее всех 🏰.',
         target: { sel: '#btnShop' } },
       loot
-        ? { text: 'Подплыви вплотную к острову с 💰 и жми <b>«Собрать»</b>. А баркасом в 🐟-зоне ловят рыбу — это тоже золото.',
+        ? { text: 'Поставь <b>баркас</b> в 🐟-зону — и он будет сам приносить золото каждый ход, без траты действия. А чтобы забрать <b>клад</b> 💰, подплыви вплотную к острову и жми <b>«Собрать»</b>.',
             target: { world: { x: loot.x, y: loot.y, r: loot.radius } } }
-        : { text: 'Баркасом заплывай в 🐟-зону и жми <b>«Собрать»</b> — рыба приносит золото. Им же лутают острова с 💰.',
+        : { text: 'Поставь <b>баркас</b> в 🐟-зону — он сам приносит золото каждый ход, действие на это не тратится. Острова с кладом 💰 лутаются кнопкой <b>«Собрать»</b>.',
             target: fish ? { world: { x: fish.x, y: fish.y, r: fish.radius } } : null },
       { text: 'По морю бродят <b>пираты</b> 🏴‍☠️ — потопи и забери награду. А жирный <b>👑-босс</b> несёт большой куш! Но осторожно: пираты огрызаются в ответ.',
         target: pirate ? { world: { x: pirate.x, y: pirate.y, r: 30 } } : null },

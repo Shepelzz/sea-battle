@@ -226,6 +226,23 @@ function advanceTurn(game) {
   // «внезапная смерть», чтобы экономика истощалась и игра сходилась к финалу.
   const np = game.players[next];
   if (np?.alive && game.turn.number <= n * 80) np.gold += PORT_INCOME;
+
+  // пассивная рыбалка: каждый баркас игрока, стоящий в рыбном месте, сам приносит улов
+  // в начале его хода — действие на это не тратится.
+  if (np?.alive) {
+    let catch_ = 0;
+    for (const s of game.ships.filter(s => s.owner === next && SHIP_TYPES[s.type].fishing > 0)) {
+      if (game.map.fishZones.some(z => dist(s.x, s.y, z.x, z.y) <= z.radius)) {
+        catch_ += SHIP_TYPES[s.type].fishing;
+        pushEvent(game, { type: 'gold', x: s.x, y: s.y, amount: SHIP_TYPES[s.type].fishing });
+      }
+    }
+    if (catch_) {
+      np.gold += catch_;
+      np.stats.goldCollected += catch_;
+      pushLog(game, `🐟 Рыбаки ${np.nick} наловили рыбы: +${catch_} зол.`);
+    }
+  }
 }
 
 export function shipPlacementBlocked(game, x, y, ignoreShipId) {
@@ -377,16 +394,8 @@ export function applyAction(game, playerId, action) {
     case 'collect': {
       let gained = 0;
       const notes = [];
-      // Рыбалка: каждый баркас в рыбном месте приносит улов.
-      for (const s of game.ships.filter(s => s.owner === pIdx && SHIP_TYPES[s.type].fishing > 0)) {
-        const zone = game.map.fishZones.find(z => dist(s.x, s.y, z.x, z.y) <= z.radius);
-        if (zone) {
-          gained += SHIP_TYPES[s.type].fishing;
-          notes.push('🐟 улов');
-          pushEvent(game, { type: 'gold', x: s.x, y: s.y, amount: SHIP_TYPES[s.type].fishing });
-        }
-      }
-      // Лут с островов: любой корабль, дотянувшийся до острова.
+      // Рыбалка теперь пассивная (капает в advanceTurn). Тут — только клад с островов:
+      // любой корабль, дотянувшийся до нелутанного острова.
       for (const isl of game.map.lootIslands.filter(i => !i.looted)) {
         const reach = game.ships.some(s => s.owner === pIdx &&
           dist(s.x, s.y, isl.x, isl.y) <= isl.radius + LOOT_REACH);
@@ -397,7 +406,7 @@ export function applyAction(game, playerId, action) {
           pushEvent(game, { type: 'gold', x: isl.x, y: isl.y, amount: isl.loot });
         }
       }
-      if (!gained) return { ok: false, error: 'Нечего собирать: нет баркасов в рыбных местах и кораблей у нелутанных островов' };
+      if (!gained) return { ok: false, error: 'Нечего собирать: нет кораблей у нелутанных островов с кладом' };
       player.gold += gained;
       player.stats.goldCollected += gained;
       pushLog(game, `💰 ${player.nick} собирает добычу: +${gained} зол. (${notes.join(', ')})`);
@@ -445,7 +454,7 @@ export function applyAction(game, playerId, action) {
         const base = game.map.bases[targetIdx];
         if (dist(ship.x, ship.y, base.x, base.y) > st.fireRange + base.radius * 0.5)
           return { ok: false, error: 'Порт вне дальности стрельбы' };
-        const portDmg = st.dmg * (st.portBonus || 1); // линкор бьёт по порту вдвойне
+        const portDmg = Math.round(st.dmg * (st.portBonus || 1)); // линкор бьёт по порту сильнее (portBonus)
         victim.portHp -= portDmg;
         player.stats.shotsFired++;
         player.stats.damageDealt += portDmg;
