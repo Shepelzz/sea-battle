@@ -406,25 +406,28 @@ function resize() {
 }
 window.addEventListener('resize', resize);
 
+// «cover»: поле всегда заполняет экран целиком, за края заглянуть нельзя.
+// По короткой стороне — впритык, по длинной — скролл в пределах поля.
+function coverFit() {
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  return Math.max(w / state.map.w, h / state.map.h);
+}
+
 function clampCam() {
   cam.z = Math.min(5, Math.max(1, cam.z));
   if (!state?.map) return;
   const w = canvas.clientWidth, h = canvas.clientHeight;
-  const fit = Math.min(w / state.map.w, h / state.map.h) * 0.97;
-  const s = fit * cam.z;
-  const baseOx = (w - state.map.w * s) / 2;
-  const baseOy = (h - state.map.h * s) / 2;
-  // двигать можно как угодно, но минимум KEEP px карты всегда на экране —
-  // чтобы было за что «ухватиться» и вернуть её
-  const KEEP = 80;
-  cam.px = Math.min(w - KEEP - baseOx, Math.max(KEEP - state.map.w * s - baseOx, cam.px));
-  cam.py = Math.min(h - KEEP - baseOy, Math.max(KEEP - state.map.h * s - baseOy, cam.py));
+  const s = coverFit() * cam.z;
+  // поле всегда покрывает вьюпорт; панорама — в пределах перекрытия, без зазоров
+  const maxX = Math.max(0, (state.map.w * s - w) / 2);
+  const maxY = Math.max(0, (state.map.h * s - h) / 2);
+  cam.px = Math.min(maxX, Math.max(-maxX, cam.px));
+  cam.py = Math.min(maxY, Math.max(-maxY, cam.py));
 }
 
 function computeView() {
   const w = canvas.clientWidth, h = canvas.clientHeight;
-  const fit = Math.min(w / state.map.w, h / state.map.h) * 0.97;
-  view.scale = fit * cam.z;
+  view.scale = coverFit() * cam.z;
   view.ox = (w - state.map.w * view.scale) / 2 + cam.px;
   view.oy = (h - state.map.h * view.scale) / 2 + cam.py;
 }
