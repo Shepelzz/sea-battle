@@ -1,13 +1,36 @@
 // SQLite: игроки (по токену), сохранение игр, результаты и лидерборд.
 import Database from 'better-sqlite3';
 import path from 'node:path';
+import fs from 'node:fs';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// DB_PATH позволяет держать базу ВНЕ папки сайта, чтобы деплой её не затирал.
-const DB_PATH = process.env.DB_PATH
-  ? path.resolve(process.env.DB_PATH)
-  : path.join(__dirname, '..', 'sea-battle.db');
+
+// Где хранить базу. ГЛАВНОЕ — не внутри папки сайта, иначе деплой нового коммита
+// (чистая распаковка / git-деплой перетирает рабочую папку) сбрасывает все игры.
+// Приоритет: 1) DB_PATH из env; 2) папка ~/.sea-battle в домашней директории
+// (она ВНЕ каталога сайта и переживает деплой); 3) запасной вариант рядом с кодом.
+function resolveDbPath() {
+  if (process.env.DB_PATH) return path.resolve(process.env.DB_PATH);
+  // домашняя папка пользователя хостинга — вне каталога сайта, деплой её не трогает
+  const home = os.homedir();
+  if (home && home !== '/' ) {
+    const dir = path.join(home, '.sea-battle');
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      fs.accessSync(dir, fs.constants.W_OK);
+      return path.join(dir, 'sea-battle.db');
+    } catch { /* нет доступа к home — падаем в запасной вариант */ }
+  }
+  return path.join(__dirname, '..', 'sea-battle.db');
+}
+
+const DB_PATH = resolveDbPath();
+if (!process.env.DB_PATH && DB_PATH.startsWith(path.join(__dirname, '..'))) {
+  console.warn('⚠️  База лежит ВНУТРИ папки сайта — деплой может её сбросить. '
+    + 'Задай переменную окружения DB_PATH (путь вне каталога сайта).');
+}
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
 db.pragma('synchronous = NORMAL');
