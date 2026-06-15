@@ -393,8 +393,19 @@ let view = { scale: 1, ox: 0, oy: 0 };
 // камера: пользовательский зум (пинч/колесо) и панорама (драг)
 const cam = { z: 1, px: 0, py: 0 };
 
+// на мобиле снизу — свёрнутая панель; карта должна жить НАД ней, а не под.
+function desiredMapBottom() {
+  if (!window.matchMedia('(max-width: 900px)').matches) return '';
+  const panel = $('#panel');
+  // когда панель свёрнута — резервируем её высоту; раскрытая панель временно
+  // перекрывает карту (это осознанное действие игрока), оставляем прежнее
+  if (panel.classList.contains('collapsed')) return panel.offsetHeight + 'px';
+  return $('#mapWrap').style.bottom || '';
+}
+
 function resize() {
   const wrap = $('#mapWrap');
+  wrap.style.bottom = desiredMapBottom();
   const dpr = window.devicePixelRatio || 1;
   canvas.width = wrap.clientWidth * dpr;
   canvas.height = wrap.clientHeight * dpr;
@@ -953,8 +964,9 @@ $('#tutToggle').addEventListener('change', e => {
 $('#panelToggle').addEventListener('click', () => {
   const collapsed = $('#panel').classList.toggle('collapsed');
   $('#panelToggle').textContent = collapsed ? '☰' : '✕';
+  resize(); // карта занимает область над свёрнутой панелью
 });
-// на телефоне меню по умолчанию свёрнуто — карта на весь экран
+// на телефоне меню по умолчанию свёрнуто — карта на весь экран над панелью
 if (window.matchMedia('(max-width: 900px)').matches) {
   $('#panel').classList.add('collapsed');
 }
@@ -1043,6 +1055,9 @@ function renderSidebar() {
   // журнал (новые сверху за счёт column-reverse)
   $('#log').innerHTML = state.log.map(l =>
     `<div class="${l.type}">${escapeHtml(l.text)}</div>`).join('');
+
+  // высота свёрнутой панели могла измениться (баннер хода, кнопки) — подвинуть карту
+  if ($('#mapWrap').style.bottom !== desiredMapBottom()) resize();
 }
 
 function renderShop() {
@@ -1091,6 +1106,9 @@ function renderOverlays() {
     const cfg = state.config;
     $('#lobbyConfig').textContent =
       `${cfg.maxPlayers} игрока · ${cfg.turnTimer ? 'таймер ' + cfg.turnTimer + ' сек/ход' : 'без таймера'}`;
+    // показываем текущий ник (не перетираем, пока игрок печатает)
+    const myNick = state.players.find(p => p.id === myId)?.nick;
+    if (myNick && document.activeElement !== $('#lobbyNick')) $('#lobbyNick').value = myNick;
     $('#inviteUrl').textContent = location.href;
     $('#lobbySlots').innerHTML = Array.from({ length: cfg.maxPlayers }, (_, i) => {
       const p = state.players[i];
@@ -1137,6 +1155,17 @@ $('#copyBtn').addEventListener('click', async () => {
 $('#startBtn').addEventListener('click', () => {
   socket.emit('start', res => { if (!res.ok) $('#lobbyError').textContent = res.error; });
 });
+// смена своего ника прямо в лобби — перезаходим с тем же токеном, ник обновится у всех
+function saveLobbyNick() {
+  const n = $('#lobbyNick').value.trim();
+  if (!n) { $('#lobbyError').textContent = 'Ник не может быть пустым'; return; }
+  localStorage.setItem('sb_nick', n);
+  $('#lobbyError').textContent = '';
+  join(n);
+  $('#lobbyNick').blur();
+}
+$('#lobbyNickSave').addEventListener('click', saveLobbyNick);
+$('#lobbyNick').addEventListener('keydown', e => { if (e.key === 'Enter') saveLobbyNick(); });
 $('#finishClose').addEventListener('click', () => $('#finishOverlay').classList.add('hidden'));
 
 // таймер хода

@@ -76,7 +76,12 @@
     <div class="note taped">
       <h2>🏴‍☠️ Сбор флота</h2>
       <p class="muted" id="lobbyConfig"></p>
-      <div class="slots" id="lobbySlots"></div>
+      <label for="lobbyNick">Твой ник</label>
+      <div style="display:flex; gap:8px; align-items:center">
+        <input type="text" id="lobbyNick" maxlength="20" placeholder="Капитан..." style="flex:1">
+        <button class="small" id="lobbyNickSave">Сменить</button>
+      </div>
+      <div class="slots" id="lobbySlots" style="margin-top:14px"></div>
       <p>Зови друзей — кидай им ссылку:</p>
       <div class="invite-link">
         <span id="inviteUrl"></span>

@@ -104,6 +104,8 @@ button.primary { background: var(--ink); color: var(--paper); }
 button.danger { border-color: var(--red-pen); color: var(--red-pen); }
 button.small { font-size: 15px; padding: 4px 12px; }
 
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.table-scroll table { min-width: 460px; }
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 6px 10px; border-bottom: 1px dashed var(--grid-strong); }
 th { font-family: var(--font-title); font-size: 1.2rem; color: var(--ink-light); }
@@ -404,7 +406,9 @@ aside.panel {
 @media (max-width: 900px) {
   /* карта — весь экран, панель — шторка поверх неё снизу */
   .game-layout { display: block; }
-  #mapWrap { position: fixed; inset: 0; height: 100dvh; }
+  /* top:0; bottom задаётся из JS = высота свёрнутой панели (height не фиксируем,
+     иначе bottom игнорируется и карта уходит под панель) */
+  #mapWrap { position: fixed; top: 0; left: 0; right: 0; bottom: 0; }
   aside.panel {
     position: fixed; left: 0; right: 0; bottom: 0; width: 100%; min-width: 0;
     max-height: 72dvh; overflow-y: auto; z-index: 40;
