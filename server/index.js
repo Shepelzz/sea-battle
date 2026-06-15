@@ -374,10 +374,10 @@ async function bootstrap() {
         active++;
       }
     }
-    console.log(`   поднято игр из MySQL: ${games.size} (активных: ${active}) — переживут деплой`);
+    console.log(`   поднято игр из базы: ${games.size} (активных: ${active}) — переживут деплой`);
   } catch (e) {
-    console.error('❌ Не удалось подключиться к MySQL:', e.message);
-    console.error('   Проверь DATABASE_URL / DB_HOST / DB_USER / DB_PASSWORD / DB_NAME (и DB_SSL при необходимости).');
+    console.error('❌ Не удалось инициализировать базу данных:', e.message);
+    console.error('   Локально база (SQLite) создаётся сама. На проде проверь DATABASE_URL / DB_* (и DB_SSL при необходимости).');
     process.exit(1);
   }
   server.listen(PORT, () => {
