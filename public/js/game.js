@@ -370,7 +370,7 @@ function toast(msg) {
 
 function sendAction(action) {
   socket.emit('action', action, res => {
-    if (!res.ok) toast(res.error);
+    if (!res.ok) errToast(res.error);
     else {
       if (action.type === 'move') localStorage.setItem('sb_moved', '1'); // сходил — демо больше не нужно
       basket = {};
@@ -392,6 +392,14 @@ function deselect() {
   moveDemo = null;
   $('#shipActions').classList.add('hidden');
   if (state) render();
+}
+
+// нотиф об ошибке. На сенсоре снимаем выделение, чтобы панель экшенов (она сверху на
+// мобиле) ушла и красный нотиф показался на её месте, а не поверх неё.
+function errToast(msg) {
+  if (IS_COARSE && selectedShipId) deselect();
+  else if (state) render();
+  toast(msg);
 }
 
 function escapeHtml(s) {
@@ -913,17 +921,22 @@ canvas.addEventListener('pointerdown', e => {
   pointers.set(e.pointerId, evPos(e));
   if (pointers.size === 1) {
     const p = evPos(e);
-    // ТАЧ-ПРИЦЕЛ: в режиме «Плыть», если палец лёг на выбранный корабль — тянем луч с
-    // крестиком, а не панораму (точное указание точки на сенсоре). Мышь — как раньше.
-    if (e.pointerType === 'touch' && mode === 'move' && selectedShipId && state) {
-      const sel = state.ships.find(s => s.id === selectedShipId);
-      if (sel && dist(p.x, p.y, sx(sel.x), sy(sel.y)) <= AIM_GRAB_PX) {
-        aim = { sel };
-        moveDemo = null; // начал жест — демо больше не нужно
+    // ТАЧ-ПРИЦЕЛ: палец лёг на свой корабль → тянем луч с крестиком, а не панораму.
+    // В режиме «Плыть» по выбранному кораблю целимся сразу; иначе по любому своему кораблю
+    // «взводим» — тап просто выберет, а перетаскивание авто-активирует «Плыть». Мышь — как раньше.
+    if (e.pointerType === 'touch' && state && isMyTurn() && (mode === 'move' || mode === 'idle')) {
+      const sel = selectedShipId && state.ships.find(s => s.id === selectedShipId);
+      const onSel = sel && dist(p.x, p.y, sx(sel.x), sy(sel.y)) <= AIM_GRAB_PX;
+      if (mode === 'move' && onSel) {
+        aim = { sel, armed: true, startX: p.x, startY: p.y };
+        moveDemo = null;
         updateAim(p);
         render();
         return;
       }
+      const own = onSel ? sel
+        : state.ships.find(s => s.owner === myIdx() && dist(p.x, p.y, sx(s.x), sy(s.y)) <= AIM_GRAB_PX);
+      if (own) { aim = { sel: own, armed: false, startX: p.x, startY: p.y }; return; }
     }
     // палец «ездит» сильнее мыши — порог тапа больше
     drag = { x: p.x, y: p.y, moved: false, threshold: e.pointerType === 'mouse' ? 6 : 18 };
@@ -960,6 +973,10 @@ canvas.addEventListener('pointermove', e => {
   if (pointers.has(e.pointerId)) pointers.set(e.pointerId, p);
 
   if (aim && pointers.size === 1) { // тянем тач-прицел
+    if (!aim.armed) {
+      if (Math.hypot(p.x - aim.startX, p.y - aim.startY) <= 12) return; // ещё не потянул
+      aim.armed = true; selectedShipId = aim.sel.id; mode = 'move'; moveDemo = null; // авто-«Плыть»
+    }
     updateAim(p);
     render();
     return;
@@ -1001,7 +1018,8 @@ function endPointer(e) {
     aim = null; hoverPt = null;
     pointers.delete(e.pointerId);
     if (pointers.size === 0) { drag = null; pinchDist = 0; }
-    if (a.clamped) { toast('🚫 Слишком далеко — точка вне круга хода'); render(); return; }
+    if (!a.armed) { handleTap({ x: a.startX, y: a.startY }, true); return; } // не потянул → выбор корабля
+    if (a.clamped) { errToast('🚫 Слишком далеко — точка вне круга хода'); return; } // вне радиуса — без хода
     if (a.dest && dist(a.sel.x, a.sel.y, a.dest.x, a.dest.y) > 4) {
       sendAction({ type: 'move', shipId: a.sel.id, x: Math.round(a.dest.x), y: Math.round(a.dest.y) });
     } else {
@@ -1058,7 +1076,7 @@ function handleTap(pos, isTouch) {
       sendAction({ type: 'attack', shipId: selectedShipId, targetType: 'port', targetId: baseIdx });
       return;
     }
-    toast('Выбери цель: вражеский корабль или порт');
+    errToast('Выбери цель: вражеский корабль или порт');
     return;
   }
 
