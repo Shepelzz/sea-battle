@@ -1,10 +1,11 @@
 // Игровая логика: создание игры, лобби, валидация и применение ходов.
 import { generateMap, spawnPoints } from './mapgen.js';
 import {
-  SHIP_TYPES, START_FLEET, START_GOLD, PORT_HP,
-  SHIP_COLLISION_DIST, LOOT_REACH,
+  SHIP_TYPES, START_FLEET, START_GOLD, PORT_HP, PORT_RETURN_DMG, PORT_INCOME,
+  SHIP_COLLISION_DIST, LOOT_REACH, BROADSIDE_MULT,
   PIRATE, PIRATE_DESPAWN_CHANCE, PIRATE_SPAWN_CHANCE, PIRATE_MOVE_CHANCE,
-  PIRATE_REVENGE_SHOT, PIRATE_FLEE_CHANCE, PIRATE_CALM_CHANCE
+  PIRATE_REVENGE_SHOT, PIRATE_FLEE_CHANCE, PIRATE_CALM_CHANCE,
+  PIRATE_BOSS_CHANCE, PIRATE_BOSS_HP
 } from './ships.js';
 
 const COLORS = ['#c0392b', '#2980b9', '#27ae60', '#8e44ad'];
@@ -86,7 +87,7 @@ export function startGame(game, playerId) {
       });
     });
   });
-  for (let i = 0; i < game.players.length; i++) spawnPirate(game, true);
+  for (let i = 0; i < game.players.length; i++) spawnPirate(game, true, false);
   game.status = 'active';
   game.turn = { idx: 0, number: 1, deadline: turnDeadline(game), nudged: false };
   pushLog(game, `⚔️ Баттл начался! Первым ходит ${game.players[0].nick}`, 'battle');
@@ -107,19 +108,28 @@ function randomWaterSpot(game) {
   return null;
 }
 
-function spawnPirate(game, silent = false) {
+function spawnPirate(game, silent = false, allowBoss = true) {
   const spot = randomWaterSpot(game);
   if (!spot) return;
+  const boss = allowBoss && Math.random() < PIRATE_BOSS_CHANCE;
   game.ships.push({
     id: 'p' + (shipSeq++) + '_' + Math.random().toString(36).slice(2, 6),
     owner: -1, type: 'pirate',
     x: spot.x, y: spot.y,
-    hp: PIRATE.hp,
-    bounty: (8 + Math.floor(Math.random() * 19)) * 10, // 80..260 золота
+    hp: boss ? PIRATE_BOSS_HP : PIRATE.hp,
+    maxHp: boss ? PIRATE_BOSS_HP : PIRATE.hp,
+    boss,
+    bounty: boss
+      ? (40 + Math.floor(Math.random() * 41)) * 10  // 400..800 — большой куш
+      : (15 + Math.floor(Math.random() * 21)) * 10, // 150..350
     heading: Math.random() * Math.PI * 2, // пираты идут по курсу, а не мечутся
     angryAt: null
   });
-  if (!silent) pushLog(game, '🏴‍☠️ На горизонте появился пиратский корабль!');
+  if (!silent) {
+    pushLog(game, boss
+      ? '👑🏴‍☠️ В водах объявился ПИРАТСКИЙ БОСС с богатой добычей!'
+      : '🏴‍☠️ На горизонте появился пиратский корабль!', boss ? 'battle' : 'info');
+  }
 }
 
 // Шаг пирата вдоль курса; если по курсу занято — довернуть туда, где чисто.
@@ -155,7 +165,7 @@ function pirateRevenge(game, pir) {
 
   if (d <= PIRATE.fireRange && Math.random() < PIRATE_REVENGE_SHOT) {
     nearest.hp -= PIRATE.dmg;
-    pushEvent(game, { type: 'shot', fx: pir.x, fy: pir.y, tx: nearest.x, ty: nearest.y });
+    pushEvent(game, { type: 'shot', fx: pir.x, fy: pir.y, tx: nearest.x, ty: nearest.y, dmg: PIRATE.dmg });
     pushLog(game, `🏴‍☠️ Пираты дают сдачи: −${PIRATE.dmg} HP по ${SHIP_TYPES[nearest.type].name} игрока ${offender.nick}!`, 'battle');
     if (nearest.hp <= 0) sinkShip(game, nearest, null);
     return true;
@@ -211,6 +221,11 @@ function advanceTurn(game) {
   game.turn.number++;
   game.turn.deadline = turnDeadline(game);
   game.turn.nudged = false;
+  // порт приносит немного золота в начале хода — чтобы никто не застрял на нуле.
+  // в аномально затянувшейся партии (дольше нормальной людской) доход выключаем —
+  // «внезапная смерть», чтобы экономика истощалась и игра сходилась к финалу.
+  const np = game.players[next];
+  if (np?.alive && game.turn.number <= n * 80) np.gold += PORT_INCOME;
 }
 
 export function shipPlacementBlocked(game, x, y, ignoreShipId) {
@@ -416,7 +431,7 @@ export function applyAction(game, playerId, action) {
         target.hp -= st.dmg;
         player.stats.shotsFired++;
         player.stats.damageDealt += st.dmg;
-        pushEvent(game, { type: 'shot', fx: ship.x, fy: ship.y, tx: target.x, ty: target.y });
+        pushEvent(game, { type: 'shot', fx: ship.x, fy: ship.y, tx: target.x, ty: target.y, dmg: st.dmg });
         const targetName = target.owner === -1
           ? 'пиратскому кораблю'
           : `${SHIP_TYPES[target.type].name} игрока ${game.players[target.owner].nick}`;
@@ -430,18 +445,55 @@ export function applyAction(game, playerId, action) {
         const base = game.map.bases[targetIdx];
         if (dist(ship.x, ship.y, base.x, base.y) > st.fireRange + base.radius * 0.5)
           return { ok: false, error: 'Порт вне дальности стрельбы' };
-        victim.portHp -= st.dmg;
+        const portDmg = st.dmg * (st.portBonus || 1); // линкор бьёт по порту вдвойне
+        victim.portHp -= portDmg;
         player.stats.shotsFired++;
-        player.stats.damageDealt += st.dmg;
-        pushEvent(game, { type: 'shot', fx: ship.x, fy: ship.y, tx: base.x, ty: base.y });
-        pushLog(game, `🔥 ${player.nick} обстреливает порт игрока ${victim.nick} (−${st.dmg} HP, осталось ${Math.max(0, victim.portHp)})`, 'battle');
+        player.stats.damageDealt += portDmg;
+        pushEvent(game, { type: 'shot', fx: ship.x, fy: ship.y, tx: base.x, ty: base.y, dmg: portDmg });
+        pushLog(game, `🔥 ${player.nick} обстреливает порт игрока ${victim.nick} (−${portDmg} HP, осталось ${Math.max(0, victim.portHp)})`, 'battle');
         if (victim.portHp <= 0) {
           victim.portHp = 0;
           eliminatePlayer(game, targetIdx, player);
+        } else {
+          // порт огрызается: ответный залп по атакующему кораблю
+          ship.hp -= PORT_RETURN_DMG;
+          pushEvent(game, { type: 'shot', fx: base.x, fy: base.y, tx: ship.x, ty: ship.y, dmg: PORT_RETURN_DMG });
+          pushLog(game, `🏰 Порт игрока ${victim.nick} огрызается по ${SHIP_TYPES[ship.type].name} (−${PORT_RETURN_DMG} HP)`, 'battle');
+          if (ship.hp <= 0) sinkShip(game, ship, victim); // защитник забирает обломки
         }
       } else {
         return { ok: false, error: 'Неизвестная цель' };
       }
+      break;
+    }
+
+    case 'broadside': {
+      const ship = game.ships.find(s => s.id === action.shipId);
+      if (!ship || ship.owner !== pIdx) return { ok: false, error: 'Это не ваш корабль' };
+      const st = SHIP_TYPES[ship.type];
+      if (!st.broadside) return { ok: false, error: 'Этот корабль не умеет залп' };
+      // только вражеские БОЕВЫЕ корабли в радиусе (рыбацкие баркасы залп не трогает; пираты — да)
+      const targets = game.ships.filter(t =>
+        t.owner !== pIdx &&
+        !(t.owner >= 0 && !game.players[t.owner]?.alive) &&
+        (t.owner === -1 || !SHIP_TYPES[t.type].fishing) &&
+        dist(ship.x, ship.y, t.x, t.y) <= st.fireRange + 0.5);
+      if (targets.length < 2) return { ok: false, error: 'Залп — когда в радиусе 2+ вражеских БОЕВЫХ корабля' };
+      const dmg = Math.round(st.dmg * BROADSIDE_MULT);
+      const hits = [];
+      const toSink = [];
+      for (const t of targets) {
+        t.hp -= dmg;
+        player.stats.damageDealt += dmg;
+        hits.push({ tx: t.x, ty: t.y, dmg });
+        if (t.hp <= 0) toSink.push(t);
+        else if (t.owner === -1) t.angryAt = pIdx;
+      }
+      player.stats.shotsFired++;
+      pushEvent(game, { type: 'broadside', fx: ship.x, fy: ship.y, hits });
+      for (const t of toSink) sinkShip(game, t, player); // взрывы — после полёта залпа
+      pushLog(game, `💥 ${player.nick}: ${st.name} даёт бортовой залп по ${targets.length} целям` +
+        (toSink.length ? ` — потоплено ${toSink.length}!` : '') + ` (−${dmg} каждой)`, 'battle');
       break;
     }
 
@@ -499,6 +551,7 @@ export function publicState(game) {
     events: game.events || [],
     eventSeq: game.eventSeq || 0,
     lootReach: LOOT_REACH,
+    portMax: PORT_HP,
     shipTypes: { ...SHIP_TYPES, pirate: PIRATE }
   };
 }

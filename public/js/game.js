@@ -164,9 +164,22 @@ function playEvents(events) {
     } else if (ev.type === 'shot') {
       Sound.playAt('shot', delay);
       addEffect({ kind: 'shell', fx: ev.fx, fy: ev.fy, tx: ev.tx, ty: ev.ty, dur: FX.shell.dur, delay });
-      Sound.playAt('hit', delay + FX.shell.dur - 20);
-      addEffect({ kind: 'boom', x: ev.tx, y: ev.ty, big: false, dur: FX.boom.durSmall, delay: delay + FX.shell.dur - 20 });
+      const impact = delay + FX.shell.dur - 20;
+      Sound.playAt('hit', impact);
+      addEffect({ kind: 'boom', x: ev.tx, y: ev.ty, big: false, dur: FX.boom.durSmall, delay: impact });
+      if (ev.dmg) addEffect({ kind: 'dmg', x: ev.tx, y: ev.ty, amount: ev.dmg, dur: 1300, delay: impact });
       delay += FX.shell.dur + 140;
+    } else if (ev.type === 'broadside') {
+      // залп: один звук, все ядра летят разом, взрывы и красные цифры вместе
+      Sound.playAt('shot', delay);
+      const impact = delay + FX.shell.dur - 20;
+      Sound.playAt('hit', impact);
+      for (const h of ev.hits) {
+        addEffect({ kind: 'shell', fx: ev.fx, fy: ev.fy, tx: h.tx, ty: h.ty, dur: FX.shell.dur, delay });
+        addEffect({ kind: 'boom', x: h.tx, y: h.ty, big: false, dur: FX.boom.durSmall, delay: impact });
+        addEffect({ kind: 'dmg', x: h.tx, y: h.ty, amount: h.dmg, dur: 1300, delay: impact });
+      }
+      delay += FX.shell.dur + 220;
     } else if (ev.type === 'explosion') {
       // потопленный корабль ещё виден, пока к нему летит ядро
       if (ev.ship && delay > 0) {
@@ -174,6 +187,18 @@ function playEvents(events) {
       }
       Sound.playAt('wreck', delay);
       addEffect({ kind: 'boom', x: ev.x, y: ev.y, big: !!ev.big, dur: FX.boom.durBig, delay });
+      // обломки досок + дым на месте затонувшего корабля (сразу после исчезновения)
+      addEffect({
+        kind: 'wreckage', x: ev.x, y: ev.y, dur: 1700, delay,
+        planks: Array.from({ length: ev.big ? 8 : 6 }, () => ({
+          ang: Math.random() * Math.PI * 2, dist: 8 + Math.random() * 24,
+          rot: Math.random() * Math.PI, len: 7 + Math.random() * 8
+        })),
+        smoke: Array.from({ length: ev.big ? 6 : 4 }, () => ({
+          dx: (Math.random() - 0.5) * 22, t0: Math.random() * 0.2,
+          r: 7 + Math.random() * 9, rise: 28 + Math.random() * 34
+        }))
+      });
       delay += 350;
     } else if (ev.type === 'gold') {
       Sound.playAt('coin', delay);
@@ -241,6 +266,35 @@ function drawEffects(under = false) {
         ctx.stroke();
       }
       ctx.globalAlpha = 1;
+    } else if (e.kind === 'wreckage') {
+      const k = view.scale;
+      const drift = 1 - Math.pow(1 - p, 2); // обломки разлетаются и оседают
+      // дым поднимается и тает
+      for (const s of e.smoke) {
+        const sp = Math.max(0, (p - s.t0) / (1 - s.t0));
+        if (sp <= 0) continue;
+        ctx.globalAlpha = (1 - sp) * 0.5;
+        ctx.beginPath();
+        ctx.arc(sx(e.x + s.dx), sy(e.y) - s.rise * sp * k, s.r * (0.6 + sp) * k, 0, Math.PI * 2);
+        ctx.fillStyle = '#6b6f76';
+        ctx.fill();
+      }
+      // доски-обломки на воде
+      ctx.globalAlpha = p > 0.6 ? (1 - p) / 0.4 : 1;
+      ctx.strokeStyle = '#6b4a25';
+      ctx.lineWidth = Math.max(2, 3.5 * k);
+      ctx.lineCap = 'round';
+      for (const pl of e.planks) {
+        const cx = sx(e.x + Math.cos(pl.ang) * pl.dist * drift);
+        const cy = sy(e.y + Math.sin(pl.ang) * pl.dist * drift);
+        const half = pl.len * k;
+        ctx.beginPath();
+        ctx.moveTo(cx - Math.cos(pl.rot) * half, cy - Math.sin(pl.rot) * half);
+        ctx.lineTo(cx + Math.cos(pl.rot) * half, cy + Math.sin(pl.rot) * half);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      ctx.lineCap = 'butt';
     } else if (e.kind === 'gold') {
       // «+N» всплывает вверх, слегка растёт и тает
       const gx = sx(e.x);
@@ -254,6 +308,20 @@ function drawEffects(under = false) {
       ctx.fillStyle = '#a87900';
       ctx.strokeText(`+${e.amount} 💰`, gx, gy);
       ctx.fillText(`+${e.amount} 💰`, gx, gy);
+      ctx.globalAlpha = 1;
+    } else if (e.kind === 'dmg') {
+      // «−N» всплывает над подбитой целью, красным и чуть мельче золота
+      const dx = sx(e.x);
+      const dy = sy(e.y) - 30 * view.scale - 42 * p;
+      const scale = 1 + 0.35 * p;
+      ctx.globalAlpha = p < 0.12 ? p / 0.12 : Math.max(0, 1 - Math.max(0, (p - 0.45) / 0.55));
+      ctx.font = `bold ${Math.max(12, 14 * view.scale) * scale}px Neucha, cursive`;
+      ctx.textAlign = 'center';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = '#fdfbf3';
+      ctx.fillStyle = '#c0392b';
+      ctx.strokeText(`−${e.amount}`, dx, dy);
+      ctx.fillText(`−${e.amount}`, dx, dy);
       ctx.globalAlpha = 1;
     }
   }
@@ -479,7 +547,7 @@ function render() {
     ctx.fillStyle = '#2b3a55';
     ctx.textAlign = 'center';
     ctx.fillText(p.nick, sx(b.x), sy(b.y + b.radius) + 16);
-    if (p.alive) hpBar(sx(b.x), sy(b.y + b.radius) + 22, 56, p.portHp / 300, '#27ae60');
+    if (p.alive) hpBar(sx(b.x), sy(b.y + b.radius) + 22, 56, p.portHp / (state.portMax || 420), '#27ae60');
     else { ctx.font = `${20 * view.scale + 8}px serif`; ctx.fillText('💀', sx(b.x), sy(b.y) + 6); }
   });
 
@@ -572,9 +640,9 @@ function drawShip(s, selected) {
   const pos = animPos.get(s.id) || s; // во время анимации — промежуточная позиция
   const px = sx(pos.x), py = sy(pos.y);
   const k = view.scale;
-  const L = (SHIP_LEN[s.type] || 46) * k;
+  const L = (SHIP_LEN[s.type] || 46) * k * (s.boss ? 1.5 : 1); // босс крупнее
   const W = L * 0.36;
-  const hull = isPirate ? '#33363c' : p.color;
+  const hull = isPirate ? (s.boss ? '#1c1c22' : '#33363c') : p.color;
 
   if (selected) {
     ctx.beginPath();
@@ -671,13 +739,13 @@ function drawShip(s, selected) {
   if (isPirate) {
     ctx.font = `${Math.max(9, 16 * k)}px serif`;
     ctx.textAlign = 'center';
-    ctx.fillText('🏴‍☠️', px, py - L * 0.5);
+    ctx.fillText(s.boss ? '👑🏴‍☠️' : '🏴‍☠️', px, py - L * 0.5);
     ctx.font = `bold ${Math.max(9, 14 * k)}px Neucha, cursive`;
-    ctx.fillStyle = '#2b3a55';
+    ctx.fillStyle = s.boss ? '#a87900' : '#2b3a55';
     ctx.fillText(`💰${s.bounty}`, px, py + L * 0.62 + 16 * k);
   }
 
-  hpBar(px, py + L * 0.42 + 4, Math.max(16, L * 0.9), s.hp / st.hp, '#27ae60');
+  hpBar(px, py + L * 0.42 + 4, Math.max(16, L * 0.9), s.hp / (s.maxHp || st.hp), '#27ae60');
 }
 
 // ============ ВЗАИМОДЕЙСТВИЕ С КАРТОЙ ============
@@ -796,6 +864,8 @@ function handleTap(pos, isTouch) {
     $('#shipActionsTitle').textContent = ST(clickedShip.type).icon + ' ' + ST(clickedShip.type).name;
     // «Собрать» — если корабль дотягивается до клада или рыбачит в рыбном месте
     $('#btnCollectHere').classList.toggle('hidden', !canShipCollect(clickedShip));
+    // «Залп» — тяжёлый корабль и в радиусе 2+ вражеских кораблей
+    $('#btnBroadside').classList.toggle('hidden', !canBroadside(clickedShip));
     render();
   } else {
     deselect();
@@ -810,8 +880,20 @@ function canShipCollect(ship) {
     dist(ship.x, ship.y, i.x, i.y) <= i.radius + (state.lootReach || 55));
 }
 
+function canBroadside(ship) {
+  const st = ST(ship.type);
+  if (!st.broadside) return false;
+  const me = myIdx();
+  const inRange = state.ships.filter(t =>
+    t.owner !== me && !(t.owner >= 0 && !state.players[t.owner]?.alive) &&
+    (t.owner === -1 || !ST(t.type).fishing) &&
+    dist(ship.x, ship.y, t.x, t.y) <= st.fireRange);
+  return inRange.length >= 2;
+}
+
 $('#btnMove').addEventListener('click', () => { mode = 'move'; Sound.play('click'); render(); });
 $('#btnFire').addEventListener('click', () => { mode = 'attack'; Sound.play('click'); render(); });
+$('#btnBroadside').addEventListener('click', () => { if (selectedShipId) sendAction({ type: 'broadside', shipId: selectedShipId }); });
 $('#btnCancel').addEventListener('click', deselect);
 
 // звук и сворачивание панели
@@ -926,6 +1008,7 @@ function renderShop() {
         <span title="Дальность стрельбы">🎯 ${(st.fireRange / 40).toFixed(1)} кл.</span>
         <span title="Дальность хода">🧭 ${(st.move / 40).toFixed(1)} кл.</span>
         ${st.fishing ? `<span title="Улов за сбор в рыбном месте">🐟 +${st.fishing}</span>` : ''}
+        ${st.portBonus ? `<span title="Урон по порту ×${st.portBonus}">🏰 ×${st.portBonus}</span>` : ''}
       </div>
       <div class="qty">
         <button class="small" data-shop="${t}" data-d="-1" ${!basket[t] ? 'disabled' : ''}>−</button>
@@ -1088,25 +1171,31 @@ const Tutorial = (() => {
     const me = state.players[state.players.findIndex(p => p.id === myId)];
     const myBase = state.map.bases[myIdx()] || state.map.bases[0];
     const myShip = state.ships.find(s => s.owner === myIdx());
+    const heavyShip = state.ships.find(s => s.owner === myIdx() && ST(s.type).broadside) || myShip;
     const enemyBase = state.map.bases.find((b, i) => i !== myIdx());
     const loot = state.map.lootIslands.find(i => !i.looted);
     const fish = state.map.fishZones[0];
+    const pirate = state.ships.find(s => s.owner === -1);
 
     steps = [
-      { text: '⚓ <b>Привет, капитан!</b> Шесть коротких подсказок — и в бой. Это «морской бой на листке в клетку».' },
-      { text: 'Это твой <b>порт и флот</b>. Если враг разобьёт твой порт — ты выбываешь. Береги его!',
+      { text: '⚓ <b>Привет, капитан!</b> Несколько коротких подсказок — и в бой. Это «морской бой на листке в клетку».' },
+      { text: 'Это твой <b>порт и флот</b>. Порт приносит немного золота каждый ход и <b>огрызается</b> 🏰 по тому, кто его атакует. Разобьют порт — ты выбываешь, береги его!',
         target: { world: { x: myBase.x, y: myBase.y, r: myBase.radius } } },
       { text: 'Ходите <b>по очереди</b>. За ход — только <b>одно</b> действие: поплыть, выстрелить, собрать добычу или сходить в верфь.',
         target: { sel: '#turnBanner' } },
       { text: 'Нажми на свой корабль → выбери <b>«Плыть»</b> (в пределах круга дальности) или <b>«Стрелять»</b> по врагу в радиусе огня.',
         target: myShip ? { world: { x: myShip.x, y: myShip.y, r: 26 } } : null },
-      { text: 'В <b>Верфи</b> покупаешь новые корабли за золото 💰. Шхуны, бриги, фрегаты, грозные линкоры и рыбацкие баркасы.',
+      { text: 'Фрегат и линкор умеют <b>💥 Залп</b>: бьют по <b>всем вражеским боевым кораблям</b> в радиусе разом (на 20% слабее). Незаменимо против стаи. Рыбацкие баркасы залп не трогает.',
+        target: heavyShip ? { world: { x: heavyShip.x, y: heavyShip.y, r: 26 } } : null },
+      { text: 'В <b>Верфи</b> покупаешь корабли за золото 💰: шустрые шхуны и бриги, мощные фрегаты, рыбацкие баркасы — и <b>линкор</b>, который крушит порты вдвойне 🏰.',
         target: { sel: '#btnShop' } },
       loot
         ? { text: 'Подплыви вплотную к острову с 💰 и жми <b>«Собрать»</b>. А баркасом в 🐟-зоне ловят рыбу — это тоже золото.',
             target: { world: { x: loot.x, y: loot.y, r: loot.radius } } }
         : { text: 'Баркасом заплывай в 🐟-зону и жми <b>«Собрать»</b> — рыба приносит золото. Им же лутают острова с 💰.',
             target: fish ? { world: { x: fish.x, y: fish.y, r: fish.radius } } : null },
+      { text: 'По морю бродят <b>пираты</b> 🏴‍☠️ — потопи и забери награду. А жирный <b>👑-босс</b> несёт большой куш! Но осторожно: пираты огрызаются в ответ.',
+        target: pirate ? { world: { x: pirate.x, y: pirate.y, r: 30 } } : null },
       { text: 'Цель — <b>разбить порт соперника</b>. Подведи флот и расстреляй его базу. Удачи, капитан! 🏴‍☠️',
         target: enemyBase ? { world: { x: enemyBase.x, y: enemyBase.y, r: enemyBase.radius } } : null }
     ];
