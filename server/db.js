@@ -4,8 +4,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const db = new Database(path.join(__dirname, '..', 'sea-battle.db'));
+// DB_PATH позволяет держать базу ВНЕ папки сайта, чтобы деплой её не затирал.
+const DB_PATH = process.env.DB_PATH
+  ? path.resolve(process.env.DB_PATH)
+  : path.join(__dirname, '..', 'sea-battle.db');
+const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
+db.pragma('synchronous = NORMAL');
+console.log('🗄  База данных: ' + DB_PATH);
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS players (
@@ -93,6 +99,12 @@ export function getSessionPid(token) {
 
 export function saveGame(game) {
   saveGameStmt.run(game.id, game.status, JSON.stringify(game), game.createdAt, Date.now());
+  // сливаем WAL в основной .db, чтобы данные пережили даже потерю файлов-спутников при деплое
+  try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch { /* не критично */ }
+}
+
+export function countGames() {
+  return db.prepare('SELECT COUNT(*) AS n FROM games').get().n;
 }
 
 export function loadGame(id) {

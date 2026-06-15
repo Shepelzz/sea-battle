@@ -279,6 +279,37 @@ aside.panel {
 
 .medal { font-size: 1.3em; }
 
+/* обучение — подсказки поверх игры */
+#coach { position: fixed; inset: 0; z-index: 60; pointer-events: none; }
+#coach.hidden { display: none; }
+/* прожектор на цели: огромная тень-дыра подсвечивает элемент, остальное затемнено */
+#coachRing {
+  position: absolute;
+  border-radius: 14px;
+  border: 2.5px dashed var(--red-pen);
+  box-shadow: 0 0 0 9999px rgba(43, 58, 85, 0.55);
+  transition: all .35s cubic-bezier(.4,1.3,.5,1);
+  pointer-events: none;
+}
+#coachRing.center { /* шаг без конкретной цели — просто затемнить экран */
+  inset: 50% 50% 50% 50%;
+  border-color: transparent;
+}
+#coachCard {
+  position: absolute;
+  max-width: 320px;
+  background: var(--paper);
+  border: 1.8px solid var(--ink);
+  border-radius: 12px 5px 12px 6px / 6px 12px 5px 12px;
+  box-shadow: 3px 4px 0 rgba(43,58,85,.25);
+  padding: 14px 16px;
+  pointer-events: auto;
+  transition: top .35s ease, left .35s ease;
+}
+#coachCard p { margin: 0 0 10px; font-size: 17px; line-height: 1.4; }
+.coach-foot { display: flex; align-items: center; gap: 8px; }
+#coachStep { font-size: 14px; }
+
 /* меню режимов на главной */
 .mode-btns {
   display: flex;

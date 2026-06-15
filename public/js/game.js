@@ -98,6 +98,8 @@ socket.on('state', s => {
   }
   render();
   Sound.onState(prev, s, myIdx());
+  // первый раз в активной игре и ты участник — показываем обучение
+  if (s.status === 'active' && s.map && !spectator && myIdx() >= 0) Tutorial.start();
 });
 
 // ============ АНИМАЦИИ ============
@@ -1010,5 +1012,114 @@ setInterval(() => {
   const left = Math.max(0, Math.ceil((state.turn.deadline - Date.now()) / 1000));
   $('#timerRow').textContent = `⏱ ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} до конца хода`;
 }, 400);
+
+// ============ ОБУЧЕНИЕ (подсказки на первой игре) ============
+const Tutorial = (() => {
+  let steps = [], idx = 0, active = false, repositionTimer = null;
+  const canvasRect = () => canvas.getBoundingClientRect();
+  // прямоугольник цели в координатах экрана: el — селектор DOM, либо canvas-точка {x,y,r}
+  function targetRect(t) {
+    if (!t) return null;
+    if (t.sel) {
+      const el = $(t.sel);
+      if (!el || el.offsetParent === null) return null;
+      const r = el.getBoundingClientRect();
+      return { x: r.left - 6, y: r.top - 6, w: r.width + 12, h: r.height + 12 };
+    }
+    if (t.world && state?.map) {
+      const cr = canvasRect();
+      const px = cr.left + sx(t.world.x), py = cr.top + sy(t.world.y);
+      const rad = (t.world.r || 40) * view.scale + 16;
+      // вне видимой области — не подсвечиваем
+      if (px < cr.left - 40 || px > cr.right + 40 || py < cr.top - 40 || py > cr.bottom + 40) return null;
+      return { x: px - rad, y: py - rad, w: rad * 2, h: rad * 2 };
+    }
+    return null;
+  }
+
+  function place() {
+    if (!active) return;
+    const step = steps[idx];
+    const ring = $('#coachRing'), card = $('#coachCard');
+    const rect = targetRect(step.target);
+    if (rect) {
+      ring.classList.remove('center');
+      ring.style.left = rect.x + 'px';
+      ring.style.top = rect.y + 'px';
+      ring.style.width = rect.w + 'px';
+      ring.style.height = rect.h + 'px';
+    } else {
+      ring.classList.add('center'); // нет видимой цели — просто затемняем
+    }
+    // карточку — рядом с целью (снизу/сверху), иначе по центру
+    const cw = Math.min(320, window.innerWidth - 24), ch = card.offsetHeight || 120;
+    let left, top;
+    if (rect) {
+      left = Math.min(Math.max(12, rect.x + rect.w / 2 - cw / 2), window.innerWidth - cw - 12);
+      top = rect.y + rect.h + 14;
+      if (top + ch > window.innerHeight - 12) top = Math.max(12, rect.y - ch - 14);
+    } else {
+      left = window.innerWidth / 2 - cw / 2;
+      top = window.innerHeight / 2 - ch / 2;
+    }
+    card.style.left = left + 'px';
+    card.style.top = top + 'px';
+    card.style.maxWidth = cw + 'px';
+    $('#coachText').innerHTML = step.text;
+    $('#coachStep').textContent = `${idx + 1} / ${steps.length}`;
+    $('#coachNext').textContent = idx === steps.length - 1 ? '⚓ В бой!' : 'Далее →';
+  }
+
+  function show() { place(); }
+  function next() {
+    if (idx >= steps.length - 1) return finish();
+    idx++;
+    show();
+  }
+  function finish() {
+    active = false;
+    clearInterval(repositionTimer);
+    $('#coach').classList.add('hidden');
+    localStorage.setItem('sb_tut_done', '1');
+  }
+
+  function start() {
+    if (active || localStorage.getItem('sb_tut_done')) return;
+    const me = state.players[state.players.findIndex(p => p.id === myId)];
+    const myBase = state.map.bases[myIdx()] || state.map.bases[0];
+    const myShip = state.ships.find(s => s.owner === myIdx());
+    const enemyBase = state.map.bases.find((b, i) => i !== myIdx());
+    const loot = state.map.lootIslands.find(i => !i.looted);
+    const fish = state.map.fishZones[0];
+
+    steps = [
+      { text: '⚓ <b>Привет, капитан!</b> Шесть коротких подсказок — и в бой. Это «морской бой на листке в клетку».' },
+      { text: 'Это твой <b>порт и флот</b>. Если враг разобьёт твой порт — ты выбываешь. Береги его!',
+        target: { world: { x: myBase.x, y: myBase.y, r: myBase.radius } } },
+      { text: 'Ходите <b>по очереди</b>. За ход — только <b>одно</b> действие: поплыть, выстрелить, собрать добычу или сходить в верфь.',
+        target: { sel: '#turnBanner' } },
+      { text: 'Нажми на свой корабль → выбери <b>«Плыть»</b> (в пределах круга дальности) или <b>«Стрелять»</b> по врагу в радиусе огня.',
+        target: myShip ? { world: { x: myShip.x, y: myShip.y, r: 26 } } : null },
+      { text: 'В <b>Верфи</b> покупаешь новые корабли за золото 💰. Шхуны, бриги, фрегаты, грозные линкоры и рыбацкие баркасы.',
+        target: { sel: '#btnShop' } },
+      loot
+        ? { text: 'Подплыви вплотную к острову с 💰 и жми <b>«Собрать»</b>. А баркасом в 🐟-зоне ловят рыбу — это тоже золото.',
+            target: { world: { x: loot.x, y: loot.y, r: loot.radius } } }
+        : { text: 'Баркасом заплывай в 🐟-зону и жми <b>«Собрать»</b> — рыба приносит золото. Им же лутают острова с 💰.',
+            target: fish ? { world: { x: fish.x, y: fish.y, r: fish.radius } } : null },
+      { text: 'Цель — <b>разбить порт соперника</b>. Подведи флот и расстреляй его базу. Удачи, капитан! 🏴‍☠️',
+        target: enemyBase ? { world: { x: enemyBase.x, y: enemyBase.y, r: enemyBase.radius } } : null }
+    ];
+    idx = 0;
+    active = true;
+    $('#coach').classList.remove('hidden');
+    show();
+    repositionTimer = setInterval(place, 150); // следим за панорамой/зумом/сворачиванием
+  }
+
+  $('#coachNext').addEventListener('click', next);
+  $('#coachSkip').addEventListener('click', finish);
+  return { start, get active() { return active; } };
+})();
 
 resize();

@@ -1,6 +1,7 @@
 // HTTP + WebSocket сервер. Игра живёт по ссылке /game/<id>.
 //
 // Необязательные переменные окружения:
+//   DB_PATH — путь к файлу базы (держи ВНЕ папки сайта, чтобы деплой не затирал игры)
 //   GOOGLE_CLIENT_ID — включает «Войти через Google»
 //   SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM — включают письма «поторопить»
 //   BASE_URL — адрес сайта для ссылок в письмах (например https://game.example.ua)
@@ -304,4 +305,7 @@ function armTurnTimer(game) {
   }, ms));
 }
 
-server.listen(PORT, () => console.log(`⚓ Sea Battle: http://localhost:${PORT}`));
+server.listen(PORT, () => {
+  console.log(`⚓ Sea Battle: http://localhost:${PORT}`);
+  console.log(`   игр в базе: ${db.countGames()} (переживут перезапуск/деплой)`);
+});
