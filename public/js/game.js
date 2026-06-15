@@ -922,8 +922,34 @@ $('#muteBtn').textContent = Sound.muted ? '🔇' : '🔊';
 $('#muteBtn').addEventListener('click', () => {
   $('#muteBtn').textContent = Sound.toggleMute() ? '🔇' : '🔊';
 });
-// TODO: инфобаза (правила/флот/механики) в модалке
-$('#infoBtn').addEventListener('click', () => toast('📖 Инфобаза скоро появится'));
+// инфобаза (вики + тумблер обучения)
+function openInfo() {
+  // таблица флота из актуальных характеристик
+  if (state?.shipTypes) {
+    $('#infoFleet').innerHTML = Object.entries(state.shipTypes)
+      .filter(([, st]) => !st.npc)
+      .map(([, st]) => {
+        const extra = [
+          st.fishing ? `🐟 +${st.fishing}` : '',
+          st.portBonus ? `🏰 ×${st.portBonus}` : '',
+          st.broadside ? '💥 залп' : ''
+        ].filter(Boolean).join(' · ');
+        return `<div class="info-fleet-row">
+          <span class="nm">${st.icon} ${st.name}</span>
+          <span class="st">${st.price}з · ❤️${st.hp} · ⚔️${st.dmg} · 🎯${(st.fireRange / 40).toFixed(1)} · 🧭${(st.move / 40).toFixed(1)}${extra ? ' · ' + extra : ''}</span>
+        </div>`;
+      }).join('');
+  }
+  $('#tutToggle').checked = localStorage.getItem('sb_tut_done') !== '1';
+  $('#infoOverlay').classList.remove('hidden');
+}
+$('#infoBtn').addEventListener('click', openInfo);
+$('#infoClose').addEventListener('click', () => $('#infoOverlay').classList.add('hidden'));
+$('#tutToggle').addEventListener('change', e => {
+  // вкл — обучение покажется в начале следующей игры; выкл — больше не показываем
+  if (e.target.checked) localStorage.removeItem('sb_tut_done');
+  else localStorage.setItem('sb_tut_done', '1');
+});
 $('#panelToggle').addEventListener('click', () => {
   const collapsed = $('#panel').classList.toggle('collapsed');
   $('#panelToggle').textContent = collapsed ? '☰' : '✕';

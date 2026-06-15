@@ -310,6 +310,43 @@ aside.panel {
 .coach-foot { display: flex; align-items: center; gap: 8px; }
 #coachStep { font-size: 14px; }
 
+/* инфобаза (вики) */
+.info-modal {
+  width: 760px; max-width: 94vw; max-height: 90vh;
+  display: flex; flex-direction: column;
+}
+.info-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.info-toggle {
+  display: flex; align-items: center; gap: 10px;
+  border: 1.6px dashed var(--pencil); border-radius: 8px;
+  padding: 10px 12px; margin-bottom: 12px; cursor: pointer; font-size: 16px;
+}
+.info-toggle input { width: 20px; height: 20px; accent-color: #2b3a55; flex: none; }
+.info-body {
+  overflow-y: auto; flex: 1;
+  display: flex; flex-direction: column; gap: 12px;
+  padding-right: 4px;
+}
+.info-card {
+  border: 1.4px solid var(--ink);
+  border-radius: 10px 5px 12px 6px / 6px 12px 5px 10px;
+  background: var(--paper); padding: 10px 14px;
+}
+.info-card h3 { font-family: var(--font-title); font-size: 1.4rem; margin: 0 0 6px; }
+.info-card p { margin: 0 0 6px; font-size: 15.5px; line-height: 1.45; }
+.info-card ul { margin: 0; padding-left: 20px; font-size: 15.5px; line-height: 1.5; }
+.info-fleet-row {
+  display: flex; align-items: baseline; gap: 6px;
+  padding: 4px 0; border-bottom: 1px dashed var(--grid-strong); font-size: 14.5px;
+}
+.info-fleet-row .nm { font-weight: bold; min-width: 92px; }
+.info-fleet-row .st { color: var(--ink-light); flex: 1; }
+@media (max-width: 720px) {
+  .info-modal { width: 100%; max-width: 100vw; max-height: 100vh; height: 100dvh;
+    border-radius: 0; margin: 0; }
+  .overlay:has(.info-modal) { padding: 0; }
+}
+
 /* меню режимов на главной */
 .mode-btns {
   display: flex;
