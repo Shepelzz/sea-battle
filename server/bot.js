@@ -52,6 +52,21 @@ export function chooseBotAction(game, pIdx, level = 'mid') {
   const myPower = powerOf(pIdx);
   const foePower = foeShips.reduce((s, x) => s + x.hp + SHIP_TYPES[x.type].dmg, 0);
 
+  // настоящие боевые корабли (рыбацкие баркасы не в счёт) — для прикрытия рыбалки и «стадности»
+  const isFighter = s => SHIP_TYPES[s.type].dmg > 0 && !SHIP_TYPES[s.type].fishing;
+  const myFighters = myShips.filter(isFighter);
+  const foeFighters = foeShips.filter(isFighter);
+  // есть ли вражеский боевик, достающий точку (x,y) огнём (+pad запас)
+  const enemyAt = (x, y, pad = 80) => foeFighters.find(f =>
+    dist(f.x, f.y, x, y) <= SHIP_TYPES[f.type].fireRange + pad);
+  // мои кормящие рыбаки (стоят в зоне) и те из них, на кого насел враг
+  const myFishersInZone = myShips.filter(s => SHIP_TYPES[s.type].fishing > 0 &&
+    game.map.fishZones.some(z => dist(s.x, s.y, z.x, z.y) <= z.radius));
+  const threatenedFishers = myFishersInZone.filter(s => enemyAt(s.x, s.y, 120));
+  // сколько боевых соратников рядом — чтобы в атаку шли стаей, а не по одному
+  const packmates = ship => myFighters.filter(o => o.id !== ship.id &&
+    dist(o.x, o.y, ship.x, ship.y) < 260).length;
+
   // угроза базе: вражеские боевые корабли ВПЛОТНУЮ к моему порту (реальная осада,
   // а не далёкий разведчик — иначе бот панически обороняется и партия не двигается)
   const myBase = game.map.bases[pIdx];
@@ -83,6 +98,10 @@ export function chooseBotAction(game, pIdx, level = 'mid') {
       // ЗАЩИТА БАЗЫ: первым делом топим того, кто подошёл бить наш порт (ответка на атаку)
       if (level !== 'easy' && t.owner >= 0 && SHIP_TYPES[t.type].dmg > 0 &&
           dist(t.x, t.y, myBase.x, myBase.y) < threatR) score += 35;
+      // ЗАЩИТА КОРМИЛИЦЫ: боевой корабль (не сам баркас) бьёт врага, насевшего на наш кормящий баркас
+      if (level !== 'easy' && !st.fishing && t.owner >= 0 && SHIP_TYPES[t.type].dmg > 0 &&
+          threatenedFishers.some(fz => dist(t.x, t.y, fz.x, fz.y) <= SHIP_TYPES[t.type].fireRange + 120))
+        score += 22;
       if (level === 'hard') {
         if (t.owner !== -1 && SHIP_TYPES[t.type].fishing) score += 12; // душим экономику
         score += ((t.maxHp || tdef.hp) - t.hp) * 0.12;                // фокус раненых
@@ -126,7 +145,7 @@ export function chooseBotAction(game, pIdx, level = 'mid') {
   // сбор — рутина, а не стратегия: не должен перебивать манёвры и оборону
   if (gain > 0) {
     cands.push({
-      score: Math.min(24, 8 + gain * 0.12) * (underSiege ? 0.5 : 1),
+      score: Math.min(30, 8 + gain * 0.1) * (underSiege ? 0.5 : 1),
       action: { type: 'collect' }
     });
   }
@@ -136,8 +155,9 @@ export function chooseBotAction(game, pIdx, level = 'mid') {
   if (myShips.length < 8) {
     if (level !== 'easy') {
       if (fishers === 0 && me.gold >= SHIP_TYPES.barkas.price + 60) {
-        // когда под стенами враг — не до рыбалки
-        cands.push({ score: underSiege ? 6 : 34, action: { type: 'buy', ships: ['barkas'] } });
+        // когда под стенами враг ИЛИ все рыбные места под огнём — не плодим баркасы на убой
+        const safeZone = game.map.fishZones.some(z => !enemyAt(z.x, z.y, 80));
+        cands.push({ score: (underSiege || !safeZone) ? 6 : 34, action: { type: 'buy', ships: ['barkas'] } });
       }
       const pick = level === 'hard'
         ? (me.gold >= SHIP_TYPES.linkor.price ? 'linkor' : me.gold >= 380 ? 'fregat' : me.gold >= 220 ? 'brig' : null)
@@ -179,13 +199,18 @@ export function chooseBotAction(game, pIdx, level = 'mid') {
       }
     }
 
-    // рыбак плывёт в рыбное место и не воюет
+    // рыбак плывёт в рыбное место и не воюет — но в БЕЗОПАСНОЕ (без вражеского боевика рядом),
+    // а если на него уже насели и защитника нет — отходит к базе, чтобы не кормить собой врага.
     if (st.fishing > 0) {
-      const inZone = game.map.fishZones.some(z => dist(ship.x, ship.y, z.x, z.y) <= z.radius);
-      if (!inZone) {
-        const z = nearest(ship, game.map.fishZones, zz => [zz.x, zz.y]);
-        if (z) addMove(ship, z.x, z.y, 24);
+      const curZone = game.map.fishZones.find(z => dist(ship.x, ship.y, z.x, z.y) <= z.radius);
+      if (curZone) {
+        if (enemyAt(ship.x, ship.y, 80) && !myFighters.some(f => dist(f.x, f.y, ship.x, ship.y) < 200))
+          addMove(ship, myBase.x, myBase.y, 26); // удираем под защиту порта
+        continue;                                 // иначе стоим и кормим
       }
+      const safe = game.map.fishZones.filter(z => !enemyAt(z.x, z.y, 80));
+      const z = nearest(ship, safe.length ? safe : game.map.fishZones, zz => [zz.x, zz.y]);
+      if (z) addMove(ship, z.x, z.y, safe.length ? 24 : 9); // в опасную зону — без энтузиазма
       continue;
     }
 
@@ -196,11 +221,20 @@ export function chooseBotAction(game, pIdx, level = 'mid') {
       if (inv) addMove(ship, inv.x, inv.y, 35);
     }
 
+    // ПРИКРЫТИЕ КОРМИЛИЦ: боевой корабль идёт бить врага, насевшего на наш кормящий баркас
+    if (st.dmg > 0 && threatenedFishers.length) {
+      const fz = nearest(ship, threatenedFishers, f => [f.x, f.y]);
+      const enemy = nearest(ship,
+        foeFighters.filter(f => dist(f.x, f.y, fz.x, fz.y) <= SHIP_TYPES[f.type].fireRange + 120),
+        f => [f.x, f.y]);
+      if (enemy) addMove(ship, enemy.x, enemy.y, 31); // чуть ниже обороны базы (35), выше лута/охоты
+    }
+
     // к ближайшему кладу — лут важнее бесконечной рыбалки
     const isl = nearest(ship, isls, ii => [ii.x, ii.y]);
     if (isl && dist(ship.x, ship.y, isl.x, isl.y) > isl.radius + LOOT_REACH) {
       const turns = Math.ceil(dist(ship.x, ship.y, isl.x, isl.y) / st.move);
-      addMove(ship, isl.x, isl.y, Math.min(24, 10 + isl.loot * 0.05) - turns * 2);
+      addMove(ship, isl.x, isl.y, Math.min(30, 12 + isl.loot * 0.06) - turns * 2);
     }
 
     // охота на пирата с наградой (боевыми кораблями) — особенно за 👑-боссом
@@ -213,19 +247,22 @@ export function chooseBotAction(game, pIdx, level = 'mid') {
       }
     }
 
-    // на сближение с флотом противника — только когда готовы драться,
-    // иначе не скармливаем корабли по одному
+    // «стадность»: со стаей боевых соратников рядом корабль идёт в наступление охотнее,
+    // в одиночку — вяло (чтобы не скармливать корабли по одному). Множитель скромный (до ~1.5×).
+    const pack = 1 + Math.min(3, packmates(ship)) * 0.17;
+
+    // на сближение с флотом противника — только когда готовы драться, и охотнее в группе
     const foe = nearest(ship, foeShips, f => [f.x, f.y]);
-    if (foe) addMove(ship, foe.x, foe.y, aggressive ? (level === 'hard' ? 18 : 14) : 7);
+    if (foe) addMove(ship, foe.x, foe.y, (aggressive ? (level === 'hard' ? 18 : 14) : 7) * pack);
 
     // осада порта жертвы. В режиме добивания осада ДОЛЖНА перебивать лут/охоту за
     // пиратами (иначе флот распыляется и порт не падает) — даём ей явный приоритет.
     if (victim) {
       const b = game.map.bases[victim.i];
       // осаду ведут тяжёлые корабли (фрегат/линкор соло пробивают порт, переживая ответку),
-      // лёгкие — в хвосте. Скор выше лута(24)/пиратов(28), но ниже выстрела по порту.
+      // лёгкие — в хвосте. Скор выше лута(24)/пиратов(28), но ниже выстрела по порту. В группе — плотнее.
       const siegeScore = Math.min(36, 12 + st.dmg * 0.6);
-      addMove(ship, b.x, b.y, aggressive ? siegeScore : 6);
+      addMove(ship, b.x, b.y, aggressive ? siegeScore * pack : 6);
     }
   }
 
