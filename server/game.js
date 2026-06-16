@@ -8,7 +8,23 @@ import {
   PIRATE_BOSS_CHANCE, PIRATE_BOSS_HP
 } from './ships.js';
 
-const COLORS = ['#c0392b', '#2980b9', '#27ae60', '#8e44ad'];
+// Палитра цветов игроков (выбираются при старте; сервер гарантирует уникальность в партии).
+export const PALETTE = ['#c0392b', '#2980b9', '#27ae60', '#8e44ad', '#e67e22', '#16a085', '#d4ac0d', '#cb3e8f'];
+
+// выбрать цвет: вернуть запрошенный, если он из палитры и не занят другим игроком; иначе — первый свободный
+function pickColor(game, color, exceptId = null) {
+  const taken = c => game.players.some(p => p.id !== exceptId && p.color === c);
+  if (color && PALETTE.includes(color) && !taken(color)) return color;
+  return PALETTE.find(c => !taken(c)) || PALETTE[game.players.length % PALETTE.length];
+}
+
+// случайный свободный цвет (для ботов — берётся из оставшихся после игроков)
+export function randomFreeColor(game) {
+  const used = new Set(game.players.map(p => p.color));
+  const free = PALETTE.filter(c => !used.has(c));
+  const pool = free.length ? free : PALETTE;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
 const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
 
 let shipSeq = 1;
@@ -53,14 +69,18 @@ function freshEvents(game) {
   game.eventSeq = (game.eventSeq || 0) + 1;
 }
 
-export function addPlayer(game, playerId, nick) {
+export function addPlayer(game, playerId, nick, color = null) {
   const existing = game.players.find(p => p.id === playerId);
-  if (existing) { existing.nick = nick; return { ok: true, rejoined: true }; }
+  if (existing) {
+    existing.nick = nick;
+    if (color) existing.color = pickColor(game, color, playerId); // смена цвета при перезаходе
+    return { ok: true, rejoined: true };
+  }
   if (game.status !== 'lobby') return { ok: false, error: 'Игра уже началась' };
   if (game.players.length >= game.config.maxPlayers) return { ok: false, error: 'Все слоты заняты' };
   game.players.push({
     id: playerId, nick,
-    color: COLORS[game.players.length],
+    color: pickColor(game, color),
     gold: START_GOLD, portHp: PORT_HP,
     alive: true, placement: null,
     stats: newStats()
@@ -315,15 +335,24 @@ function eliminatePlayer(game, victimIdx, killer) {
   }
 }
 
+// Смена цвета в лобби (валидируем: из палитры и не занят другим игроком).
+export function setColor(game, playerId, color) {
+  if (game.status !== 'lobby') return { ok: false, error: 'Цвет можно менять только в лобби' };
+  const p = game.players.find(x => x.id === playerId);
+  if (!p) return { ok: false, error: 'Вы не участник' };
+  if (!PALETTE.includes(color)) return { ok: false, error: 'Неизвестный цвет' };
+  if (game.players.some(x => x.id !== playerId && x.color === color)) return { ok: false, error: 'Цвет уже занят' };
+  p.color = color;
+  return { ok: true };
+}
+
 // Добровольная сдача (или выход из лобби).
 export function leaveGame(game, playerId) {
   if (game.status === 'lobby') {
     const idx = game.players.findIndex(p => p.id === playerId);
     if (idx === -1) return { ok: false, error: 'Вы не участник' };
     const [left] = game.players.splice(idx, 1);
-    // освобождаем цвета по порядку
-    const COLORS_ALL = COLORS;
-    game.players.forEach((p, i) => { p.color = COLORS_ALL[i]; });
+    // цвета НЕ переиндексируем — каждый сохраняет выбранный; освободившийся просто доступен снова
     pushLog(game, `🚪 ${left.nick} покинул лобби`);
     return { ok: true };
   }
@@ -572,6 +601,7 @@ export function publicState(game, viewerPid) {
     eventSeq: game.eventSeq || 0,
     lootReach: LOOT_REACH,
     portMax: PORT_HP,
+    palette: PALETTE,
     shipTypes: { ...SHIP_TYPES, pirate: PIRATE }
   };
 }

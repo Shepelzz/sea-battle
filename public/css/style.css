@@ -238,6 +238,30 @@ aside.panel {
   margin: -2px 2px 0;
 }
 
+/* выбор цвета игрока — выпадающий список (главная: редакторы режимов; лобби) */
+.color-dd { position: relative; display: inline-block; }
+/* кнопка наследует штатный стиль кнопок (бордер 1.8px, рисованный радиус, тень) — только компактнее */
+.color-dd-btn { display: inline-flex; align-items: center; gap: 7px; padding: 6px 10px; }
+.color-dd-btn .dd-dot { width: 20px; height: 20px; border-radius: 50%; border: 1.4px solid var(--ink); }
+.color-dd-btn .dd-caret { font-size: 11px; color: var(--ink); line-height: 1; }
+.color-dd-menu {
+  position: absolute; right: 0; top: calc(100% + 5px); z-index: 60;
+  background: var(--paper); border: 1.8px solid var(--ink);
+  border-radius: 10px 4px 12px 5px / 5px 11px 4px 12px;
+  padding: 9px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 9px;
+  box-shadow: var(--shadow);
+}
+.color-dd-menu.hidden { display: none; }
+.swatch {
+  width: 28px; height: 28px; border-radius: 50%; padding: 0;
+  border: 1.6px solid rgba(43, 58, 85, .25); cursor: pointer;
+  box-shadow: none;
+  transition: transform .1s;
+}
+.swatch.sel { border-color: var(--ink); box-shadow: 0 0 0 2px #fff inset; }
+.swatch.taken { opacity: .28; cursor: not-allowed; }
+.swatch:not(.taken):not(.sel):hover { transform: scale(1.12); }
+
 .toast {
   position: absolute;
   top: calc(env(safe-area-inset-top, 0px) + 6px); left: 50%;

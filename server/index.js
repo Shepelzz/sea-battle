@@ -14,7 +14,7 @@ import { Server } from 'socket.io';
 import * as db from './db.js';
 import {
   createGame, addPlayer, startGame, applyAction, leaveGame, nudge,
-  timeoutTurn, publicState
+  timeoutTurn, publicState, setColor, randomFreeColor, PALETTE
 } from './game.js';
 import { chooseBotAction, BOT_NAMES } from './bot.js';
 
@@ -153,7 +153,7 @@ function maybeBotTurn(game) {
 
 // --- REST ---
 
-app.get('/api/config', (_req, res) => res.json({ googleClientId: GOOGLE_CLIENT_ID }));
+app.get('/api/config', (_req, res) => res.json({ googleClientId: GOOGLE_CLIENT_ID, palette: PALETTE }));
 
 app.post('/api/auth/google', async (req, res) => {
   if (!googleClient) return res.status(400).json({ error: 'Вход через Google не настроен' });
@@ -175,7 +175,7 @@ app.post('/api/auth/google', async (req, res) => {
 });
 
 app.post('/api/games', (req, res) => {
-  const { token, session, nick, maxPlayers, turnTimer, mode, nicks } = req.body || {};
+  const { token, session, nick, maxPlayers, turnTimer, mode, nicks, color, colors } = req.body || {};
   const pid = resolvePid({ token, session });
   if (!pid) return res.status(400).json({ error: 'Нужен токен' });
   const id = crypto.randomBytes(5).toString('base64url');
@@ -184,12 +184,13 @@ app.post('/api/games', (req, res) => {
   if (mode === 'hotseat') {
     const names = (Array.isArray(nicks) ? nicks : []).map(s => String(s || '').trim()).filter(Boolean);
     if (names.length < 2 || names.length > 4) return res.status(400).json({ error: 'Нужно 2–4 имени игроков' });
+    const cols = Array.isArray(colors) ? colors : [];
     const game = createGame(id, { maxPlayers: names.length, turnTimer: 0 });
     game.config.hotseat = true;
     game.hotseatOwner = pid;
     names.forEach((n, i) => {
       db.upsertPlayer(pid + '#' + i, n);
-      addPlayer(game, pid + '#' + i, n);
+      addPlayer(game, pid + '#' + i, n, cols[i]);
     });
     startGame(game, pid + '#0');
     games.set(id, game);
@@ -205,9 +206,9 @@ app.post('/api/games', (req, res) => {
     const game = createGame(id, { maxPlayers: 1 + botCount, turnTimer: 0 });
     game.config.botGame = true;
     db.upsertPlayer(pid, nick.trim());
-    addPlayer(game, pid, nick.trim());
+    addPlayer(game, pid, nick.trim(), color);              // цвет игрока — по выбору
     for (let i = 0; i < botCount; i++) {
-      addPlayer(game, 'bot:' + id + ':' + i, BOT_NAMES[level][i]);
+      addPlayer(game, 'bot:' + id + ':' + i, BOT_NAMES[level][i], randomFreeColor(game)); // ботам — рандом из оставшихся
       const bp = game.players[game.players.length - 1];
       bp.isBot = true;
       bp.botLevel = level;
@@ -222,7 +223,7 @@ app.post('/api/games', (req, res) => {
   const game = createGame(id, { maxPlayers: +maxPlayers, turnTimer: +turnTimer });
   game.config.listed = true; // онлайн-игра попадает в браузер лобби
   db.upsertPlayer(pid, nick.trim());
-  addPlayer(game, pid, nick.trim());
+  addPlayer(game, pid, nick.trim(), color);
   games.set(id, game);
   db.saveGame(game);
   res.json({ gameId: id });
@@ -246,7 +247,7 @@ io.on('connection', socket => {
   });
   socket.on('lobbies:unsubscribe', () => socket.leave('lobbies'));
 
-  socket.on('join', ({ gameId, token, session, nick }, ack) => {
+  socket.on('join', ({ gameId, token, session, nick, color }, ack) => {
     const game = getGame(gameId);
     if (!game) return ack?.({ ok: false, error: 'Игра не найдена' });
     const pid = resolvePid({ token, session });
@@ -263,7 +264,7 @@ io.on('connection', socket => {
       return;
     }
     db.upsertPlayer(pid, nick.trim());
-    const result = addPlayer(game, pid, nick.trim());
+    const result = addPlayer(game, pid, nick.trim(), color);
     // Не участник, но игра идёт — пускаем смотреть.
     const spectator = !result.ok && game.status !== 'lobby' && !game.players.some(p => p.id === pid);
     if (!result.ok && !spectator) return ack?.({ ok: false, error: result.error });
@@ -275,6 +276,17 @@ io.on('connection', socket => {
     ack?.({ ok: true, playerId: pid, spectator });
     broadcastState(game);
     broadcastLobbies(); // обновить число игроков в витрине
+  });
+
+  socket.on('setColor', ({ color } = {}, ack) => {
+    const game = joinedGameId && getGame(joinedGameId);
+    if (!game) return ack?.({ ok: false, error: 'Нет игры' });
+    const result = setColor(game, myPid, color);
+    if (!result.ok) return ack?.({ ok: false, error: result.error });
+    db.saveGame(game);
+    broadcastState(game);
+    broadcastLobbies();
+    ack?.({ ok: true });
   });
 
   socket.on('start', (ack) => {

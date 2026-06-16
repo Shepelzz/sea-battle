@@ -10,6 +10,31 @@ function getToken() {
 $('#nick').value = localStorage.getItem('sb_nick') || '';
 setFavicon('menu');
 
+// --- выбор цвета (палитра приходит с сервера) ---
+let PALETTE = [];
+let onlineColor = null;          // онлайн: цвет создателя
+let botColor = null;             // боты: цвет игрока (ботам сервер даёт рандом из оставшихся)
+let hotseatColors = [];          // хотсит: цвет каждого игрока
+
+// распределить n цветов по умолчанию (разные), сохраняя уже выбранные
+function defaultColors(n, existing = []) {
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    let c = existing[i];
+    if (!c || out.includes(c)) c = PALETTE.find(x => !out.includes(x)) || PALETTE[i % PALETTE.length];
+    out.push(c);
+  }
+  return out;
+}
+function renderOnlineColor() {
+  if (!PALETTE.length) return;
+  renderColorDropdown($('#onlineColors'), PALETTE, onlineColor, c => { onlineColor = c; renderOnlineColor(); });
+}
+function renderBotColor() {
+  if (!PALETTE.length) return;
+  renderColorDropdown($('#botColors'), PALETTE, botColor, c => { botColor = c; renderBotColor(); });
+}
+
 // --- выбор режима ---
 function showMode(mode) {
   $('#modeBtns').classList.toggle('hidden', !!mode);
@@ -61,16 +86,24 @@ $('#lobbiesClose').addEventListener('click', () => {
 // --- хотсит: поля имён по числу игроков ---
 function renderHotseatNames() {
   const n = +$('#hotseatCount').value;
-  const old = [...document.querySelectorAll('#hotseatNames input')].map(i => i.value);
+  const old = [...document.querySelectorAll('#hotseatNames input.hs-name')].map(i => i.value);
+  hotseatColors = defaultColors(n, hotseatColors);
   $('#hotseatNames').innerHTML = Array.from({ length: n }, (_, i) => `
     <label>Игрок ${i + 1}</label>
-    <input type="text" maxlength="20" placeholder="${['Капитан', 'Адмирал', 'Боцман', 'Юнга'][i]}…" value="${old[i] ? old[i].replace(/"/g, '&quot;') : ''}">`).join('');
+    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap">
+      <input type="text" class="hs-name" maxlength="20" placeholder="${['Капитан', 'Адмирал', 'Боцман', 'Юнга'][i]}…" value="${old[i] ? old[i].replace(/"/g, '&quot;') : ''}" style="flex:1; min-width:150px">
+      <div data-hs="${i}"></div>
+    </div>`).join('');
+  [...document.querySelectorAll('#hotseatNames [data-hs]')].forEach((sw, i) => {
+    const taken = new Set(hotseatColors.filter((_, j) => j !== i));
+    renderColorDropdown(sw, PALETTE, hotseatColors[i], c => { hotseatColors[i] = c; renderHotseatNames(); }, taken);
+  });
 }
 $('#hotseatCount').addEventListener('change', renderHotseatNames);
 renderHotseatNames();
 
 $('#hotseatBtn').addEventListener('click', async () => {
-  const nicks = [...document.querySelectorAll('#hotseatNames input')].map(i => i.value.trim());
+  const nicks = [...document.querySelectorAll('#hotseatNames input.hs-name')].map(i => i.value.trim());
   if (nicks.some(n => !n)) { $('#hotseatError').textContent = 'Впиши имена всех игроков!'; return; }
   if (new Set(nicks).size !== nicks.length) { $('#hotseatError').textContent = 'Имена не должны повторяться'; return; }
   $('#hotseatBtn').disabled = true;
@@ -78,7 +111,7 @@ $('#hotseatBtn').addEventListener('click', async () => {
     const res = await fetch('/api/games', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: getToken(), mode: 'hotseat', nicks })
+      body: JSON.stringify({ token: getToken(), mode: 'hotseat', nicks, colors: hotseatColors })
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Ошибка сервера');
@@ -91,10 +124,19 @@ $('#hotseatBtn').addEventListener('click', async () => {
   }
 });
 
-// Вход через Google (если настроен на сервере).
+// Конфиг сервера: палитра цветов + (опц.) Google-вход.
 (async () => {
   try {
     const cfg = await (await fetch('/api/config')).json();
+    // палитра — рисуем пикеры цвета во всех редакторах
+    PALETTE = Array.isArray(cfg.palette) && cfg.palette.length ? cfg.palette
+      : ['#c0392b', '#2980b9', '#27ae60', '#8e44ad'];
+    onlineColor = PALETTE[0];
+    botColor = PALETTE[0];
+    renderOnlineColor();
+    renderBotColor();
+    renderHotseatNames();
+
     if (!cfg.googleClientId) return;
     $('#authBox').classList.remove('hidden');
     if (localStorage.getItem('sb_session')) {
@@ -146,6 +188,7 @@ $('#createBtn').addEventListener('click', async () => {
         token: getToken(),
         session: localStorage.getItem('sb_session') || undefined,
         nick,
+        color: onlineColor,
         maxPlayers: +$('#maxPlayers').value,
         turnTimer: +$('#turnTimer').value
       })
@@ -176,7 +219,8 @@ $('#botBtn').addEventListener('click', async () => {
         mode: 'bot',
         nick,
         bots: +$('#botCount').value,
-        level: $('#botLevel').value
+        level: $('#botLevel').value,
+        color: botColor
       })
     });
     const data = await res.json();

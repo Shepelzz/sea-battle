@@ -32,8 +32,11 @@
       <!-- редактор: онлайн -->
       <div id="editorOnline" class="hidden">
         <button class="small" data-back type="button">← Режимы</button>
-        <label for="nick">Твой ник</label>
-        <input type="text" id="nick" maxlength="20" placeholder="Капитан...">
+        <label for="nick">Твой ник и цвет</label>
+        <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap">
+          <input type="text" id="nick" maxlength="20" placeholder="Капитан..." style="flex:1; min-width:150px">
+          <div class="swatches" id="onlineColors"></div>
+        </div>
         <div id="authBox" class="hidden" style="margin-top:12px; display:flex; align-items:center; gap:12px; flex-wrap:wrap">
           <div id="googleBtn"></div>
           <span id="authStatus" class="muted"></span>
@@ -80,9 +83,13 @@
       <!-- редактор: против компьютера -->
       <div id="editorBot" class="hidden">
         <button class="small" data-back type="button">← Режимы</button>
-        <label for="botNick">Твой ник</label>
-        <input type="text" id="botNick" maxlength="20" placeholder="Капитан...">
-        <div style="display:flex; gap:24px; flex-wrap:wrap">
+        <label for="botNick">Твой ник и цвет</label>
+        <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap">
+          <input type="text" id="botNick" maxlength="20" placeholder="Капитан..." style="flex:1; min-width:150px">
+          <div class="swatches" id="botColors"></div>
+        </div>
+        <p class="muted" style="margin:6px 0 0; font-size:13px">Ботам цвета достанутся случайно из оставшихся.</p>
+        <div style="display:flex; gap:24px; flex-wrap:wrap; margin-top:10px">
           <div style="flex:1; min-width:140px">
             <label for="botCount">Противников</label>
             <select id="botCount">
@@ -148,6 +155,7 @@
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="/js/favicon.js"></script>
+  <script src="/js/palette.js"></script>
   <script src="/js/home.js"></script>
 </body>
 </html>

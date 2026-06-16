@@ -1313,8 +1313,15 @@ function renderOverlays() {
     $('#lobbyConfig').textContent =
       `${cfg.maxPlayers} игрока · ${cfg.turnTimer ? 'таймер ' + cfg.turnTimer + ' сек/ход' : 'без таймера'}`;
     // показываем текущий ник (не перетираем, пока игрок печатает)
-    const myNick = state.players.find(p => p.id === myId)?.nick;
-    if (myNick && document.activeElement !== $('#lobbyNick')) $('#lobbyNick').value = myNick;
+    const me = state.players.find(p => p.id === myId);
+    if (me?.nick && document.activeElement !== $('#lobbyNick')) $('#lobbyNick').value = me.nick;
+    // выбор цвета: занятые другими — приглушены; клик шлёт setColor
+    if (me && state.palette) {
+      const taken = new Set(state.players.filter(p => p.id !== myId).map(p => p.color));
+      renderColorDropdown($('#lobbyColors'), state.palette, me.color,
+        c => socket.emit('setColor', { color: c }, r => { if (!r.ok) $('#lobbyError').textContent = r.error; }),
+        taken);
+    } else { $('#lobbyColors').innerHTML = ''; }
     $('#inviteUrl').textContent = location.href;
     $('#lobbySlots').innerHTML = Array.from({ length: cfg.maxPlayers }, (_, i) => {
       const p = state.players[i];
