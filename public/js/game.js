@@ -547,6 +547,7 @@ function render() {
   ctx.setLineDash([]);
 
   // рыбные места
+  const FISH_CAP = 4; // место кормит не больше 4 судов (см. FISH_ZONE_CAP на сервере)
   for (const z of m.fishZones) {
     ctx.beginPath();
     ctx.arc(sx(z.x), sy(z.y), z.radius * view.scale, 0, Math.PI * 2);
@@ -556,6 +557,12 @@ function render() {
     ctx.font = `${Math.max(14, 22 * view.scale)}px serif`;
     ctx.textAlign = 'center';
     ctx.fillText('🐟', sx(z.x), sy(z.y) + 6);
+    // счётчик занятых рыбацких мест — мелким шрифтом, тем же синим, что и зона
+    const taken = state.ships.filter(s => ST(s.type).fishing > 0 &&
+      Math.hypot(s.x - z.x, s.y - z.y) <= z.radius).length;
+    ctx.font = `${Math.max(10, 12 * view.scale)}px Neucha, cursive`;
+    ctx.fillStyle = 'rgba(80,130,180,.85)';
+    ctx.fillText(`${Math.min(taken, FISH_CAP)}/${FISH_CAP}`, sx(z.x), sy(z.y) + 20);
   }
 
   // лут-острова

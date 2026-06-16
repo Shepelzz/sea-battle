@@ -1,6 +1,7 @@
-// Точечная проверка двух правок: пассивная рыбалка и урон линкора по порту.
+// Точечная проверка правок: пассивная рыбалка (+лимит зоны), урон линкора по порту,
+// сдача базы линкору, доход порта у безфлотного игрока.
 import { createGame, addPlayer, startGame, applyAction } from './server/game.js';
-import { SHIP_TYPES, PORT_HP, PORT_INCOME } from './server/ships.js';
+import { SHIP_TYPES, PORT_HP, PORT_INCOME, PORT_RETURN_DMG, FISH_ZONE_CAP } from './server/ships.js';
 
 let ok = 0, fail = 0;
 const check = (n, c, extra='') => { c ? (ok++, console.log('✓', n, extra)) : (fail++, console.error('✗', n, extra)); };
@@ -81,6 +82,56 @@ function freshGame() {
   const need = Math.ceil(PORT_HP / expected);
   check('линкор валит порт за ' + shots + ' залпов (не 3-4)', shots >= 5 && shots === need,
     `(нужно ${shots}, расчёт ${need}, было бы при ×2: ${Math.ceil(PORT_HP / (SHIP_TYPES.linkor.dmg*2))})`);
+}
+
+// === 5. Рыбная зона кормит не больше FISH_ZONE_CAP судов ===
+{
+  const g = freshGame();
+  const zone = g.map.fishZones[0];
+  // 5 баркасов Боба в одной зоне — доход должен прийти только за 4
+  for (let i = 0; i < 5; i++)
+    g.ships.push({ id: 'bkc' + i, owner: 1, type: 'barkas', x: zone.x, y: zone.y, hp: SHIP_TYPES.barkas.hp });
+  const before = g.players[1].gold;
+  applyAction(g, 'A', { type: 'skip' }); // → ход Боба, капает доход
+  const delta = g.players[1].gold - before;
+  const expected = PORT_INCOME + FISH_ZONE_CAP * SHIP_TYPES.barkas.fishing;
+  check(`рыбная зона кормит максимум ${FISH_ZONE_CAP} судов`, delta === expected,
+    `(Δ=${delta}, ждали ${expected} — а не ${PORT_INCOME + 5 * SHIP_TYPES.barkas.fishing} за 5)`);
+}
+
+// === 6. Безфлотный игрок: порт даёт на 50% больше ===
+{
+  const g = freshGame();
+  g.ships = g.ships.filter(s => s.owner !== 1); // у Боба не осталось ни одного корабля
+  const before = g.players[1].gold;
+  applyAction(g, 'A', { type: 'skip' }); // → ход Боба
+  const delta = g.players[1].gold - before;
+  check('порт без флота даёт +50% золота', delta === Math.round(PORT_INCOME * 1.5),
+    `(Δ=${delta}, ждали ${Math.round(PORT_INCOME * 1.5)})`);
+
+  // контроль: пока корабль есть — доход обычный
+  const g2 = freshGame();
+  const b0 = g2.players[1].gold;
+  applyAction(g2, 'A', { type: 'skip' });
+  check('порт с флотом — обычный доход', g2.players[1].gold - b0 === PORT_INCOME, `(Δ=${g2.players[1].gold - b0})`);
+}
+
+// === 7. База бьёт в ответ линкору на 20% сильнее, прочим — обычно ===
+{
+  const g = freshGame();
+  const base = g.map.bases[1];
+  g.ships.push({ id: 'lkr', owner: 0, type: 'linkor', x: base.x + base.radius + 20, y: base.y, hp: 280 });
+  applyAction(g, 'A', { type: 'attack', shipId: 'lkr', targetType: 'port', targetId: 1 });
+  const lkLost = 280 - g.ships.find(s => s.id === 'lkr').hp;
+  check('сдача линкору = +20%', lkLost === Math.round(PORT_RETURN_DMG * 1.2),
+    `(−${lkLost}, ждали −${Math.round(PORT_RETURN_DMG * 1.2)})`);
+
+  const g2 = freshGame();
+  const base2 = g2.map.bases[1];
+  g2.ships.push({ id: 'brg', owner: 0, type: 'brig', x: base2.x + base2.radius + 20, y: base2.y, hp: 110 });
+  applyAction(g2, 'A', { type: 'attack', shipId: 'brg', targetType: 'port', targetId: 1 });
+  const brLost = 110 - g2.ships.find(s => s.id === 'brg').hp;
+  check('сдача бригу — обычная', brLost === PORT_RETURN_DMG, `(−${brLost}, ждали −${PORT_RETURN_DMG})`);
 }
 
 console.log(`\nИтого: ${ok} ок, ${fail} провал(ов)`);

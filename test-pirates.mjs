@@ -17,6 +17,7 @@ const addPirate = (g, x, y, hp = PIRATE.hp) => {
   const p = { id: 'PIR', owner: -1, type: 'pirate', x, y, hp, maxHp: PIRATE.hp, boss: false, bounty: 200, heading: 0, angryAt: null };
   g.ships.push(p); return p;
 };
+const addBoss = (g, x, y, hp = 220) => { const p = addPirate(g, x, y, hp); p.boss = true; p.maxHp = 220; return p; };
 const myShip = (g, type, x, y, hp) => {
   const s = { id: 'S_' + type, owner: 0, type, x, y, hp: hp ?? SHIP_TYPES[type].hp };
   g.ships.push(s); return s;
@@ -113,14 +114,24 @@ const myShip = (g, type, x, y, hp) => {
   check('пират действует в свой слот (после игрока 2)', deadAfterP2, '(жертва потоплена)');
 }
 
-// === 8. Пираты не агрятся на рыбацкие баркасы ===
+// === 8. Мелкий пират МОЖЕТ пощипать рыбацкий баркас (одиночным выстрелом) ===
 {
   const g = game2(); clearPirates(g);
   addPirate(g, 500, 500);
   const barkas = myShip(g, 'barkas', 500, 540, 30); // вплотную, в радиусе огня
   applyAction(g, 'p0', { type: 'skip' });
   const after = g.ships.find(s => s.id === barkas.id);
-  check('пират не атакует баркас', after && after.hp === 30, `(hp ${after?.hp})`);
+  check('мелкий пират бьёт баркас', after && after.hp === 30 - PIRATE.dmg, `(hp ${after?.hp})`);
+}
+
+// === 9. БОСС агрессивен: идёт НАВСТРЕЧУ подбитому кораблю (а не убегает) ===
+{
+  const g = game2(); clearPirates(g);
+  const boss = addBoss(g, 500, 500);
+  const prey = myShip(g, 'brig', 500, 660, 50); // подбит (50<110), вне радиуса огня, но в зоне вовлечения
+  const dBefore = dist(boss, prey);
+  applyAction(g, 'p0', { type: 'skip' });
+  check('босс идёт навстречу подбитому', dist(boss, prey) < dBefore, `(${Math.round(dBefore)}→${Math.round(dist(boss, prey))})`);
 }
 
 console.log(`\nИтого: ${ok} ок, ${fail} провал(ов)`);

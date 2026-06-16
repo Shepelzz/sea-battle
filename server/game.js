@@ -2,7 +2,7 @@
 import { generateMap, spawnPoints } from './mapgen.js';
 import {
   SHIP_TYPES, START_FLEET, START_GOLD, PORT_HP, PORT_RETURN_DMG, PORT_INCOME,
-  SHIP_COLLISION_DIST, LOOT_REACH, BROADSIDE_MULT,
+  SHIP_COLLISION_DIST, LOOT_REACH, BROADSIDE_MULT, FISH_ZONE_CAP,
   PIRATE, PIRATE_DESPAWN_CHANCE, PIRATE_SPAWN_CHANCE, PIRATE_MOVE_CHANCE,
   PIRATE_BOSS_CHANCE, PIRATE_BOSS_HP
 } from './ships.js';
@@ -180,10 +180,12 @@ const nearestShip = (pir, list) =>
 
 // Действие пирата, если он ВОВЛЕЧЁН (рядом есть корабли): атака/преследование/бегство.
 // Возвращает true, если пират занят боем — тогда он НЕ исчезает и не дрейфует просто так.
+const isDamaged = s => s.hp < SHIP_TYPES[s.type].hp; // подбит — HP меньше полного
+
 function pirateAct(game, pir) {
   const D = PIRATE.dmg, FR = PIRATE.fireRange, MV = PIRATE.move;
-  // рыбацкие баркасы пиратам не интересны — не атакуют, не «вовлекаются», не убегают от них
-  const all = game.ships.filter(s => s.owner >= 0 && game.players[s.owner]?.alive && !SHIP_TYPES[s.type].fishing);
+  // теперь и рыбацкие баркасы — допустимая добыча: мелкий пират может пощипать баркас (одиночным выстрелом, не залпом)
+  const all = game.ships.filter(s => s.owner >= 0 && game.players[s.owner]?.alive);
   if (!all.length) return false;
 
   // «вовлечён»: рядом корабль в зоне своего хода или огня (+20%) — пирату не дадут раствориться
@@ -198,22 +200,23 @@ function pirateAct(game, pir) {
     dist(pir.x, pir.y, s.x, s.y) <= SHIP_TYPES[s.type].fireRange)
     .reduce((sum, s) => sum + SHIP_TYPES[s.type].dmg, 0);
 
-  // цели в радиусе огня пирата: добиваемые в приоритете, иначе слабейшая по HP
+  // цели в радиусе огня пирата: добиваемые в приоритете; БОСС вдобавок целится в подбитых; иначе слабейшая по HP
   const inRange = all.filter(s => dist(pir.x, pir.y, s.x, s.y) <= FR);
   let target = null;
   const killable = inRange.filter(s => s.hp <= D);
-  if (killable.length) target = killable.reduce((a, b) => a.hp < b.hp ? b : a); // добьём любого — берём пожирнее (по награде неважно, по HP)
+  const wounded = inRange.filter(isDamaged);
+  if (killable.length) target = killable.reduce((a, b) => a.hp < b.hp ? b : a); // добьём любого — берём пожирнее по HP
+  else if (pir.boss && wounded.length) target = wounded.reduce((a, b) => a.hp < b.hp ? a : b); // босс рвёт подранков
   else if (inRange.length) target = inRange.reduce((a, b) => a.hp < b.hp ? a : b);
 
   if (target) {
-    // ДЕРЁМСЯ если можем добить ОДНИМ выстрелом или переживём ответный огонь окружения.
-    // (раньше полумёртвый корабль мог «отпугнуть» пирата — теперь добиваемого он бьёт всегда)
+    // ДЕРЁМСЯ если можем добить ОДНИМ выстрелом, либо переживём ответку. БОСС агрессивен — бьёт, не считаясь со сдачей.
     const willKill = target.hp <= D;
-    if (willKill || pir.hp > incoming) {
+    if (willKill || pir.boss || pir.hp > incoming) {
       target.hp -= D;
       pir.angryAt = target.owner;
       pushEvent(game, { type: 'shot', fx: pir.x, fy: pir.y, tx: target.x, ty: target.y, dmg: D });
-      pushLog(game, `🏴‍☠️ Пираты атакуют ${SHIP_TYPES[target.type].name} игрока ${game.players[target.owner].nick} (−${D} HP)`, 'battle');
+      pushLog(game, `🏴‍☠️ ${pir.boss ? 'БОСС-пират атакует' : 'Пираты атакуют'} ${SHIP_TYPES[target.type].name} игрока ${game.players[target.owner].nick} (−${D} HP)`, 'battle');
       if (target.hp <= 0) sinkShip(game, target, null);
       return true;
     }
@@ -223,8 +226,16 @@ function pirateAct(game, pir) {
     return true;
   }
 
-  // цели в радиусе огня нет, но рядом наседает корабль → отходим (не гоняемся за флотом —
-  // иначе пираты вечно грызут и партия не сходится). Бьёт он тех, кто сам зашёл в радиус.
+  // цели в радиусе огня нет. БОСС, завидев подбитого рядом, идёт НАВСТРЕЧУ добить (для него гон оправдан — он редок и зол).
+  if (pir.boss) {
+    const prey = all.filter(isDamaged);
+    if (prey.length) {
+      const p = nearestShip(pir, prey);
+      steerPirate(game, pir, MV, Math.atan2(p.y - pir.y, p.x - pir.x));
+      return true;
+    }
+  }
+  // обычный пират не гоняется за флотом (иначе партия не сходится) → отходит от ближайшего. Бьёт лишь тех, кто сам зашёл в радиус.
   const near = nearestShip(pir, all);
   steerPirate(game, pir, MV, Math.atan2(pir.y - near.y, pir.x - near.x));
   return true;
@@ -269,6 +280,15 @@ function currentPlayer(game) {
   return game.players[game.turn.idx];
 }
 
+// Все рыбацкие суда (любых владельцев), стоящие в зоне. Доход капает только первым FISH_ZONE_CAP
+// из них (по стабильному порядку id) — место не может кормить больше четырёх.
+function fishOccupants(game, zone) {
+  return game.ships
+    .filter(s => SHIP_TYPES[s.type]?.fishing > 0 && dist(s.x, s.y, zone.x, zone.y) <= zone.radius)
+    .sort((a, b) => (a.id < b.id ? -1 : 1));
+}
+const fishEarners = (game, zone) => fishOccupants(game, zone).slice(0, FISH_ZONE_CAP);
+
 function advanceTurn(game) {
   movePirates(game);
   const n = game.players.length;
@@ -285,14 +305,19 @@ function advanceTurn(game) {
   // в аномально затянувшейся партии (дольше нормальной людской) доход выключаем —
   // «внезапная смерть», чтобы экономика истощалась и игра сходилась к финалу.
   const np = game.players[next];
-  if (np?.alive && game.turn.number <= n * 80) np.gold += PORT_INCOME;
+  // порт без единого корабля приносит на 50% больше золота — игроку, потерявшему флот, легче встать на ноги.
+  if (np?.alive && game.turn.number <= n * 80) {
+    const hasShips = game.ships.some(s => s.owner === next);
+    np.gold += hasShips ? PORT_INCOME : Math.round(PORT_INCOME * 1.5);
+  }
 
   // пассивная рыбалка: каждый баркас игрока, стоящий в рыбном месте, сам приносит улов
-  // в начале его хода — действие на это не тратится.
+  // в начале его хода — действие на это не тратится. Но место кормит не больше FISH_ZONE_CAP судов.
   if (np?.alive) {
     let catch_ = 0;
     for (const s of game.ships.filter(s => s.owner === next && SHIP_TYPES[s.type].fishing > 0)) {
-      if (game.map.fishZones.some(z => dist(s.x, s.y, z.x, z.y) <= z.radius)) {
+      const zone = game.map.fishZones.find(z => dist(s.x, s.y, z.x, z.y) <= z.radius);
+      if (zone && fishEarners(game, zone).some(o => o.id === s.id)) {
         catch_ += SHIP_TYPES[s.type].fishing;
         pushEvent(game, { type: 'gold', x: s.x, y: s.y, amount: SHIP_TYPES[s.type].fishing });
       }
@@ -548,10 +573,11 @@ export function applyAction(game, playerId, action) {
           victim.portHp = 0;
           eliminatePlayer(game, targetIdx, player);
         } else {
-          // порт огрызается: ответный залп по атакующему кораблю
-          ship.hp -= PORT_RETURN_DMG;
-          pushEvent(game, { type: 'shot', fx: base.x, fy: base.y, tx: ship.x, ty: ship.y, dmg: PORT_RETURN_DMG });
-          pushLog(game, `🏰 Порт игрока ${victim.nick} огрызается по ${SHIP_TYPES[ship.type].name} (−${PORT_RETURN_DMG} HP)`, 'battle');
+          // порт огрызается: ответный залп по атакующему кораблю. Линкору — на 20% больнее (он осадный, ему и сдача жирнее).
+          const retDmg = Math.round(PORT_RETURN_DMG * (ship.type === 'linkor' ? 1.2 : 1));
+          ship.hp -= retDmg;
+          pushEvent(game, { type: 'shot', fx: base.x, fy: base.y, tx: ship.x, ty: ship.y, dmg: retDmg });
+          pushLog(game, `🏰 Порт игрока ${victim.nick} огрызается по ${SHIP_TYPES[ship.type].name} (−${retDmg} HP)`, 'battle');
           if (ship.hp <= 0) sinkShip(game, ship, victim); // защитник забирает обломки
         }
       } else {
