@@ -347,6 +347,9 @@ io.on('connection', socket => {
   socket.on('start', (ack) => {
     const game = joinedGameId && getGame(joinedGameId);
     if (!game) return ack?.({ ok: false, error: 'Нет игры' });
+    // Онлайн-баттл стартует только при 2+ живых игроках-людях. Игра с ботами — это одиночный режим.
+    if (game.players.filter(p => !p.isBot).length < 2)
+      return ack?.({ ok: false, error: 'Нужно минимум 2 живых игрока. Игра против ботов — в одиночном режиме.' });
     const result = startGame(game, myPid);
     if (!result.ok) return ack?.({ ok: false, error: result.error });
     armTurnTimer(game);

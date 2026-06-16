@@ -1341,11 +1341,12 @@ function renderOverlays() {
     $('#lobbyBots').classList.toggle('hidden', !isCreator);
     $('#addBotBtn').disabled = !canAddBot;
     $('#botHint').textContent = `боты: ${botCount}/${botLimit}` + (botCount >= botLimit ? ' (лимит)' : '');
-    const canStart = isCreator && state.players.length >= 2;
+    const humans = state.players.filter(p => !p.isBot).length;
+    const canStart = isCreator && humans >= 2;
     $('#startBtn').classList.toggle('hidden', !isCreator);
     $('#startBtn').disabled = !canStart;
     $('#lobbyWait').textContent = isCreator
-      ? (state.players.length < 2 ? 'Нужен ещё хотя бы один игрок'
+      ? (humans < 2 ? 'Нужен ещё хотя бы один живой игрок (с ботами — это одиночный режим)'
         : state.players.length < state.config.maxPlayers ? `Можно ждать ещё ${state.config.maxPlayers - state.players.length} или начинать`
         : 'Все на борту!')
       : 'Ждём, пока создатель начнёт игру…';
