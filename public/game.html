@@ -84,6 +84,15 @@
         <button class="small" id="lobbyNickSave">Сменить</button>
       </div>
       <div class="slots" id="lobbySlots" style="margin-top:14px"></div>
+      <div id="lobbyBots" class="hidden" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:8px">
+        <select id="botLevelSel" class="small">
+          <option value="easy">🐣 Юнга</option>
+          <option value="mid" selected>⚓ Боцман</option>
+          <option value="hard">💀 Адмирал</option>
+        </select>
+        <button class="small" id="addBotBtn">🤖 Добавить бота</button>
+        <span class="muted" id="botHint"></span>
+      </div>
       <p>Зови друзей — кидай им ссылку:</p>
       <div class="invite-link">
         <span id="inviteUrl"></span>

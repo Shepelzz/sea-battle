@@ -289,6 +289,43 @@ io.on('connection', socket => {
     ack?.({ ok: true });
   });
 
+  // добавить бота в онлайн-лобби (только создатель; ботов не больше половины мест)
+  socket.on('addBot', ({ level } = {}, ack) => {
+    const game = joinedGameId && getGame(joinedGameId);
+    if (!game) return ack?.({ ok: false, error: 'Нет игры' });
+    if (game.status !== 'lobby') return ack?.({ ok: false, error: 'Игра уже идёт' });
+    if (game.players[0]?.id !== myPid) return ack?.({ ok: false, error: 'Ботов добавляет только создатель' });
+    const lvl = ['easy', 'mid', 'hard'].includes(level) ? level : 'mid';
+    const botCount = game.players.filter(p => p.isBot).length;
+    const limit = Math.floor(game.config.maxPlayers / 2); // боты — максимум половина слотов
+    if (botCount >= limit) return ack?.({ ok: false, error: `Ботов не больше ${limit} (половина мест — за людьми)` });
+    if (game.players.length >= game.config.maxPlayers) return ack?.({ ok: false, error: 'Все слоты заняты' });
+    const botId = 'bot:' + game.id + ':' + botCount + ':' + crypto.randomBytes(2).toString('hex');
+    const name = BOT_NAMES[lvl][botCount] || ('Бот ' + (botCount + 1));
+    addPlayer(game, botId, name, randomFreeColor(game));
+    const bp = game.players[game.players.length - 1];
+    bp.isBot = true; bp.botLevel = lvl;
+    db.saveGame(game);
+    broadcastState(game);
+    broadcastLobbies();
+    ack?.({ ok: true });
+  });
+
+  // убрать бота из лобби (только создатель)
+  socket.on('removeBot', ({ botId } = {}, ack) => {
+    const game = joinedGameId && getGame(joinedGameId);
+    if (!game) return ack?.({ ok: false, error: 'Нет игры' });
+    if (game.status !== 'lobby') return ack?.({ ok: false, error: 'Игра уже идёт' });
+    if (game.players[0]?.id !== myPid) return ack?.({ ok: false, error: 'Только создатель' });
+    const idx = game.players.findIndex(p => p.id === botId && p.isBot);
+    if (idx === -1) return ack?.({ ok: false, error: 'Бот не найден' });
+    game.players.splice(idx, 1);
+    db.saveGame(game);
+    broadcastState(game);
+    broadcastLobbies();
+    ack?.({ ok: true });
+  });
+
   socket.on('start', (ack) => {
     const game = joinedGameId && getGame(joinedGameId);
     if (!game) return ack?.({ ok: false, error: 'Нет игры' });

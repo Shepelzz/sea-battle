@@ -1323,13 +1323,24 @@ function renderOverlays() {
         taken);
     } else { $('#lobbyColors').innerHTML = ''; }
     $('#inviteUrl').textContent = location.href;
+    const isCreator = state.players[0]?.id === myId;
     $('#lobbySlots').innerHTML = Array.from({ length: cfg.maxPlayers }, (_, i) => {
       const p = state.players[i];
-      return p
-        ? `<div class="slot filled"><span class="dot" style="background:${p.color}"></span>${escapeHtml(p.nick)}</div>`
-        : `<div class="slot">пусто…</div>`;
+      if (!p) return `<div class="slot">пусто…</div>`;
+      const dot = `<span class="dot" style="background:${p.color}"></span>`;
+      if (p.isBot) {
+        const rm = isCreator ? `<button class="small slot-x" data-rmbot="${p.id}" title="Убрать бота">✖</button>` : '';
+        return `<div class="slot filled">${dot}🤖 ${escapeHtml(p.nick)}${rm}</div>`;
+      }
+      return `<div class="slot filled">${dot}${escapeHtml(p.nick)}${p.id === myId ? ' (ты)' : ''}</div>`;
     }).join('');
-    const isCreator = state.players[0]?.id === myId;
+    // управление ботами (только создатель): боты ≤ половины слотов
+    const botCount = state.players.filter(p => p.isBot).length;
+    const botLimit = Math.floor(cfg.maxPlayers / 2);
+    const canAddBot = isCreator && botCount < botLimit && state.players.length < cfg.maxPlayers;
+    $('#lobbyBots').classList.toggle('hidden', !isCreator);
+    $('#addBotBtn').disabled = !canAddBot;
+    $('#botHint').textContent = `боты: ${botCount}/${botLimit}` + (botCount >= botLimit ? ' (лимит)' : '');
     const canStart = isCreator && state.players.length >= 2;
     $('#startBtn').classList.toggle('hidden', !isCreator);
     $('#startBtn').disabled = !canStart;
@@ -1367,6 +1378,19 @@ $('#copyBtn').addEventListener('click', async () => {
 });
 $('#startBtn').addEventListener('click', () => {
   socket.emit('start', res => { if (!res.ok) $('#lobbyError').textContent = res.error; });
+});
+// добавить бота в лобби
+$('#addBotBtn').addEventListener('click', () => {
+  socket.emit('addBot', { level: $('#botLevelSel').value }, res => {
+    if (!res.ok) $('#lobbyError').textContent = res.error;
+  });
+});
+// убрать бота (делегирование — кнопки ✖ перерисовываются)
+$('#lobbySlots').addEventListener('click', e => {
+  const b = e.target.closest('[data-rmbot]');
+  if (b) socket.emit('removeBot', { botId: b.dataset.rmbot }, res => {
+    if (!res.ok) $('#lobbyError').textContent = res.error;
+  });
 });
 // смена своего ника прямо в лобби — перезаходим с тем же токеном, ник обновится у всех
 function saveLobbyNick() {

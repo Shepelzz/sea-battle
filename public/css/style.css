@@ -310,6 +310,7 @@ aside.panel {
 }
 .slot.filled { border-style: solid; color: var(--ink); background: var(--paper); }
 .slot .dot { width: 12px; height: 12px; border-radius: 50%; margin-bottom: 4px; border: 1px solid var(--ink); }
+.slot .slot-x { margin-top: 5px; padding: 0 7px; font-size: 13px; line-height: 1.5; border-width: 1.4px; box-shadow: none; }
 
 .medal { font-size: 1.3em; }
 
