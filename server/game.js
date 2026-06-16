@@ -375,6 +375,21 @@ function eliminatePlayer(game, victimIdx, killer) {
   }
 }
 
+// Аварийное завершение партии: выбивает слабейших живых, пока не останется один —
+// победитель. Используется, если авто-дорешка за ботов упёрлась в лимит ходов.
+export function forceFinish(game) {
+  const powerOf = i => game.ships.filter(s => s.owner === i)
+    .reduce((a, x) => a + x.hp + SHIP_TYPES[x.type].dmg, 0) + (game.players[i].portHp || 0);
+  let guard = 0;
+  while (game.status === 'active' && game.players.filter(p => p.alive).length > 1 && guard++ < 8) {
+    const weakest = game.players
+      .map((p, i) => ({ i, alive: p.alive }))
+      .filter(x => x.alive)
+      .sort((a, b) => powerOf(a.i) - powerOf(b.i))[0];
+    eliminatePlayer(game, weakest.i, null); // как сдача; при alive===1 объявит победителя
+  }
+}
+
 // Смена цвета в лобби (валидируем: из палитры и не занят другим игроком).
 export function setColor(game, playerId, color) {
   if (game.status !== 'lobby') return { ok: false, error: 'Цвет можно менять только в лобби' };

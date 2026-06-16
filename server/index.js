@@ -14,7 +14,7 @@ import { Server } from 'socket.io';
 import * as db from './db.js';
 import {
   createGame, addPlayer, startGame, applyAction, leaveGame, nudge,
-  timeoutTurn, publicState, setColor, randomFreeColor, PALETTE
+  timeoutTurn, publicState, setColor, randomFreeColor, forceFinish, PALETTE
 } from './game.js';
 import { chooseBotAction, BOT_NAMES } from './bot.js';
 
@@ -149,6 +149,24 @@ function maybeBotTurn(game) {
     if (g.status === 'finished') db.saveResults(g);
     persistAndBroadcast(g);
   }, BOT_DELAY_MS));
+}
+
+// Все живые игроки-люди сдались → не заставляем смотреть, как боты доигрывают:
+// прогоняем доигровку за ботов синхронно и завершаем партию (победитель — кто выстоял).
+function maybeAutoFinish(game) {
+  if (game.status !== 'active') return;
+  if (game.players.some(p => p.alive && !p.isBot)) return; // ещё есть живые люди
+  let guard = 0;
+  while (game.status === 'active' && guard++ < 4000) {
+    const cur = game.players[game.turn.idx];
+    if (!cur?.alive) break; // подстраховка (advanceTurn и так пропускает выбывших)
+    let action;
+    try { action = chooseBotAction(game, game.turn.idx, cur.botLevel || 'mid'); }
+    catch { action = { type: 'skip' }; }
+    if (!applyAction(game, cur.id, action).ok) applyAction(game, cur.id, { type: 'skip' });
+  }
+  if (game.status === 'active') forceFinish(game); // уперлись в лимит — победитель по силе
+  clearTimeout(timers.get(game.id));
 }
 
 // --- REST ---
@@ -353,6 +371,7 @@ io.on('connection', socket => {
     if (!game) return ack?.({ ok: false, error: 'Нет игры' });
     const result = leaveGame(game, myPid);
     if (!result.ok) return ack?.({ ok: false, error: result.error });
+    maybeAutoFinish(game); // все люди сдались → доигрываем за ботов и завершаем сразу
     if (game.status === 'finished') db.saveResults(game);
     else armTurnTimer(game);
     persistAndBroadcast(game);
