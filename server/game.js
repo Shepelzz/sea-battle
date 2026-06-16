@@ -4,7 +4,6 @@ import {
   SHIP_TYPES, START_FLEET, START_GOLD, PORT_HP, PORT_RETURN_DMG, PORT_INCOME,
   SHIP_COLLISION_DIST, LOOT_REACH, BROADSIDE_MULT,
   PIRATE, PIRATE_DESPAWN_CHANCE, PIRATE_SPAWN_CHANCE, PIRATE_MOVE_CHANCE,
-  PIRATE_REVENGE_SHOT, PIRATE_FLEE_CHANCE, PIRATE_CALM_CHANCE,
   PIRATE_BOSS_CHANCE, PIRATE_BOSS_HP
 } from './ships.js';
 
@@ -107,7 +106,7 @@ export function startGame(game, playerId) {
       });
     });
   });
-  for (let i = 0; i < game.players.length; i++) spawnPirate(game, true, false);
+  for (let i = 0; i < Math.min(MAX_PIRATES, game.players.length); i++) spawnPirate(game, true, false, i);
   game.status = 'active';
   game.turn = { idx: 0, number: 1, deadline: turnDeadline(game), nudged: false };
   pushLog(game, `⚔️ Баттл начался! Первым ходит ${game.players[0].nick}`, 'battle');
@@ -128,7 +127,7 @@ function randomWaterSpot(game) {
   return null;
 }
 
-function spawnPirate(game, silent = false, allowBoss = true) {
+function spawnPirate(game, silent = false, allowBoss = true, slot = null) {
   const spot = randomWaterSpot(game);
   if (!spot) return;
   const boss = allowBoss && Math.random() < PIRATE_BOSS_CHANCE;
@@ -143,7 +142,9 @@ function spawnPirate(game, silent = false, allowBoss = true) {
       ? (40 + Math.floor(Math.random() * 41)) * 10  // 400..800 — большой куш
       : (15 + Math.floor(Math.random() * 21)) * 10, // 150..350
     heading: Math.random() * Math.PI * 2, // пираты идут по курсу, а не мечутся
-    angryAt: null
+    angryAt: null,
+    turnSlot: slot != null ? slot : (game.turn?.idx ?? 0), // ходит раз в цикл — после хода этого игрока
+    bornTurn: game.turn?.number ?? 0                       // для минимального срока жизни (5 ходов)
   });
   if (!silent) {
     pushLog(game, boss
@@ -172,41 +173,78 @@ function steerPirate(game, pir, step, baseHeading) {
   return false;
 }
 
-function pirateRevenge(game, pir) {
-  const offender = game.players[pir.angryAt];
-  if (!offender || !offender.alive) { pir.angryAt = null; return false; }
-  const targets = game.ships.filter(s => s.owner === pir.angryAt);
-  if (!targets.length) { pir.angryAt = null; return false; }
-  let nearest = targets[0];
-  for (const t of targets) {
-    if (dist(pir.x, pir.y, t.x, t.y) < dist(pir.x, pir.y, nearest.x, nearest.y)) nearest = t;
-  }
-  const d = dist(pir.x, pir.y, nearest.x, nearest.y);
+const MAX_PIRATES = 2; // не больше двух пиратов на карте одновременно
 
-  if (d <= PIRATE.fireRange && Math.random() < PIRATE_REVENGE_SHOT) {
-    nearest.hp -= PIRATE.dmg;
-    pushEvent(game, { type: 'shot', fx: pir.x, fy: pir.y, tx: nearest.x, ty: nearest.y, dmg: PIRATE.dmg });
-    pushLog(game, `🏴‍☠️ Пираты дают сдачи: −${PIRATE.dmg} HP по ${SHIP_TYPES[nearest.type].name} игрока ${offender.nick}!`, 'battle');
-    if (nearest.hp <= 0) sinkShip(game, nearest, null);
+const nearestShip = (pir, list) =>
+  list.reduce((a, b) => dist(pir.x, pir.y, b.x, b.y) < dist(pir.x, pir.y, a.x, a.y) ? b : a);
+
+// Действие пирата, если он ВОВЛЕЧЁН (рядом есть корабли): атака/преследование/бегство.
+// Возвращает true, если пират занят боем — тогда он НЕ исчезает и не дрейфует просто так.
+function pirateAct(game, pir) {
+  const D = PIRATE.dmg, FR = PIRATE.fireRange, MV = PIRATE.move;
+  // рыбацкие баркасы пиратам не интересны — не атакуют, не «вовлекаются», не убегают от них
+  const all = game.ships.filter(s => s.owner >= 0 && game.players[s.owner]?.alive && !SHIP_TYPES[s.type].fishing);
+  if (!all.length) return false;
+
+  // «вовлечён»: рядом корабль в зоне своего хода или огня (+20%) — пирату не дадут раствориться
+  const engaged = all.some(s => {
+    const st = SHIP_TYPES[s.type];
+    return dist(pir.x, pir.y, s.x, s.y) <= Math.max(st.move, st.fireRange) * 1.2;
+  });
+  if (!engaged) return false; // свободен — обычная жизнь (дрейф/туман) снаружи
+
+  // суммарный урон, который пират может схлопотать прямо сейчас (кто достаёт его огнём)
+  const incoming = all.filter(s => SHIP_TYPES[s.type].dmg > 0 &&
+    dist(pir.x, pir.y, s.x, s.y) <= SHIP_TYPES[s.type].fireRange)
+    .reduce((sum, s) => sum + SHIP_TYPES[s.type].dmg, 0);
+
+  // цели в радиусе огня пирата: добиваемые в приоритете, иначе слабейшая по HP
+  const inRange = all.filter(s => dist(pir.x, pir.y, s.x, s.y) <= FR);
+  let target = null;
+  const killable = inRange.filter(s => s.hp <= D);
+  if (killable.length) target = killable.reduce((a, b) => a.hp < b.hp ? b : a); // добьём любого — берём пожирнее (по награде неважно, по HP)
+  else if (inRange.length) target = inRange.reduce((a, b) => a.hp < b.hp ? a : b);
+
+  if (target) {
+    // ДЕРЁМСЯ если можем добить ОДНИМ выстрелом или переживём ответный огонь окружения.
+    // (раньше полумёртвый корабль мог «отпугнуть» пирата — теперь добиваемого он бьёт всегда)
+    const willKill = target.hp <= D;
+    if (willKill || pir.hp > incoming) {
+      target.hp -= D;
+      pir.angryAt = target.owner;
+      pushEvent(game, { type: 'shot', fx: pir.x, fy: pir.y, tx: target.x, ty: target.y, dmg: D });
+      pushLog(game, `🏴‍☠️ Пираты атакуют ${SHIP_TYPES[target.type].name} игрока ${game.players[target.owner].nick} (−${D} HP)`, 'battle');
+      if (target.hp <= 0) sinkShip(game, target, null);
+      return true;
+    }
+    // не добить и опасно — уходим от ближайшего корабля
+    const t = nearestShip(pir, all);
+    steerPirate(game, pir, MV, Math.atan2(pir.y - t.y, pir.x - t.x));
     return true;
   }
-  if (Math.random() < PIRATE_FLEE_CHANCE) {
-    // удирает от обидчика на всех парусах
-    const away = Math.atan2(pir.y - nearest.y, pir.x - nearest.x);
-    steerPirate(game, pir, PIRATE.move, away);
-    return true;
-  }
-  return false;
+
+  // цели в радиусе огня нет, но рядом наседает корабль → отходим (не гоняемся за флотом —
+  // иначе пираты вечно грызут и партия не сходится). Бьёт он тех, кто сам зашёл в радиус.
+  const near = nearestShip(pir, all);
+  steerPirate(game, pir, MV, Math.atan2(pir.y - near.y, pir.x - near.x));
+  return true;
 }
 
-// Пираты живут своей жизнью между ходами игроков.
+// Пираты живут своей жизнью. ВАЖНО: каждый пират ходит РАЗ В ЦИКЛ — только после хода
+// «своего» игрока (turnSlot), иначе при 3-4 игроках он успевал бы 3-4 раза за круг.
 function movePirates(game) {
-  const maxPirates = game.players.length;
+  const cur = game.turn.idx; // игрок, чей ход только что закончился
+  const aliveIdx = game.players.map((p, i) => (p.alive ? i : -1)).filter(i => i >= 0);
   for (const pir of [...game.ships.filter(s => s.owner === -1)]) {
-    if (pir.angryAt !== null && Math.random() < PIRATE_CALM_CHANCE) pir.angryAt = null;
-    if (pir.angryAt !== null && pirateRevenge(game, pir)) continue;
+    // привязка к выбывшему/несуществующему слоту → переякорить на текущего
+    if (pir.turnSlot == null || !game.players[pir.turnSlot]?.alive) pir.turnSlot = cur;
+    if (pir.turnSlot !== cur) continue; // не его слот в этом цикле — пропускаем
 
-    if (Math.random() < PIRATE_DESPAWN_CHANCE) {
+    if (pirateAct(game, pir)) continue; // вовлечён в бой/бегство — без исчезновения
+
+    pir.angryAt = null;
+    // не исчезать раньше 5 ходов с момента появления
+    if (game.turn.number - (pir.bornTurn || 0) >= 5 && Math.random() < PIRATE_DESPAWN_CHANCE) {
       game.ships = game.ships.filter(s => s.id !== pir.id);
       pushLog(game, '🌫 Пиратский корабль растворился в тумане…');
       continue;
@@ -215,9 +253,11 @@ function movePirates(game) {
     const step = 35 + Math.random() * (PIRATE.move - 35);
     steerPirate(game, pir, step, pir.heading ?? (pir.heading = Math.random() * Math.PI * 2));
   }
-  if (game.ships.filter(s => s.owner === -1).length < maxPirates &&
+  // респаун раз в круг (когда отходил первый живой игрок), привязываем к случайному живому слоту
+  if (cur === aliveIdx[0] &&
+      game.ships.filter(s => s.owner === -1).length < MAX_PIRATES &&
       Math.random() < PIRATE_SPAWN_CHANCE) {
-    spawnPirate(game);
+    spawnPirate(game, false, true, aliveIdx[Math.floor(Math.random() * aliveIdx.length)]);
   }
 }
 
