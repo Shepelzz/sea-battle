@@ -173,9 +173,10 @@ function animTick(now) {
     animPos.set(e.shipId, { x: pt.x, y: pt.y, ang: bezAng(e, k) });
   }
   effects = effects.filter(e => now < e.start + e.dur);
+  if (fogFade.length) fogFade = fogFade.filter(f => now - f.born < f.hold + f.fade); // отсев догоревших затуханий тумана
   updateBaseFires(dt);
   render();
-  if (effects.length || anyBurning()) requestAnimationFrame(animTick);
+  if (effects.length || anyBurning() || fogFade.length) requestAnimationFrame(animTick);
   else { rafOn = false; animPos.clear(); render(); }
 }
 
@@ -183,6 +184,13 @@ function playEvents(events) {
   // туман войны: события вне зоны видимости не анимируем и не озвучиваем (иначе видно бой в тумане)
   const fog = fogActive();
   const vis = fog ? visionCircles() : null;
+  // место гибели МОЕГО корабля держим видимым на эту серию событий — чтобы показать смертельный выстрел и взрыв
+  if (fog) for (const ev of events) {
+    if (ev.type === 'explosion' && ev.ship && ev.ship.owner === myIdx()) {
+      const st = ST(ev.ship.type), r = st ? Math.max(st.move, st.fireRange) * FOG_SHIP_MULT : 180;
+      vis.push({ x: ev.x, y: ev.y, r });
+    }
+  }
   const hidden = (x, y) => fog && !fogVisible(x, y, vis);
   let delay = 0;
   for (const ev of events) {
@@ -201,6 +209,7 @@ function playEvents(events) {
         kind: 'sail', shipId: ev.shipId, fx: ev.fx, fy: ev.fy, cx, cy, tx: ev.tx, ty: ev.ty,
         moveDur: FX.sail.moveDur, dur: FX.sail.moveDur + FX.sail.wakeFade, delay
       });
+      delay += FX.sail.moveDur; // следующие события (ход/выстрел пирата) ждут, пока лодка доплывёт
     } else if (ev.type === 'shot') {
       if (hidden(ev.fx, ev.fy) && hidden(ev.tx, ev.ty)) continue;
       Sound.playAt('shot', delay);
@@ -242,6 +251,12 @@ function playEvents(events) {
           r: 7 + Math.random() * 9, rise: 28 + Math.random() * 34
         }))
       });
+      // мой корабль утонул → держим видимость до конца анимации, затем туман плавно затягивает место
+      if (fog && ev.ship && ev.ship.owner === myIdx()) {
+        const st = ST(ev.ship.type), r = st ? Math.max(st.move, st.fireRange) * FOG_SHIP_MULT : 180;
+        fogFade.push({ x: ev.x, y: ev.y, r, born: performance.now(), hold: delay + FX.boom.durBig, fade: 1300 });
+        ensureAnimLoop();
+      }
       delay += 350;
     } else if (ev.type === 'gold') {
       if (hidden(ev.x, ev.y)) continue;
@@ -560,6 +575,7 @@ function drawBase(b, i, { alive, hpFrac, dim }) {
 let fogGameId = null, fogLayer = null, fogLayerCtx = null;
 const fogCells = new Set();   // исследованные клетки карты (показ островов/зон)
 const fogLastSeen = {};       // i → {portHp, alive} на момент последней видимости базы врага
+let fogFade = [];             // затухающая видимость от потопленных МОИХ кораблей {x,y,r,born,hold,fade}
 const FOG_CELL = 48, FOG_SHIP_MULT = 1.3, FOG_BASE_EXTRA = 200;
 
 function fogActive() {
@@ -569,11 +585,19 @@ function fogActive() {
 function fogResetMem() {
   fogCells.clear();
   for (const k in fogLastSeen) delete fogLastSeen[k];
+  fogFade = [];
 }
 function visionCircles() {
   const me = myIdx(), circles = [], m = state.map;
   const base = m.bases[me];
   if (base) circles.push({ x: base.x, y: base.y, r: base.radius + FOG_BASE_EXTRA });
+  // затухающая видимость от только что потопленных МОИХ кораблей — туман закрывается плавно после анимации
+  const now = performance.now();
+  for (const f of fogFade) {
+    const t = now - f.born;
+    if (t <= f.hold) circles.push({ x: f.x, y: f.y, r: f.r });
+    else if (t < f.hold + f.fade) { const k = 1 - (t - f.hold) / f.fade; circles.push({ x: f.x, y: f.y, r: f.r * k * k }); }
+  }
   for (const s of state.ships) if (s.owner === me) {
     const st = ST(s.type);
     const pos = animPos.get(s.id) || s; // во время «плавания» — промежуточная позиция: туман плавно едет за лодкой
