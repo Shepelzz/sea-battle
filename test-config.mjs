@@ -34,10 +34,10 @@ for (const [type, want] of Object.entries(FLEET)) {
 eq('BROADSIDE_MULT', BROADSIDE_MULT, 0.8);
 eq('FISH_ZONE_CAP', FISH_ZONE_CAP, 4);
 eq('FISH_ZONE_CAP_BIG', FISH_ZONE_CAP_BIG, 5);
-eq('FISH_BIG_RADIUS', FISH_BIG_RADIUS, 110);
+eq('FISH_BIG_RADIUS', FISH_BIG_RADIUS, 102); // 15% от макс. радиуса 120
 eq('fishZoneCap(90)=4', fishZoneCap(90), 4);
-eq('fishZoneCap(110)=4 (порог не включительно)', fishZoneCap(110), 4);
-eq('fishZoneCap(111)=5', fishZoneCap(111), 5);
+eq('fishZoneCap(101)=4 (ниже порога)', fishZoneCap(101), 4);
+eq('fishZoneCap(102)=5 (порог включительно)', fishZoneCap(102), 5);
 eq('fishZoneCap(120)=5', fishZoneCap(120), 5);
 eq('START_FLEET', START_FLEET, ['shkhuna', 'shkhuna', 'fregat']);
 eq('START_GOLD', START_GOLD, 250);

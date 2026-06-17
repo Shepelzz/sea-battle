@@ -117,10 +117,11 @@ export const FISH_COUNT = 3;
 export const FISH_RADIUS_MIN = 90, FISH_RADIUS_RAND = 30;
 export const FISH_AREA_X0 = 0.18, FISH_AREA_XR = 0.64, FISH_AREA_Y0 = 0.15, FISH_AREA_YR = 0.7;
 export const FISH_BASE_GAP = 120, FISH_LOOT_GAP = 40, FISH_GAP = 100;
-// крупной считается зона радиусом больше 2/3 диапазона размеров (90..120) → порог 110
-export const FISH_BIG_RADIUS = FISH_RADIUS_MIN + Math.round(FISH_RADIUS_RAND * 2 / 3);
-// лимит судов на конкретную зону: крупная (радиус > порога) кормит FISH_ZONE_CAP_BIG, иначе FISH_ZONE_CAP
-export const fishZoneCap = (radius) => (radius > FISH_BIG_RADIUS ? FISH_ZONE_CAP_BIG : FISH_ZONE_CAP);
+export const FISH_MAX_RADIUS = FISH_RADIUS_MIN + FISH_RADIUS_RAND; // максимально возможный радиус зоны (120)
+// крупной (5 слотов) считается зона не более чем на 15% меньше максимального радиуса → порог 102
+export const FISH_BIG_RADIUS = Math.round(FISH_MAX_RADIUS * 0.85);
+// лимит судов на конкретную зону: крупная (радиус ≥ порога) кормит FISH_ZONE_CAP_BIG, иначе FISH_ZONE_CAP
+export const fishZoneCap = (radius) => (radius >= FISH_BIG_RADIUS ? FISH_ZONE_CAP_BIG : FISH_ZONE_CAP);
 
 // форма острова (полигон для отрисовки)
 export const ISLAND_SHAPE_MIN_PTS = 11, ISLAND_SHAPE_RAND_PTS = 4;
