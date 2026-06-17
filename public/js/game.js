@@ -107,6 +107,7 @@ socket.on('state', s => {
     lastEventSeq = s.eventSeq;
   }
   render();
+  if (anyBurning()) ensureAnimLoop(); // низкое HP базы → запустить анимацию огня/дыма
   Sound.onState(prev, s, myIdx());
   updateTab();
   // первый раз в активной игре и ты участник — показываем обучение
@@ -133,10 +134,15 @@ function updateTab() {
 let effects = [];          // активные эффекты {kind, ..., start, dur}
 const animPos = new Map(); // shipId → промежуточная позиция на время «плавания»
 let rafOn = false;
+let lastFrameT = performance.now();
 
 function addEffect(e) {
   effects.push({ ...e, start: performance.now() + (e.delay || 0) });
-  if (!rafOn) { rafOn = true; requestAnimationFrame(animTick); }
+  ensureAnimLoop();
+}
+// единый цикл анимации крутится, пока есть эффекты ИЛИ горящие базы
+function ensureAnimLoop() {
+  if (!rafOn) { rafOn = true; lastFrameT = performance.now(); requestAnimationFrame(animTick); }
 }
 
 // Путь хода — квадратичная Безье: корабль выходит из старой позиции по
@@ -155,6 +161,7 @@ function bezAng(e, t) {
 }
 
 function animTick(now) {
+  const dt = Math.min(0.05, (now - lastFrameT) / 1000); lastFrameT = now;
   animPos.clear();
   for (const e of effects) {
     if (e.kind !== 'sail') continue;
@@ -166,8 +173,9 @@ function animTick(now) {
     animPos.set(e.shipId, { x: pt.x, y: pt.y, ang: bezAng(e, k) });
   }
   effects = effects.filter(e => now < e.start + e.dur);
+  updateBaseFires(dt);
   render();
-  if (effects.length) requestAnimationFrame(animTick);
+  if (effects.length || anyBurning()) requestAnimationFrame(animTick);
   else { rafOn = false; animPos.clear(); render(); }
 }
 
@@ -619,6 +627,133 @@ function drawFogOverlay(circles) {
   ctx.restore();
 }
 
+// ===== Горящая база: дым/огонь при низком HP (визуал; под туманом — только если база видна) =====
+const baseFx = new Map();   // i → {smoke, fire, embers, sAcc, fAcc, eAcc}
+let fireGameId = null;
+// очаги (в мировых координатах относительно центра базы) — НИЖЕ флага, чтобы не перекрывать его цвет
+const FIRE_EMIT = [{ dx: 0, dy: 14 }, { dx: -22, dy: 20 }, { dx: 20, dy: 22 }];
+const rndf = (a, b) => a + Math.random() * (b - a);
+
+function fireTier(frac) { if (frac >= 0.8) return 0; if (frac >= 0.7) return 1; if (frac >= 0.6) return 2; return 3; }
+
+// Базы, которые сейчас должны гореть: живые, видимые (под туманом — своя или в зоне видимости), HP < 80%.
+function burningBases() {
+  if (!state?.map || state.status !== 'active') return [];
+  const fog = fogActive(), vis = fog ? visionCircles() : null, res = [];
+  state.map.bases.forEach((b, i) => {
+    const p = state.players[i]; if (!p || !p.alive) return;
+    if (fog && i !== myIdx() && !fogVisible(b.x, b.y, vis)) return; // не разведано — огня не видно
+    const frac = (p.portHp || 0) / (state.portMax || 840);
+    const tier = fireTier(frac); if (!tier) return;
+    res.push({ i, b, tier, sev: Math.max(0, Math.min(1, (0.6 - frac) / 0.6)) });
+  });
+  return res;
+}
+function anyBurning() {
+  if (burningBases().length) return true;
+  for (const fx of baseFx.values()) if (fx.smoke.length || fx.fire.length || fx.embers.length) return true;
+  return false;
+}
+
+function spawnBaseFx(fx, b, tier, sev, dt) {
+  const em = FIRE_EMIT.map(e => ({ x: b.x + e.dx, y: b.y + e.dy }));
+  // ДЫМ
+  let rate, srcs;
+  if (tier === 1) { rate = 7; srcs = [em[0]]; }            // лёгкий — одна струйка
+  else if (tier === 2) { rate = 15; srcs = em; }            // 3 очага
+  else { rate = 22 + sev * 16; srcs = em; }                 // густой над огнём
+  fx.sAcc += rate * dt;
+  while (fx.sAcc >= 1) {
+    fx.sAcc -= 1;
+    const e = srcs[(Math.random() * srcs.length) | 0], life = rndf(1.6, 2.8);
+    fx.smoke.push({ x: e.x + rndf(-5, 5), y: e.y + rndf(-3, 3), vx: rndf(-6, 6), vy: rndf(-22, -36),
+      r0: rndf(5, 9), grow: rndf(12, 20), life, max: life, sway: rndf(0, 6.28), swaySpd: rndf(1, 2.2),
+      dark: tier === 3 ? rndf(0.35, 0.55) : rndf(0.18, 0.3) });
+  }
+  if (tier < 3) return;
+  // ОГОНЬ + угли — только тир 3, скромный подъём (флаг выше — остаётся виден)
+  fx.fAcc += (32 + sev * 44) * dt;
+  while (fx.fAcc >= 1) {
+    fx.fAcc -= 1;
+    const e = em[(Math.random() * em.length) | 0], life = rndf(0.32, 0.58);
+    fx.fire.push({ x: e.x + rndf(-8, 8), y: e.y + rndf(-2, 4), vx: rndf(-9, 9), vy: rndf(-42, -68),
+      r0: rndf(6, 12) * (0.8 + sev * 0.5), life, max: life, sway: rndf(0, 6.28) });
+  }
+  fx.eAcc += (9 + sev * 20) * dt;
+  while (fx.eAcc >= 1) {
+    fx.eAcc -= 1;
+    const e = em[(Math.random() * em.length) | 0], life = rndf(0.6, 1.15);
+    fx.embers.push({ x: e.x + rndf(-9, 9), y: e.y, vx: rndf(-12, 12), vy: rndf(-58, -100),
+      r: rndf(1, 2.1), life, max: life, sway: rndf(0, 6.28) });
+  }
+}
+function stepParts(arr, dt) {
+  const now = performance.now() / 1000;
+  for (const p of arr) {
+    p.life -= dt;
+    p.x += (p.vx + Math.sin(p.sway + now * (p.swaySpd || 3)) * 7) * dt;
+    p.y += p.vy * dt;
+    p.vy *= (1 - 0.6 * dt);
+  }
+  return arr.filter(p => p.life > 0);
+}
+function updateBaseFires(dt) {
+  if (fireGameId !== state?.id) { fireGameId = state?.id; baseFx.clear(); }
+  if (!state?.map) return;
+  const burning = burningBases(), burnSet = new Set(burning.map(x => x.i));
+  for (const { i, b, tier, sev } of burning) {
+    let fx = baseFx.get(i);
+    if (!fx) { fx = { smoke: [], fire: [], embers: [], sAcc: 0, fAcc: 0, eAcc: 0 }; baseFx.set(i, fx); }
+    spawnBaseFx(fx, b, tier, sev, dt);
+  }
+  for (const [i, fx] of baseFx) {
+    fx.smoke = stepParts(fx.smoke, dt); fx.fire = stepParts(fx.fire, dt); fx.embers = stepParts(fx.embers, dt);
+    if (!burnSet.has(i) && !fx.smoke.length && !fx.fire.length && !fx.embers.length) baseFx.delete(i);
+  }
+}
+function drawBaseFires() {
+  if (!baseFx.size) return;
+  const k = view.scale;
+  const glow = new Map(burningBases().filter(x => x.tier === 3).map(x => [x.i, x.sev]));
+  for (const [i, fx] of baseFx) {
+    const b = state.map.bases[i]; if (!b) continue;
+    // свечение под огнём
+    const sev = glow.get(i);
+    if (sev != null) {
+      const flick = 0.85 + Math.sin(performance.now() / 90) * 0.1 + Math.random() * 0.05;
+      const r = (52 + sev * 38) * flick * k, cx = sx(b.x), cy = sy(b.y + 16);
+      const g = ctx.createRadialGradient(cx, cy, 4, cx, cy, r);
+      g.addColorStop(0, `rgba(255,150,40,${0.3 * Math.max(0.3, sev)})`); g.addColorStop(1, 'rgba(255,120,30,0)');
+      ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, 6.29); ctx.fill();
+      ctx.globalCompositeOperation = 'source-over';
+    }
+    // дым
+    for (const p of fx.smoke) {
+      const kk = p.life / p.max, age = 1 - kk, r = (p.r0 + p.grow * age) * k;
+      const a = Math.min(1, kk * 1.4) * 0.5, sh = Math.round(70 + age * 70);
+      const g = ctx.createRadialGradient(sx(p.x), sy(p.y), 0, sx(p.x), sy(p.y), r);
+      g.addColorStop(0, `rgba(${sh},${sh},${sh + 6},${a * p.dark * 2})`); g.addColorStop(1, `rgba(${sh},${sh},${sh + 6},0)`);
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(sx(p.x), sy(p.y), r, 0, 6.29); ctx.fill();
+    }
+    // огонь + угли
+    ctx.globalCompositeOperation = 'lighter';
+    for (const p of fx.fire) {
+      const kk = p.life / p.max, age = 1 - kk, r = Math.max(0.5, p.r0 * (1 - age * 0.7) * k);
+      const g = ctx.createRadialGradient(sx(p.x), sy(p.y), 0, sx(p.x), sy(p.y), r);
+      g.addColorStop(0, `rgba(255,245,200,${0.9 * kk})`); g.addColorStop(0.4, `rgba(255,170,40,${0.8 * kk})`);
+      g.addColorStop(1, 'rgba(200,40,20,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(sx(p.x), sy(p.y), r, 0, 6.29); ctx.fill();
+    }
+    for (const p of fx.embers) {
+      const kk = p.life / p.max;
+      ctx.fillStyle = `rgba(255,${180 + (Math.random() * 60 | 0)},80,${kk})`;
+      ctx.beginPath(); ctx.arc(sx(p.x), sy(p.y), p.r * k, 0, 6.29); ctx.fill();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
+}
+
 function render() {
   if (!state) return;
   renderSidebar();
@@ -743,6 +878,9 @@ function render() {
       }
     });
   }
+
+  // дым/огонь горящих баз — поверх островов и тумана
+  drawBaseFires();
 
   // цели в режиме атаки
   if (sel && mode === 'attack') {
