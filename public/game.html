@@ -10,9 +10,12 @@
   <div class="game-layout">
     <div id="mapWrap">
       <canvas id="map"></canvas>
-      <div class="toast" id="toast"></div>
-      <div class="hud-toast" id="hudToast"></div>
+      <div class="toasts" id="toasts"></div>
       <div class="ship-note" id="shipNote"></div>
+      <div class="chat-bar" id="chatBar">
+        <span class="chat-prompt">💬</span>
+        <input type="text" id="chatInput" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="120" placeholder="введите текст…">
+      </div>
       <div class="action-bar hidden" id="shipActions">
         <span id="shipActionsTitle" style="align-self:center"></span>
         <button class="small" id="btnMove">🧭 Плыть</button>
@@ -27,6 +30,7 @@
     <aside class="panel" id="panel">
       <div class="panel-head">
         <div class="turn-banner" id="turnBanner">Подключение…</div>
+        <button class="small hidden" id="chatBtn" title="Чат">💬</button>
         <button class="small" id="infoBtn" title="Инфобаза (скоро)">📖</button>
         <button class="small" id="muteBtn" title="Звук">🔊</button>
         <button class="small" id="panelToggle" title="Меню">☰</button>

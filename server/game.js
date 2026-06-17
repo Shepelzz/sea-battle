@@ -4,7 +4,7 @@ import {
   SHIP_TYPES, START_FLEET, START_GOLD, PORT_HP, PORT_RETURN_DMG, PORT_INCOME,
   PORT_RETURN_LINKOR_MULT, PORT_NO_SHIP_INCOME_MULT, PORT_INCOME_TURN_FACTOR,
   SHIP_COLLISION_DIST, LOOT_REACH, WRECK_LOOT_FRAC, TRIBUTE_FRAC,
-  BROADSIDE_MULT, BROADSIDE_ENABLED, FISH_ZONE_CAP, movesBudget, SHIP_ACTIONS,
+  BROADSIDE_MULT, BROADSIDE_ENABLED, FISH_ZONE_CAP, movesBudget, SHIP_ACTIONS, CHEATS_ENABLED,
   MAP_EDGE_MARGIN, ISLAND_BLOCK_GAP, SPAWN_FAN_N, SPAWN_FAN_RINGS, SPAWN_FAN_R0, SPAWN_FAN_RING_STEP,
   PIRATE, PIRATE_MAX, PIRATE_ENGAGE_MULT, PIRATE_MIN_LIFETIME, PIRATE_STEP_MIN,
   PIRATE_DESPAWN_CHANCE, PIRATE_SPAWN_CHANCE, PIRATE_MOVE_CHANCE, PIRATE_BOSS_CHANCE, PIRATE_BOSS_HP,
@@ -578,22 +578,25 @@ export function applyAction(game, playerId, action) {
       const ship = game.ships.find(s => s.id === action.shipId);
       if (!ship || ship.owner !== pIdx) return { ok: false, error: 'Это не ваш корабль' };
       const st = SHIP_TYPES[ship.type];
+      const volley = st.volley || 1; // авианосец (чит) бьёт залпом из нескольких снарядов подряд
 
       if (action.targetType === 'ship') {
         const target = game.ships.find(s => s.id === action.targetId);
         if (!target || target.owner === pIdx) return { ok: false, error: 'Неверная цель' };
         if (dist(ship.x, ship.y, target.x, target.y) > st.fireRange + 0.5)
           return { ok: false, error: 'Цель вне дальности стрельбы' };
-        target.hp -= st.dmg;
+        const total = st.dmg * volley;
+        target.hp -= total;
         player.stats.shotsFired++;
-        player.stats.damageDealt += st.dmg;
-        pushEvent(game, { type: 'shot', fx: ship.x, fy: ship.y, tx: target.x, ty: target.y, dmg: st.dmg });
+        player.stats.damageDealt += total;
+        for (let i = 0; i < volley; i++) // снаряды — клиент проигрывает их один за другим (auto=скорострельная очередь)
+          pushEvent(game, { type: 'shot', fx: ship.x, fy: ship.y, tx: target.x, ty: target.y, dmg: st.dmg, auto: volley > 1 });
         const targetName = target.owner === -1
           ? 'пиратскому кораблю'
           : `${SHIP_TYPES[target.type].name} игрока ${game.players[target.owner].nick}`;
         const abstractFoe = target.owner === -1 ? 'пиратов' : `флот игрока ${game.players[target.owner].nick}`;
         logEvent(game,
-          `🔥 ${player.nick}: ${st.name} бьёт по ${targetName} (−${st.dmg} HP)`,
+          `🔥 ${player.nick}: ${st.name} бьёт по ${targetName} (−${total} HP${volley > 1 ? ` залпом ×${volley}` : ''})`,
           `🔥 ${player.nick} напал на ${abstractFoe}`, 'battle');
         if (target.hp <= 0) sinkShip(game, target, player);
         else if (target.owner === -1) target.angryAt = pIdx; // пираты запоминают обидчика
@@ -605,12 +608,14 @@ export function applyAction(game, playerId, action) {
         if (dist(ship.x, ship.y, base.x, base.y) > st.fireRange + base.radius * 0.5)
           return { ok: false, error: 'Порт вне дальности стрельбы' };
         const portDmg = Math.round(st.dmg * (st.portBonus || 1)); // линкор бьёт по порту сильнее (portBonus)
-        victim.portHp -= portDmg;
+        const totalPort = portDmg * volley;
+        victim.portHp -= totalPort;
         player.stats.shotsFired++;
-        player.stats.damageDealt += portDmg;
-        pushEvent(game, { type: 'shot', fx: ship.x, fy: ship.y, tx: base.x, ty: base.y, dmg: portDmg });
+        player.stats.damageDealt += totalPort;
+        for (let i = 0; i < volley; i++)
+          pushEvent(game, { type: 'shot', fx: ship.x, fy: ship.y, tx: base.x, ty: base.y, dmg: portDmg, auto: volley > 1 });
         logEvent(game,
-          `🔥 ${player.nick} обстреливает порт игрока ${victim.nick} (−${portDmg} HP, осталось ${Math.max(0, victim.portHp)})`,
+          `🔥 ${player.nick} обстреливает порт игрока ${victim.nick} (−${totalPort} HP, осталось ${Math.max(0, victim.portHp)})`,
           `🔥 ${player.nick} напал на базу игрока ${victim.nick}`, 'battle');
         if (victim.portHp <= 0) {
           victim.portHp = 0;
@@ -632,19 +637,23 @@ export function applyAction(game, playerId, action) {
     }
 
     case 'broadside': {
-      if (!BROADSIDE_ENABLED) return { ok: false, error: 'Бортовой залп сейчас отключён' };
       const ship = game.ships.find(s => s.id === action.shipId);
       if (!ship || ship.owner !== pIdx) return { ok: false, error: 'Это не ваш корабль' };
       const st = SHIP_TYPES[ship.type];
       if (!st.broadside) return { ok: false, error: 'Этот корабль не умеет залп' };
-      // только вражеские БОЕВЫЕ корабли в радиусе (рыбацкие баркасы залп не трогает; пираты — да)
+      // залп может быть глобально выключен — но чит-корабль (авианосец) бьёт им ВСЕГДА
+      if (!BROADSIDE_ENABLED && !st.cheat) return { ok: false, error: 'Бортовой залп сейчас отключён' };
+      // вражеские цели в радиусе. Обычный залп не трогает рыбацкие баркасы; авианосец (cheat) — валит ВСЕХ.
       const targets = game.ships.filter(t =>
         t.owner !== pIdx &&
         !(t.owner >= 0 && !game.players[t.owner]?.alive) &&
-        (t.owner === -1 || !SHIP_TYPES[t.type].fishing) &&
+        (st.cheat || t.owner === -1 || !SHIP_TYPES[t.type].fishing) &&
         dist(ship.x, ship.y, t.x, t.y) <= st.fireRange + 0.5);
-      if (targets.length < 2) return { ok: false, error: 'Залп — когда в радиусе 2+ вражеских БОЕВЫХ корабля' };
-      const dmg = Math.round(st.dmg * BROADSIDE_MULT);
+      const minTargets = st.cheat ? 1 : 2; // авианосцу достаточно одной цели в радиусе
+      if (targets.length < minTargets)
+        return { ok: false, error: st.cheat ? 'Нет целей в радиусе' : 'Залп — когда в радиусе 2+ вражеских БОЕВЫХ корабля' };
+      // авианосец бьёт залпом полной мощью (volley×dmg, без штрафа); обычный залп — ×BROADSIDE_MULT
+      const dmg = Math.round(st.dmg * (st.volley || 1) * (st.cheat ? 1 : BROADSIDE_MULT));
       const hits = [];
       const toSink = [];
       for (const t of targets) {
@@ -655,10 +664,10 @@ export function applyAction(game, playerId, action) {
         else if (t.owner === -1) t.angryAt = pIdx;
       }
       player.stats.shotsFired++;
-      pushEvent(game, { type: 'broadside', fx: ship.x, fy: ship.y, hits });
+      pushEvent(game, { type: 'broadside', fx: ship.x, fy: ship.y, hits, auto: !!st.cheat, volley: st.volley || 1 });
       for (const t of toSink) sinkShip(game, t, player); // взрывы — после полёта залпа
       logEvent(game,
-        `💥 ${player.nick}: ${st.name} даёт бортовой залп по ${targets.length} целям` +
+        `💥 ${player.nick}: ${st.name} даёт залп по ${targets.length} целям` +
         (toSink.length ? ` — потоплено ${toSink.length}!` : '') + ` (−${dmg} каждой)`,
         `💥 ${player.nick} даёт бортовой залп`, 'battle');
       break;
@@ -689,6 +698,22 @@ export function applyAction(game, playerId, action) {
     || game.turn.moves >= movesBudget(game.config);
   if (game.status === 'active' && endsTurn) advanceTurn(game);
   return { ok: true };
+}
+
+// Спавн корабля у базы игрока (для читов тестового режима). Возвращает корабль или null (нет места).
+export function spawnCheatShip(game, pIdx, type) {
+  if (!game.map || !game.players[pIdx]) return null;
+  const def = SHIP_TYPES[type];
+  if (!def) return null;
+  const spot = findFreeSpotNearBase(game, game.map.bases[pIdx]);
+  if (!spot) return null;
+  const ship = {
+    id: 's' + (shipSeq++) + '_' + Math.random().toString(36).slice(2, 6),
+    owner: pIdx, type, x: spot.x, y: spot.y, hp: def.hp, maxHp: def.hp
+  };
+  game.ships.push(ship);
+  freshEvents(game); // тихо: без записи в журнал (фидбэк игроку — через ack чита)
+  return ship;
 }
 
 function findFreeSpotNearBase(game, base) {
@@ -726,6 +751,9 @@ export function timeoutTurn(game) {
 // На финале (баттл окончен) всё раскрываем — это итоговая таблица.
 export function publicState(game, viewerPid) {
   const reveal = game.config.hotseat || game.status === 'finished';
+  // чит-корабли видны клиенту только в тестовом режиме (нужны для отрисовки спавна); иначе — ни следа
+  const shipTypes = { ...SHIP_TYPES, pirate: PIRATE };
+  if (!CHEATS_ENABLED) for (const k in shipTypes) if (shipTypes[k]?.cheat) delete shipTypes[k];
   return {
     id: game.id,
     status: game.status,
@@ -747,6 +775,6 @@ export function publicState(game, viewerPid) {
     portMax: PORT_HP,
     movesPerTurn: movesBudget(game.config), // 3 в режиме «ход тремя судами», иначе 1
     palette: PALETTE,
-    shipTypes: { ...SHIP_TYPES, pirate: PIRATE }
+    shipTypes
   };
 }

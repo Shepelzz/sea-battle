@@ -55,13 +55,16 @@ socket.on('connect', () => {
 });
 
 let BROADSIDE_ON = true; // приходит из /api/config; если залп выключен — прячем кнопку/вики/тутор
+let CHEATS_ON = false;   // тестовый режим (читы); приходит из /api/config — иначе «/» не открывает консоль
 
 // Кнопка Google в окне ника (если сервер настроен и гость ещё не вошёл).
 (async () => {
   try {
     const cfg = await (await fetch('/api/config')).json();
     BROADSIDE_ON = cfg.broadside !== false;     // флаг залпа — до любых ранних выходов
+    CHEATS_ON = cfg.cheats === true;            // тестовый режим включается в конфиге сервера
     applyBroadsideFlag();
+    if (state) render();                        // конфиг пришёл асинхронно — обновить (кнопка чата)
     if (!cfg.googleClientId || localStorage.getItem('sb_session')) return;
     const s = document.createElement('script');
     s.src = 'https://accounts.google.com/gsi/client';
@@ -211,6 +214,16 @@ function playEvents(events) {
         moveDur: FX.sail.moveDur, dur: FX.sail.moveDur + FX.sail.wakeFade, delay
       });
       delay += FX.sail.moveDur; // следующие события (ход/выстрел пирата) ждут, пока лодка доплывёт
+    } else if (ev.type === 'shot' && ev.auto) {
+      // скорострельная очередь авианосца: трассер летит ПРЯМО (без дуги), звук автомата, плотный темп
+      if (hidden(ev.fx, ev.fy) && hidden(ev.tx, ev.ty)) continue;
+      const TR = 150; // время полёта трассера, мс
+      Sound.playAt('autoshot', delay);
+      addEffect({ kind: 'tracer', fx: ev.fx, fy: ev.fy, tx: ev.tx, ty: ev.ty, dur: TR, delay });
+      const impact = delay + TR - 8;
+      addEffect({ kind: 'spark', x: ev.tx, y: ev.ty, dur: 240, delay: impact });
+      if (ev.dmg) addEffect({ kind: 'dmg', x: ev.tx, y: ev.ty, amount: ev.dmg, dur: 950, delay: impact });
+      delay += 85; // следующий снаряд почти сразу — очередь
     } else if (ev.type === 'shot') {
       if (hidden(ev.fx, ev.fy) && hidden(ev.tx, ev.ty)) continue;
       Sound.playAt('shot', delay);
@@ -220,6 +233,21 @@ function playEvents(events) {
       addEffect({ kind: 'boom', x: ev.tx, y: ev.ty, big: false, dur: FX.boom.durSmall, delay: impact });
       if (ev.dmg) addEffect({ kind: 'dmg', x: ev.tx, y: ev.ty, amount: ev.dmg, dur: 1300, delay: impact });
       delay += FX.shell.dur + 140;
+    } else if (ev.type === 'broadside' && ev.auto) {
+      if (hidden(ev.fx, ev.fy)) continue;
+      // авианосец: очередь трассеров по ВСЕМ целям, волнами (звук автомата на каждую волну)
+      const waves = ev.volley || 5, gap = 85, TR = 150;
+      for (let w = 0; w < waves; w++) {
+        const wd = delay + w * gap;
+        Sound.playAt('autoshot', wd);
+        for (const h of ev.hits) {
+          addEffect({ kind: 'tracer', fx: ev.fx, fy: ev.fy, tx: h.tx, ty: h.ty, dur: TR, delay: wd });
+          addEffect({ kind: 'spark', x: h.tx, y: h.ty, dur: 220, delay: wd + TR - 8 });
+        }
+      }
+      for (const h of ev.hits) // суммарный урон по цели — один раз
+        addEffect({ kind: 'dmg', x: h.tx, y: h.ty, amount: h.dmg, dur: 1100, delay: delay + TR });
+      delay += waves * gap + 220;
     } else if (ev.type === 'broadside') {
       if (hidden(ev.fx, ev.fy)) continue;
       // залп: один звук, все ядра летят разом, взрывы и красные цифры вместе
@@ -309,6 +337,32 @@ function drawEffects(under = false) {
       ctx.arc(sx(x), sy(y), Math.max(2.5, FX.shell.size * view.scale), 0, Math.PI * 2);
       ctx.fillStyle = '#2b3a55';
       ctx.fill();
+    } else if (e.kind === 'tracer') {
+      // трассер очереди: летит ПО ПРЯМОЙ, яркий короткий след + светящаяся голова
+      const x = e.fx + (e.tx - e.fx) * p, y = e.fy + (e.ty - e.fy) * p;
+      const ang = Math.atan2(e.ty - e.fy, e.tx - e.fx);
+      const len = 12 * view.scale;
+      ctx.strokeStyle = 'rgba(255,200,70,.9)';
+      ctx.lineWidth = Math.max(1.5, 2.4 * view.scale);
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(sx(x - Math.cos(ang) * len / view.scale), sy(y - Math.sin(ang) * len / view.scale));
+      ctx.lineTo(sx(x), sy(y));
+      ctx.stroke();
+      ctx.lineCap = 'butt';
+      ctx.beginPath();
+      ctx.arc(sx(x), sy(y), Math.max(1.6, 2.4 * view.scale), 0, Math.PI * 2);
+      ctx.fillStyle = '#fff3c0';
+      ctx.fill();
+    } else if (e.kind === 'spark') {
+      // искра попадания очереди — быстрая жёлтая вспышка (вместо «бума» ядра)
+      const r = (4 + 7 * p) * view.scale;
+      ctx.globalAlpha = 1 - p;
+      ctx.beginPath(); ctx.arc(sx(e.x), sy(e.y), r, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffd24a'; ctx.fill();
+      ctx.beginPath(); ctx.arc(sx(e.x), sy(e.y), r * 0.5, 0, Math.PI * 2);
+      ctx.fillStyle = '#fff7d8'; ctx.fill();
+      ctx.globalAlpha = 1;
     } else if (e.kind === 'boom') {
       const r = (e.big ? FX.boom.big : FX.boom.small) * (0.35 + 0.65 * p) * view.scale;
       ctx.globalAlpha = 1 - p;
@@ -404,23 +458,34 @@ const movesUsed = () => state?.turn?.moves || 0;              // сколько 
 const movesLeft = () => Math.max(0, movesPerTurn() - movesUsed());
 const shipActed = id => (state?.turn?.actedShips || []).includes(id); // корабль уже ходил в этом ходу
 
-function toast(msg) {
-  const el = $('#toast');
+// Нотифы-СТЕК сверху: новый добавляется СВЕРХУ и оттесняет прежние вниз, у каждого свой таймер
+// (не накладываются друг на друга). kind: 'err' (красный) | 'info' (бумажный).
+// Повтор того же сообщения подряд — продлеваем существующий, не плодим дубликаты.
+function pushToast(msg, kind, ms = 2600) {
+  const box = $('#toasts');
+  if (!box) return;
+  const top = box.firstElementChild;
+  if (top && top.dataset.msg === msg && top.classList.contains(kind)) {
+    clearTimeout(top._t);
+    top._t = setTimeout(() => fadeToast(top), ms);
+    return;
+  }
+  const el = document.createElement('div');
+  el.className = 'toast-item ' + kind;
   el.textContent = msg;
-  el.classList.add('show');
-  clearTimeout(el._t);
-  el._t = setTimeout(() => el.classList.remove('show'), 2600);
+  el.dataset.msg = msg;
+  box.insertBefore(el, box.firstChild);            // новый — сверху, прежние уходят вниз
+  requestAnimationFrame(() => el.classList.add('show'));
+  el._t = setTimeout(() => fadeToast(el), ms);
+  while (box.children.length > 4) box.lastElementChild.remove(); // не копим бесконечно
 }
-
-// Информационный нотиф сверху экрана (в т.ч. «осталось N ходов») — сам растворяется.
-function hudToast(msg, ms = 2600) {
-  const el = $('#hudToast');
-  if (!el) return;
-  el.textContent = msg;
-  el.classList.add('show');
-  clearTimeout(el._t);
-  el._t = setTimeout(() => el.classList.remove('show'), ms);
+function fadeToast(el) {
+  el.classList.remove('show');
+  setTimeout(() => el.remove(), 300);              // дать доиграть затуханию
 }
+function toast(msg) { pushToast(msg, 'err'); }
+// Информационный нотиф (в т.ч. «осталось N ходов») — бумажный стикер в том же стеке.
+function hudToast(msg, ms = 2600) { pushToast(msg, 'info', ms); }
 
 // После моего суб-хода в режиме «ход тремя судами» — подсказать, сколько ходов осталось:
 // иначе после постановки корабля «на якорь» неочевидно, что ход продолжается.
@@ -621,9 +686,11 @@ let fogGameId = null, fogLayer = null, fogLayerCtx = null;
 const fogCells = new Set();   // исследованные клетки карты (показ островов/зон)
 const fogLastSeen = {};       // i → {portHp, alive} на момент последней видимости базы врага
 let fogFade = [];             // затухающая видимость от потопленных МОИХ кораблей {x,y,r,born,hold,fade}
+let fogRevealed = false;      // туман снят по команде сервера (клиентский визуал тестового режима)
 const FOG_CELL = 48, FOG_SHIP_MULT = 1.3, FOG_BASE_EXTRA = 200;
 
 function fogActive() {
+  if (fogRevealed) return false; // туман снят командой
   return !!(state?.config?.fog) && !state.config.hotseat
     && state.status === 'active' && state.players[myIdx()]?.alive;
 }
@@ -1117,7 +1184,7 @@ function drawCrosshair(x, y, col) {
 
 // Размеры корпусов в ЕДИНИЦАХ КАРТЫ — масштабируются строго одинаково,
 // пропорции классов не меняются при зуме (никаких min-капов на размер).
-const SHIP_LEN = { barkas: 34, shkhuna: 42, brig: 50, fregat: 60, linkor: 72, pirate: 50 };
+const SHIP_LEN = { barkas: 34, shkhuna: 42, brig: 50, fregat: 60, linkor: 72, pirate: 50, carrier: 132 };
 const SHIP_MASTS = { barkas: 0, shkhuna: 1, brig: 2, fregat: 3, linkor: 3, pirate: 2 };
 const headings = new Map(); // shipId → направление носа (по последнему ходу)
 
@@ -1129,6 +1196,90 @@ function currentHeading(s) {
   return Math.atan2(state.map.h / 2 - s.y, state.map.w / 2 - s.x);
 }
 
+// Чит-авианосец рисуется НЕ как парусник: большая серая лётная палуба с разметкой ВПП,
+// надстройкой-«островом» и самолётиками. Цвет игрока — только акцентами (флаг, кормовая полоса).
+function drawCarrier(s, p, px, py, pos, k, selected) {
+  const L = SHIP_LEN.carrier * k;                 // намного длиннее линкора (132 против 72)
+  const hw = L * 0.2;                              // половина ширины — широкий «беамистый» корпус
+  const bow = L * 0.5, stern = -L * 0.5;
+  const ang = pos.ang !== undefined ? pos.ang : currentHeading(s);
+  const col = p ? p.color : '#8a8f98';
+
+  if (selected) {
+    ctx.beginPath();
+    ctx.arc(px, py, L * 0.58, 0, Math.PI * 2);
+    ctx.strokeStyle = '#2b3a55'; ctx.lineWidth = 2; ctx.setLineDash([3, 3]); ctx.stroke(); ctx.setLineDash([]);
+  }
+
+  ctx.save();
+  ctx.translate(px, py);
+  ctx.rotate(ang);
+
+  // корпус (тёмно-серый, нос заострён)
+  ctx.beginPath();
+  ctx.moveTo(stern, -hw * 0.78);
+  ctx.lineTo(bow * 0.72, -hw);
+  ctx.lineTo(bow, -hw * 0.28);
+  ctx.lineTo(bow, hw * 0.28);
+  ctx.lineTo(bow * 0.72, hw);
+  ctx.lineTo(stern, hw * 0.78);
+  ctx.closePath();
+  ctx.fillStyle = '#565c66';
+  ctx.fill();
+  ctx.strokeStyle = '#2b3a55';
+  ctx.lineWidth = Math.max(1, 1.8 * k);
+  ctx.stroke();
+
+  // лётная палуба (светло-серая, чуть уже корпуса)
+  ctx.beginPath();
+  ctx.moveTo(stern + L * 0.03, -hw * 0.64);
+  ctx.lineTo(bow * 0.66, -hw * 0.82);
+  ctx.lineTo(bow * 0.9, 0);
+  ctx.lineTo(bow * 0.66, hw * 0.82);
+  ctx.lineTo(stern + L * 0.03, hw * 0.64);
+  ctx.closePath();
+  ctx.fillStyle = '#878e98';
+  ctx.fill();
+
+  // разметка ВПП: осевая (пунктир) + угловая палуба
+  ctx.strokeStyle = 'rgba(255,255,255,.88)';
+  ctx.lineWidth = Math.max(1, 1.8 * k);
+  ctx.setLineDash([6 * k, 5 * k]);
+  ctx.beginPath(); ctx.moveTo(stern + L * 0.08, 0); ctx.lineTo(bow * 0.78, 0); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(stern + L * 0.12, hw * 0.12); ctx.lineTo(bow * 0.64, -hw * 0.55); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // кормовая полоса цвета игрока (акцент)
+  ctx.strokeStyle = col; ctx.lineWidth = Math.max(2, 3.5 * k);
+  ctx.beginPath(); ctx.moveTo(stern + L * 0.035, -hw * 0.58); ctx.lineTo(stern + L * 0.035, hw * 0.58); ctx.stroke();
+
+  // самолётики (тёмные «крестики», носом к корме корабля)
+  ctx.strokeStyle = '#2b3a55'; ctx.lineWidth = Math.max(1, 1.3 * k); ctx.lineCap = 'round';
+  const plane = (cx, cy) => {
+    ctx.beginPath();
+    ctx.moveTo(cx - 4 * k, cy); ctx.lineTo(cx + 4 * k, cy);              // фюзеляж
+    ctx.moveTo(cx + 0.5 * k, cy); ctx.lineTo(cx - 1.5 * k, cy - 3.2 * k); // крылья
+    ctx.moveTo(cx + 0.5 * k, cy); ctx.lineTo(cx - 1.5 * k, cy + 3.2 * k);
+    ctx.moveTo(cx - 4 * k, cy); ctx.lineTo(cx - 5.4 * k, cy - 1.8 * k);   // хвост
+    ctx.moveTo(cx - 4 * k, cy); ctx.lineTo(cx - 5.4 * k, cy + 1.8 * k);
+    ctx.stroke();
+  };
+  for (const [fx, fy] of [[0.2, -0.42], [0.38, -0.42], [0.2, 0.3], [0.56, -0.38]]) plane(stern + L * fx, hw * fy);
+  ctx.lineCap = 'butt';
+
+  // надстройка-«остров» по правому борту (тёмно-серый блок) + полоса цвета игрока
+  const iw = L * 0.13, ih = hw * 0.95, ix = bow * 0.08 - iw / 2, iy = hw * 0.6 - ih / 2;
+  ctx.fillStyle = '#3c424b';
+  ctx.fillRect(ix, iy, iw, ih);
+  ctx.strokeStyle = '#2b3a55'; ctx.lineWidth = Math.max(.8, 1.2 * k); ctx.strokeRect(ix, iy, iw, ih);
+  ctx.fillStyle = col;                                   // цветной «флаг»-полоса на острове
+  ctx.fillRect(ix, iy + ih * 0.32, iw, Math.max(2, ih * 0.22));
+
+  ctx.restore();
+
+  hpBar(px, py + L * 0.4 + 4, Math.max(22, L * 0.62), s.hp / (s.maxHp || 1400), '#27ae60');
+}
+
 function drawShip(s, selected) {
   const isPirate = s.owner === -1;
   const p = isPirate ? null : state.players[s.owner];
@@ -1136,6 +1287,7 @@ function drawShip(s, selected) {
   const pos = animPos.get(s.id) || s; // во время анимации — промежуточная позиция
   const px = sx(pos.x), py = sy(pos.y);
   const k = view.scale;
+  if (s.type === 'carrier') { drawCarrier(s, p, px, py, pos, k, selected); return; } // чит-авианосец — своя отрисовка
   const L = (SHIP_LEN[s.type] || 46) * k * (s.boss ? 1.5 : 1); // босс крупнее
   const W = L * 0.36;
   const hull = isPirate ? (s.boss ? '#1c1c22' : '#33363c') : p.color;
@@ -1471,15 +1623,16 @@ function applyBroadsideFlag() {
 }
 
 function canBroadside(ship) {
-  if (!BROADSIDE_ON) return false;
   const st = ST(ship.type);
   if (!st.broadside) return false;
+  const cheat = !!st.cheat;                    // авианосец бьёт залпом, даже если он выключен в конфиге
+  if (!BROADSIDE_ON && !cheat) return false;
   const me = myIdx();
   const inRange = state.ships.filter(t =>
     t.owner !== me && !(t.owner >= 0 && !state.players[t.owner]?.alive) &&
-    (t.owner === -1 || !ST(t.type).fishing) &&
+    (cheat || t.owner === -1 || !ST(t.type).fishing) &&  // авианосец валит и баркасы
     dist(ship.x, ship.y, t.x, t.y) <= st.fireRange);
-  return inRange.length >= 2;
+  return inRange.length >= (cheat ? 1 : 2);     // авианосцу хватит одной цели
 }
 
 $('#btnMove').addEventListener('click', () => {
@@ -1502,7 +1655,7 @@ function openInfo() {
   // таблица флота из актуальных характеристик
   if (state?.shipTypes) {
     $('#infoFleet').innerHTML = Object.entries(state.shipTypes)
-      .filter(([, st]) => !st.npc)
+      .filter(([, st]) => !st.npc && !st.cheat)
       .map(([, st]) => {
         const extra = [
           st.fishing ? `🐟 +${st.fishing}` : '',
@@ -1610,6 +1763,7 @@ function renderSidebar() {
   const showActions = !spectator && state.status === 'active' && me?.alive;
   $('#actionsRow').classList.toggle('hidden', !showActions);
   $('#btnSurrender').classList.toggle('hidden', !showActions);
+  $('#chatBtn').classList.toggle('hidden', !canUseChat()); // кнопка чата (видна в тестовом режиме)
   if (showActions) {
     $('#btnShop').disabled = !isMyTurn();
     // в многоходовом режиме «Пропустить» превращается в «Завершить ход» (когда уже что-то сходило)
@@ -1645,7 +1799,7 @@ function renderShop() {
   if (!me) return;
   const total = Object.entries(basket).reduce((s, [t, n]) => s + ST(t).price * n, 0);
   $('#shopGold').textContent = `💰 ${me.gold}`;
-  $('#shopList').innerHTML = Object.entries(state.shipTypes).filter(([, st]) => !st.npc).map(([t, st]) => {
+  $('#shopList').innerHTML = Object.entries(state.shipTypes).filter(([, st]) => !st.npc && !st.cheat).map(([t, st]) => {
     const cantAddMore = total + st.price > me.gold;
     return `
     <div class="ship-card ${cantAddMore && !basket[t] ? 'unaffordable' : ''}" title="${st.desc}">
@@ -1906,5 +2060,52 @@ const Tutorial = (() => {
   $('#coachSkip').addEventListener('click', finish);
   return { start, get active() { return active; } };
 })();
+
+// ============ СТРОКА ВВОДА / ЧАТ ============
+// Открывается «/» (десктоп). Введённый текст уходит на сервер: распознанную команду он применит
+// сам (список — только на сервере), любой другой текст разойдётся всем игрокам как сообщение.
+function openChatBar() {
+  const inp = $('#chatInput');
+  $('#chatBar').classList.add('show');
+  inp.value = '';
+  setTimeout(() => inp.focus(), 0); // фокус после завершения клика/тапа — иначе фокус «отскакивает» и бар закрывается
+}
+function closeChatBar() {
+  $('#chatBar').classList.remove('show');
+  $('#chatInput').blur();
+}
+// доступна ли строка ввода/чат сейчас (тестовый режим + я живой участник активной игры)
+const canUseChat = () => CHEATS_ON && !!state && state.status === 'active' && !spectator && myIdx() >= 0;
+// десктоп — по «/»; мобила — по кнопке 💬 в шапке панели (там клавиши «/» нет)
+$('#chatBtn').addEventListener('click', () => { if (canUseChat()) openChatBar(); });
+document.addEventListener('keydown', e => {
+  if (e.key !== '/' || IS_COARSE || !canUseChat()) return;
+  const ae = document.activeElement;
+  if (ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return;  // печатаем в поле — не мешаем
+  e.preventDefault();
+  openChatBar();
+});
+$('#chatInput').addEventListener('keydown', e => {
+  e.stopPropagation();
+  if (e.key === 'Escape') return closeChatBar();
+  if (e.key !== 'Enter') return;
+  const text = e.target.value.trim();
+  closeChatBar();
+  if (!text) return;
+  socket.emit('msg', { text }, res => {
+    if (!res) return;
+    if (res.ok) {
+      if (res.msg) hudToast(res.msg);                                    // ответ команды (если был)
+      if (res.effect === 'toggleFog') { fogRevealed = !fogRevealed; if (state) render(); }
+    } else if (res.msg) {
+      toast(res.msg);
+    }
+  });
+});
+$('#chatInput').addEventListener('blur', closeChatBar);
+
+// входящее сообщение — нотиф сверху (в стиле «осталось ходов»), исчезает через 4 сек.
+// hudToast пишет через textContent — разметка из текста не исполнится (безопасно).
+socket.on('chat', ({ author, text }) => hudToast(`💬 ${author}: ${text}`, 4000));
 
 resize();

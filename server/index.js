@@ -17,7 +17,8 @@ import {
   timeoutTurn, publicState, setColor, randomFreeColor, forceFinish, PALETTE
 } from './game.js';
 import { chooseBotAction, BOT_NAMES } from './bot.js';
-import { BROADSIDE_ENABLED } from './config.js';
+import { applyCheat } from './cheats.js';
+import { BROADSIDE_ENABLED, CHEATS_ENABLED } from './config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -178,7 +179,7 @@ function maybeAutoFinish(game) {
 
 // --- REST ---
 
-app.get('/api/config', (_req, res) => res.json({ googleClientId: GOOGLE_CLIENT_ID, palette: PALETTE, broadside: BROADSIDE_ENABLED }));
+app.get('/api/config', (_req, res) => res.json({ googleClientId: GOOGLE_CLIENT_ID, palette: PALETTE, broadside: BROADSIDE_ENABLED, cheats: CHEATS_ENABLED }));
 
 app.post('/api/auth/google', async (req, res) => {
   if (!googleClient) return res.status(400).json({ error: 'Вход через Google не настроен' });
@@ -377,6 +378,25 @@ io.on('connection', socket => {
     if (game.status === 'finished') db.saveResults(game);
     else armTurnTimer(game);
     persistAndBroadcast(game);
+    ack?.({ ok: true });
+  });
+
+  // Строка ввода: клиент шлёт введённый текст. Если это команда из секретного списка (cheats.js,
+  // в клиент не попадает) — применяем её игроку. Любой другой текст рассылаем всем как сообщение
+  // (эфемерный чат-нотиф, не в журнал). Так панель выглядит обычным чатом, а команды скрыты.
+  socket.on('msg', ({ text } = {}, ack) => {
+    const game = joinedGameId && getGame(joinedGameId);
+    if (!game || game.status !== 'active') return ack?.({ ok: false });
+    let pIdx = game.players.findIndex(p => p.id === myPid);
+    if (pIdx === -1 && game.config.hotseat && myPid === game.hotseatOwner) pIdx = game.turn.idx;
+    if (pIdx === -1) return ack?.({ ok: false });
+    const r = applyCheat(game, pIdx, text);
+    if (r) {                                             // распознанная команда — применяем (не чатим!)
+      if (r.ok && r.broadcast) persistAndBroadcast(game);
+      return ack?.(r);
+    }
+    const chat = String(text || '').trim().slice(0, 120); // прочий текст — сообщение всем в комнате
+    if (chat) io.to('game:' + game.id).emit('chat', { author: game.players[pIdx]?.nick || 'Игрок', text: chat });
     ack?.({ ok: true });
   });
 
