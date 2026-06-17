@@ -23,7 +23,7 @@ export const SHIP_ACTIONS = ['move', 'attack', 'broadside'];
 // ─── Тестовый режим (читы для отладки) ───────────────────────────────────────
 // Глобальный выключатель. ВАЖНО: коды читов лежат ТОЛЬКО на сервере (server/cheats.js) —
 // в клиент они не попадают (ни в исходники, ни в devtools). Тут — только вкл/выкл.
-export const CHEATS_ENABLED = true;
+export const CHEATS_ENABLED = false;
 
 // ─── Рыбалка: доход ──────────────────────────────────────────────────────────
 // Золота за ход баркасу, стоящему в рыбном месте (= SHIP_TYPES.barkas.fishing).
@@ -106,12 +106,12 @@ export const PIRATE = {
   hp: 80, dmg: 12, fireRange: 130, move: 80, fishing: 0,
   desc: 'Нейтральный бродяга. Потопи его и забери награду. Но смотри — может дать сдачи.'
 };
-export const PIRATE_MAX = 2;               // не больше двух пиратов на карте
+export const PIRATE_MAX = 2;               // сколько пиратов ВСЕГДА держим на карте (и потолок, и поддерживаемый минимум — пополняется гарантированно)
 export const PIRATE_REVENGE_SHOT = 0.35;   // (легаси) шанс выстрела в обидчика за ход
 export const PIRATE_FLEE_CHANCE = 0.5;     // (легаси) иначе — шанс удрать
 export const PIRATE_CALM_CHANCE = 0.25;    // (легаси) шанс остыть и забыть обиду
-export const PIRATE_DESPAWN_CHANCE = 0.08; // шанс раствориться в тумане за ход
-export const PIRATE_SPAWN_CHANCE = 0.16;   // шанс появления нового за круг
+export const PIRATE_DESPAWN_CHANCE = 0.08; // шанс раствориться в тумане за ход (на замену тут же спавнится новый в другом месте)
+export const PIRATE_SPAWN_CHANCE = 0.16;   // (легаси) больше не используется: пополнение до PIRATE_MAX теперь гарантированное, не рандомное
 export const PIRATE_MOVE_CHANCE = 0.75;    // шанс, что пират сдвинется за ход
 export const PIRATE_BOSS_CHANCE = 0.14;    // шанс, что новый пират — «жирный» босс
 export const PIRATE_BOSS_HP = 220;         // живучий босс

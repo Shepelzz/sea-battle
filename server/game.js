@@ -7,7 +7,7 @@ import {
   BROADSIDE_MULT, BROADSIDE_ENABLED, FISH_ZONE_CAP, movesBudget, SHIP_ACTIONS, CHEATS_ENABLED,
   MAP_EDGE_MARGIN, ISLAND_BLOCK_GAP, SPAWN_FAN_N, SPAWN_FAN_RINGS, SPAWN_FAN_R0, SPAWN_FAN_RING_STEP,
   PIRATE, PIRATE_MAX, PIRATE_ENGAGE_MULT, PIRATE_MIN_LIFETIME, PIRATE_STEP_MIN,
-  PIRATE_DESPAWN_CHANCE, PIRATE_SPAWN_CHANCE, PIRATE_MOVE_CHANCE, PIRATE_BOSS_CHANCE, PIRATE_BOSS_HP,
+  PIRATE_DESPAWN_CHANCE, PIRATE_MOVE_CHANCE, PIRATE_BOSS_CHANCE, PIRATE_BOSS_HP,
   PIRATE_BOUNTY_MIN, PIRATE_BOUNTY_RAND, PIRATE_BOUNTY_STEP,
   PIRATE_BOSS_BOUNTY_MIN, PIRATE_BOSS_BOUNTY_RAND, PIRATE_BOSS_BOUNTY_STEP,
   PIRATE_WATER_MARGIN, PIRATE_WATER_SPAN, PIRATE_WATER_BASE_GAP
@@ -279,11 +279,15 @@ function movePirates(game) {
     const step = PIRATE_STEP_MIN + Math.random() * (PIRATE.move - PIRATE_STEP_MIN);
     steerPirate(game, pir, step, pir.heading ?? (pir.heading = Math.random() * Math.PI * 2));
   }
-  // респаун раз в круг (когда отходил первый живой игрок), привязываем к случайному живому слоту
-  if (cur === aliveIdx[0] &&
-      game.ships.filter(s => s.owner === -1).length < PIRATE_MAX &&
-      Math.random() < PIRATE_SPAWN_CHANCE) {
+  // ПОПОЛНЕНИЕ ДО ПОЛНОГО СОСТАВА. На карте ВСЕГДА держим PIRATE_MAX пиратов: что растворилось
+  // в тумане выше — тут же заменяем новым в другом месте (тот самый эффект «пропал тут — появился
+  // там», который и нужен). Гарантированно, без рандома: раньше дозаспавн шёл лишь с шансом раз в
+  // круг и навёрстывал ~6 кругов — игрок видел одного пирата всю половину партии. Теперь дыры нет.
+  let refillGuard = PIRATE_MAX + 2; // предохранитель от зацикливания, если не нашлось воды
+  while (game.ships.filter(s => s.owner === -1).length < PIRATE_MAX && refillGuard-- > 0) {
+    const before = game.ships.length;
     spawnPirate(game, false, true, aliveIdx[Math.floor(Math.random() * aliveIdx.length)]);
+    if (game.ships.length === before) break; // место не нашлось — попробуем в следующий ход
   }
 }
 

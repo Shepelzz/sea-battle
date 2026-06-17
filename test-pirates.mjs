@@ -1,6 +1,6 @@
 // Проверка новой логики пиратов (прямые вызовы game.js).
 import { createGame, addPlayer, startGame, applyAction } from './server/game.js';
-import { PIRATE, SHIP_TYPES } from './server/ships.js';
+import { PIRATE, PIRATE_MAX, SHIP_TYPES } from './server/ships.js';
 
 let ok = 0, fail = 0;
 const check = (n, c, extra = '') => { c ? (ok++, console.log('✓', n, extra)) : (fail++, console.error('✗', n, extra)); };
@@ -95,30 +95,35 @@ const myShip = (g, type, x, y, hp) => {
     if (!g.ships.some(s => s.id === 'PIR')) youngGone++;
   }
   check('молодой пират (age<5) не исчезает', youngGone === 0, `(исчез ${youngGone}/${N})`);
-  // старые пираты МОГУТ растворяться, КОГДА их больше одного; но море при этом не пустеет
-  let dropped = 0, emptied = 0; N = 200;
+  // РАСТВОРЕНИЕ + ПОПОЛНЕНИЕ: старый пират (их >1) иногда растворяется, но на замену тут же
+  // спавнится новый в другом месте — состав на карте остаётся полным (PIRATE_MAX), не проседает.
+  let replaced = 0, belowMax = 0; N = 300;
   for (let k = 0; k < N; k++) {
     const g = game2(); g.ships = [];                         // без игроков рядом → не «вовлечён»
     const p1 = addPirate(g, g.map.w / 2, g.map.h / 2); p1.turnSlot = 0; p1.bornTurn = g.turn.number - 10;
     const p2 = addPirate(g, g.map.w / 2 + 300, g.map.h / 2); p2.id = 'PIR2'; p2.turnSlot = 0; p2.bornTurn = g.turn.number - 10;
+    const idsBefore = new Set([p1.id, p2.id]);
     applyAction(g, 'p0', { type: 'skip' });
-    const left = g.ships.filter(s => s.owner === -1).length;
-    if (left < 2) dropped++;
-    if (left === 0) emptied++;
+    const pirs = g.ships.filter(s => s.owner === -1);
+    if (pirs.length < PIRATE_MAX) belowMax++;                // состав просел ниже максимума
+    if (pirs.some(s => !idsBefore.has(s.id))) replaced++;    // появился новый id → был despawn+refill
   }
-  check('старые пираты иногда растворяются (когда их >1)', dropped > 0, `(растворений ${dropped}/${N})`);
-  check('последний пират не растворяется — море не пустеет', emptied === 0, `(пустых ${emptied}/${N})`);
+  check('пираты обновляются: старый растворяется, на замену спавнится новый', replaced > 0, `(обновлений ${replaced}/${N})`);
+  check('состав никогда не проседает ниже PIRATE_MAX (всегда полный)', belowMax === 0, `(просадок ${belowMax}/${N})`);
 }
-// === 6б. Единственный пират не исчезает, даже старый (last-pirate protection) ===
+// === 6б. Море никогда не пустеет: даже из одного пирата состав добивается до PIRATE_MAX ===
 {
-  let gone = 0, N = 120;
+  let belowMax = 0, emptied = 0, N = 120;
   for (let k = 0; k < N; k++) {
     const g = game2(); g.ships = [];
     const p = addPirate(g, g.map.w / 2, g.map.h / 2); p.turnSlot = 0; p.bornTurn = g.turn.number - 10;
     applyAction(g, 'p0', { type: 'skip' });
-    if (!g.ships.some(s => s.owner === -1)) gone++;
+    const left = g.ships.filter(s => s.owner === -1).length;
+    if (left === 0) emptied++;
+    if (left < PIRATE_MAX) belowMax++;
   }
-  check('единственный пират никогда не растворяется', gone === 0, `(исчез ${gone}/${N})`);
+  check('море никогда не пустеет', emptied === 0, `(пустых ${emptied}/${N})`);
+  check('одиночный пират добивается пополнением до PIRATE_MAX', belowMax === 0, `(недобора ${belowMax}/${N})`);
 }
 
 // === 7. Ход раз в цикл: пират со слотом игрока 2 действует только после хода игрока 2 ===
