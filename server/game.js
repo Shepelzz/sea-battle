@@ -2,10 +2,16 @@
 import { generateMap, spawnPoints } from './mapgen.js';
 import {
   SHIP_TYPES, START_FLEET, START_GOLD, PORT_HP, PORT_RETURN_DMG, PORT_INCOME,
-  SHIP_COLLISION_DIST, LOOT_REACH, BROADSIDE_MULT, FISH_ZONE_CAP,
-  PIRATE, PIRATE_DESPAWN_CHANCE, PIRATE_SPAWN_CHANCE, PIRATE_MOVE_CHANCE,
-  PIRATE_BOSS_CHANCE, PIRATE_BOSS_HP
-} from './ships.js';
+  PORT_RETURN_LINKOR_MULT, PORT_NO_SHIP_INCOME_MULT, PORT_INCOME_TURN_FACTOR,
+  SHIP_COLLISION_DIST, LOOT_REACH, WRECK_LOOT_FRAC, TRIBUTE_FRAC,
+  BROADSIDE_MULT, BROADSIDE_ENABLED, FISH_ZONE_CAP,
+  MAP_EDGE_MARGIN, ISLAND_BLOCK_GAP, SPAWN_FAN_N, SPAWN_FAN_RINGS, SPAWN_FAN_R0, SPAWN_FAN_RING_STEP,
+  PIRATE, PIRATE_MAX, PIRATE_ENGAGE_MULT, PIRATE_MIN_LIFETIME, PIRATE_STEP_MIN,
+  PIRATE_DESPAWN_CHANCE, PIRATE_SPAWN_CHANCE, PIRATE_MOVE_CHANCE, PIRATE_BOSS_CHANCE, PIRATE_BOSS_HP,
+  PIRATE_BOUNTY_MIN, PIRATE_BOUNTY_RAND, PIRATE_BOUNTY_STEP,
+  PIRATE_BOSS_BOUNTY_MIN, PIRATE_BOSS_BOUNTY_RAND, PIRATE_BOSS_BOUNTY_STEP,
+  PIRATE_WATER_MARGIN, PIRATE_WATER_SPAN, PIRATE_WATER_BASE_GAP
+} from './config.js';
 
 // Палитра цветов игроков (выбираются при старте; сервер гарантирует уникальность в партии).
 export const PALETTE = ['#c0392b', '#2980b9', '#27ae60', '#8e44ad', '#e67e22', '#16a085', '#d4ac0d', '#cb3e8f'];
@@ -106,7 +112,7 @@ export function startGame(game, playerId) {
       });
     });
   });
-  for (let i = 0; i < Math.min(MAX_PIRATES, game.players.length); i++) spawnPirate(game, true, false, i);
+  for (let i = 0; i < Math.min(PIRATE_MAX, game.players.length); i++) spawnPirate(game, true, false, i);
   game.status = 'active';
   game.turn = { idx: 0, number: 1, deadline: turnDeadline(game), nudged: false };
   pushLog(game, `⚔️ Баттл начался! Первым ходит ${game.players[0].nick}`, 'battle');
@@ -118,9 +124,9 @@ export function startGame(game, playerId) {
 function randomWaterSpot(game) {
   const m = game.map;
   for (let i = 0; i < 60; i++) {
-    const x = Math.round(m.w * 0.1 + Math.random() * m.w * 0.8);
-    const y = Math.round(m.h * 0.1 + Math.random() * m.h * 0.8);
-    if (m.bases.some(b => dist(x, y, b.x, b.y) < b.radius + 280)) continue;
+    const x = Math.round(m.w * PIRATE_WATER_MARGIN + Math.random() * m.w * PIRATE_WATER_SPAN);
+    const y = Math.round(m.h * PIRATE_WATER_MARGIN + Math.random() * m.h * PIRATE_WATER_SPAN);
+    if (m.bases.some(b => dist(x, y, b.x, b.y) < b.radius + PIRATE_WATER_BASE_GAP)) continue;
     if (shipPlacementBlocked(game, x, y, null)) continue;
     return { x, y };
   }
@@ -139,8 +145,8 @@ function spawnPirate(game, silent = false, allowBoss = true, slot = null) {
     maxHp: boss ? PIRATE_BOSS_HP : PIRATE.hp,
     boss,
     bounty: boss
-      ? (40 + Math.floor(Math.random() * 41)) * 10  // 400..800 — большой куш
-      : (15 + Math.floor(Math.random() * 21)) * 10, // 150..350
+      ? (PIRATE_BOSS_BOUNTY_MIN + Math.floor(Math.random() * PIRATE_BOSS_BOUNTY_RAND)) * PIRATE_BOSS_BOUNTY_STEP  // 400..800 — большой куш
+      : (PIRATE_BOUNTY_MIN + Math.floor(Math.random() * PIRATE_BOUNTY_RAND)) * PIRATE_BOUNTY_STEP,                 // 150..350
     heading: Math.random() * Math.PI * 2, // пираты идут по курсу, а не мечутся
     angryAt: null,
     turnSlot: slot != null ? slot : (game.turn?.idx ?? 0), // ходит раз в цикл — после хода этого игрока
@@ -173,8 +179,6 @@ function steerPirate(game, pir, step, baseHeading) {
   return false;
 }
 
-const MAX_PIRATES = 2; // не больше двух пиратов на карте одновременно
-
 const nearestShip = (pir, list) =>
   list.reduce((a, b) => dist(pir.x, pir.y, b.x, b.y) < dist(pir.x, pir.y, a.x, a.y) ? b : a);
 
@@ -191,7 +195,7 @@ function pirateAct(game, pir) {
   // «вовлечён»: рядом корабль в зоне своего хода или огня (+20%) — пирату не дадут раствориться
   const engaged = all.some(s => {
     const st = SHIP_TYPES[s.type];
-    return dist(pir.x, pir.y, s.x, s.y) <= Math.max(st.move, st.fireRange) * 1.2;
+    return dist(pir.x, pir.y, s.x, s.y) <= Math.max(st.move, st.fireRange) * PIRATE_ENGAGE_MULT;
   });
   if (!engaged) return false; // свободен — обычная жизнь (дрейф/туман) снаружи
 
@@ -255,18 +259,18 @@ function movePirates(game) {
 
     pir.angryAt = null;
     // не исчезать раньше 5 ходов с момента появления
-    if (game.turn.number - (pir.bornTurn || 0) >= 5 && Math.random() < PIRATE_DESPAWN_CHANCE) {
+    if (game.turn.number - (pir.bornTurn || 0) >= PIRATE_MIN_LIFETIME && Math.random() < PIRATE_DESPAWN_CHANCE) {
       game.ships = game.ships.filter(s => s.id !== pir.id);
       pushLog(game, '🌫 Пиратский корабль растворился в тумане…');
       continue;
     }
     if (Math.random() > PIRATE_MOVE_CHANCE) continue;
-    const step = 35 + Math.random() * (PIRATE.move - 35);
+    const step = PIRATE_STEP_MIN + Math.random() * (PIRATE.move - PIRATE_STEP_MIN);
     steerPirate(game, pir, step, pir.heading ?? (pir.heading = Math.random() * Math.PI * 2));
   }
   // респаун раз в круг (когда отходил первый живой игрок), привязываем к случайному живому слоту
   if (cur === aliveIdx[0] &&
-      game.ships.filter(s => s.owner === -1).length < MAX_PIRATES &&
+      game.ships.filter(s => s.owner === -1).length < PIRATE_MAX &&
       Math.random() < PIRATE_SPAWN_CHANCE) {
     spawnPirate(game, false, true, aliveIdx[Math.floor(Math.random() * aliveIdx.length)]);
   }
@@ -306,9 +310,9 @@ function advanceTurn(game) {
   // «внезапная смерть», чтобы экономика истощалась и игра сходилась к финалу.
   const np = game.players[next];
   // порт без единого корабля приносит на 50% больше золота — игроку, потерявшему флот, легче встать на ноги.
-  if (np?.alive && game.turn.number <= n * 80) {
+  if (np?.alive && game.turn.number <= n * PORT_INCOME_TURN_FACTOR) {
     const hasShips = game.ships.some(s => s.owner === next);
-    np.gold += hasShips ? PORT_INCOME : Math.round(PORT_INCOME * 1.5);
+    np.gold += hasShips ? PORT_INCOME : Math.round(PORT_INCOME * PORT_NO_SHIP_INCOME_MULT);
   }
 
   // пассивная рыбалка: каждый баркас игрока, стоящий в рыбном месте, сам приносит улов
@@ -332,9 +336,9 @@ function advanceTurn(game) {
 
 export function shipPlacementBlocked(game, x, y, ignoreShipId) {
   const m = game.map;
-  if (x < 12 || y < 12 || x > m.w - 12 || y > m.h - 12) return 'За краем карты';
-  for (const b of m.bases) if (dist(x, y, b.x, b.y) < b.radius + 14) return 'Нельзя встать на остров';
-  for (const o of m.lootIslands) if (dist(x, y, o.x, o.y) < o.radius + 14) return 'Нельзя встать на остров';
+  if (x < MAP_EDGE_MARGIN || y < MAP_EDGE_MARGIN || x > m.w - MAP_EDGE_MARGIN || y > m.h - MAP_EDGE_MARGIN) return 'За краем карты';
+  for (const b of m.bases) if (dist(x, y, b.x, b.y) < b.radius + ISLAND_BLOCK_GAP) return 'Нельзя встать на остров';
+  for (const o of m.lootIslands) if (dist(x, y, o.x, o.y) < o.radius + ISLAND_BLOCK_GAP) return 'Нельзя встать на остров';
   for (const s of game.ships) {
     if (s.id !== ignoreShipId && dist(x, y, s.x, s.y) < SHIP_COLLISION_DIST) return 'Слишком близко к другому кораблю';
   }
@@ -359,7 +363,7 @@ function sinkShip(game, ship, killer) {
   const owner = game.players[ship.owner];
   owner.stats.shipsLost++;
   if (killer) {
-    const plunder = Math.round(SHIP_TYPES[ship.type].price * 0.5);
+    const plunder = Math.round(SHIP_TYPES[ship.type].price * WRECK_LOOT_FRAC);
     killer.gold += plunder;
     killer.stats.shipsSunk++;
     killer.stats.goldCollected += plunder;
@@ -376,7 +380,7 @@ function eliminatePlayer(game, victimIdx, killer) {
   victim.alive = false;
   victim.placement = game.players.filter(p => p.alive).length + 1;
   if (killer) {
-    const tribute = Math.floor(victim.gold / 2);
+    const tribute = Math.floor(victim.gold * TRIBUTE_FRAC);
     victim.gold -= tribute;
     killer.gold += tribute;
     killer.stats.goldCollected += tribute;
@@ -574,7 +578,7 @@ export function applyAction(game, playerId, action) {
           eliminatePlayer(game, targetIdx, player);
         } else {
           // порт огрызается: ответный залп по атакующему кораблю. Линкору — на 20% больнее (он осадный, ему и сдача жирнее).
-          const retDmg = Math.round(PORT_RETURN_DMG * (ship.type === 'linkor' ? 1.2 : 1));
+          const retDmg = Math.round(PORT_RETURN_DMG * (ship.type === 'linkor' ? PORT_RETURN_LINKOR_MULT : 1));
           ship.hp -= retDmg;
           pushEvent(game, { type: 'shot', fx: base.x, fy: base.y, tx: ship.x, ty: ship.y, dmg: retDmg });
           pushLog(game, `🏰 Порт игрока ${victim.nick} огрызается по ${SHIP_TYPES[ship.type].name} (−${retDmg} HP)`, 'battle');
@@ -587,6 +591,7 @@ export function applyAction(game, playerId, action) {
     }
 
     case 'broadside': {
+      if (!BROADSIDE_ENABLED) return { ok: false, error: 'Бортовой залп сейчас отключён' };
       const ship = game.ships.find(s => s.id === action.shipId);
       if (!ship || ship.owner !== pIdx) return { ok: false, error: 'Это не ваш корабль' };
       const st = SHIP_TYPES[ship.type];
@@ -634,9 +639,9 @@ function findFreeSpotNearBase(game, base) {
   // к центру: 0, ±шаг, ±2·шаг… — первое свободное место всегда на «центровой» стороне.
   const cx = game.map.w / 2, cy = game.map.h / 2;
   const toCenter = Math.atan2(cy - base.y, cx - base.x);
-  const N = 14, step = (Math.PI * 2) / N;
-  for (let ring = 0; ring < 5; ring++) {
-    const r = base.radius + 45 + ring * 34;
+  const N = SPAWN_FAN_N, step = (Math.PI * 2) / N;
+  for (let ring = 0; ring < SPAWN_FAN_RINGS; ring++) {
+    const r = base.radius + SPAWN_FAN_R0 + ring * SPAWN_FAN_RING_STEP;
     for (let i = 0; i < N; i++) {
       const ang = toCenter + (i % 2 ? 1 : -1) * Math.ceil(i / 2) * step;
       const x = Math.round(base.x + Math.cos(ang) * r);

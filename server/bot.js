@@ -1,7 +1,7 @@
 // Бот: на своём ходу собирает все осмысленные действия, оценивает и берёт лучшее.
 // Уровни: easy (Юнга) — шумные оценки и случайные ходы, mid (Боцман) — лучший ход,
 // hard (Адмирал) — лучший ход + фокус раненых, удушение экономики, ранняя агрессия.
-import { SHIP_TYPES, PIRATE, LOOT_REACH, PORT_RETURN_DMG } from './ships.js';
+import { SHIP_TYPES, PIRATE, LOOT_REACH, PORT_RETURN_DMG, BROADSIDE_ENABLED } from './config.js';
 import { shipPlacementBlocked } from './game.js';
 
 const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
@@ -108,8 +108,8 @@ export function chooseBotAction(game, pIdx, level = 'mid') {
       }
       cands.push({ score, action: { type: 'attack', shipId: ship.id, targetType: 'ship', targetId: t.id } });
     }
-    // бортовой залп: бьёт всех в радиусе на -20% — выгоден против стаи
-    if (st.broadside) {
+    // бортовой залп: бьёт всех в радиусе на -20% — выгоден против стаи (если включён в конфиге)
+    if (BROADSIDE_ENABLED && st.broadside) {
       const inRange = game.ships.filter(t =>
         t.owner !== pIdx && !(t.owner >= 0 && !game.players[t.owner]?.alive) &&
         (t.owner === -1 || !SHIP_TYPES[t.type].fishing) &&

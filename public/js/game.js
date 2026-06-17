@@ -54,10 +54,14 @@ socket.on('connect', () => {
   else $('#nickOverlay').classList.remove('hidden');
 });
 
+let BROADSIDE_ON = true; // приходит из /api/config; если залп выключен — прячем кнопку/вики/тутор
+
 // Кнопка Google в окне ника (если сервер настроен и гость ещё не вошёл).
 (async () => {
   try {
     const cfg = await (await fetch('/api/config')).json();
+    BROADSIDE_ON = cfg.broadside !== false;     // флаг залпа — до любых ранних выходов
+    applyBroadsideFlag();
     if (!cfg.googleClientId || localStorage.getItem('sb_session')) return;
     const s = document.createElement('script');
     s.src = 'https://accounts.google.com/gsi/client';
@@ -1120,7 +1124,14 @@ function canShipCollect(ship) {
     dist(ship.x, ship.y, i.x, i.y) <= i.radius + (state.lootReach || 55));
 }
 
+// Залп выключен в конфиге — прячем его карточку в вики (тутор-шаг фильтруется при сборке шагов).
+function applyBroadsideFlag() {
+  if (BROADSIDE_ON) return;
+  document.getElementById('wikiBroadside')?.classList.add('hidden');
+}
+
 function canBroadside(ship) {
+  if (!BROADSIDE_ON) return false;
   const st = ST(ship.type);
   if (!st.broadside) return false;
   const me = myIdx();
@@ -1156,7 +1167,7 @@ function openInfo() {
         const extra = [
           st.fishing ? `🐟 +${st.fishing}` : '',
           st.portBonus ? `🏰 ×${st.portBonus}` : '',
-          st.broadside ? '💥 залп' : ''
+          (st.broadside && BROADSIDE_ON) ? '💥 залп' : ''
         ].filter(Boolean).join(' · ');
         return `<div class="info-fleet-row">
           <span class="nm">${st.icon} ${st.name}</span>
@@ -1512,8 +1523,8 @@ const Tutorial = (() => {
         target: { sel: '#turnBanner' } },
       { text: 'Нажми на свой корабль → выбери <b>«Плыть»</b> (в пределах круга дальности) или <b>«Стрелять»</b> по врагу в радиусе огня.',
         target: myShip ? { world: { x: myShip.x, y: myShip.y, r: 26 } } : null },
-      { text: 'Фрегат и линкор умеют <b>💥 Залп</b>: бьют по <b>всем вражеским боевым кораблям</b> в радиусе разом (на 20% слабее). Незаменимо против стаи. Рыбацкие баркасы залп не трогает.',
-        target: heavyShip ? { world: { x: heavyShip.x, y: heavyShip.y, r: 26 } } : null },
+      ...(BROADSIDE_ON ? [{ text: 'Фрегат и линкор умеют <b>💥 Залп</b>: бьют по <b>всем вражеским боевым кораблям</b> в радиусе разом (на 20% слабее). Незаменимо против стаи. Рыбацкие баркасы залп не трогает.',
+        target: heavyShip ? { world: { x: heavyShip.x, y: heavyShip.y, r: 26 } } : null }] : []),
       { text: 'В <b>Верфи</b> покупаешь корабли за золото 💰: шустрые шхуны и бриги, мощные фрегаты, рыбацкие баркасы — и <b>линкор</b>, который бьёт по портам сильнее всех 🏰.',
         target: { sel: '#btnShop' } },
       loot

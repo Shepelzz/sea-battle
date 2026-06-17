@@ -17,6 +17,7 @@ import {
   timeoutTurn, publicState, setColor, randomFreeColor, forceFinish, PALETTE
 } from './game.js';
 import { chooseBotAction, BOT_NAMES } from './bot.js';
+import { BROADSIDE_ENABLED } from './config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -171,7 +172,7 @@ function maybeAutoFinish(game) {
 
 // --- REST ---
 
-app.get('/api/config', (_req, res) => res.json({ googleClientId: GOOGLE_CLIENT_ID, palette: PALETTE }));
+app.get('/api/config', (_req, res) => res.json({ googleClientId: GOOGLE_CLIENT_ID, palette: PALETTE, broadside: BROADSIDE_ENABLED }));
 
 app.post('/api/auth/google', async (req, res) => {
   if (!googleClient) return res.status(400).json({ error: 'Вход через Google не настроен' });
