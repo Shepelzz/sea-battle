@@ -2,7 +2,7 @@
 // тут проверяем их применение и поведение чит-корабля (волей из 5 снарядов).
 import { createGame, addPlayer, startGame, applyAction, publicState } from './server/game.js';
 import { applyCheat } from './server/cheats.js';
-import { SHIP_TYPES, BROADSIDE_ENABLED } from './server/config.js';
+import { SHIP_TYPES, BROADSIDE_ENABLED, CHEATS_ENABLED } from './server/config.js';
 
 let ok = 0, fail = 0;
 const check = (n, c, extra = '') => { c ? (ok++) : (fail++, console.error('✗', n, extra)); };
@@ -29,6 +29,8 @@ eq('carrier.hp (×5 линкора)', C.hp, SHIP_TYPES.linkor.hp * 5);
 eq('carrier.volley', C.volley, 5);
 eq('carrier.cheat', C.cheat, true);
 
+// === Применение читов работает ТОЛЬКО в тестовом режиме (CHEATS_ENABLED) ===
+if (CHEATS_ENABLED) {
 // === motherlode: +1000 золота ===
 {
   const g = setup();
@@ -78,6 +80,17 @@ eq('carrier.cheat', C.cheat, true);
   check('nofog ок + effect toggleFog', r.ok && r.effect === 'toggleFog', JSON.stringify(r));
   check('nofog не трогает состояние', g.ships.length === shipsBefore && g.players[0].gold === goldBefore);
   check('nofog без broadcast', !r.broadcast, JSON.stringify(r));
+}
+} else {
+  // тестовый режим ВЫКЛЮЧЕН (CHEATS_ENABLED=false): распознанные коды отклоняются («Сейчас недоступно»),
+  // состояние игры не меняется. (Не-команды по-прежнему возвращают null → уходят в чат — проверяется ниже.)
+  const g = setup();
+  const before = g.players[0].gold;
+  check('читы выкл: motherlode отклонён', applyCheat(g, 0, 'motherlode')?.ok === false);
+  eq('читы выкл: золото не начислено', g.players[0].gold, before);
+  check('читы выкл: geraldford отклонён', applyCheat(g, 0, 'geraldford')?.ok === false);
+  eq('читы выкл: авианосец не заспавнен', g.ships.filter(s => s.type === 'carrier').length, 0);
+  check('читы выкл: nofog отклонён', applyCheat(g, 0, 'nofog')?.ok === false);
 }
 
 // === не-команда → applyCheat возвращает null (текст уйдёт в чат, не в команды) ===
@@ -144,11 +157,14 @@ eq('carrier.cheat', C.cheat, true);
   check('залп авианосца задевает баркас', r.ok, JSON.stringify(r));
 }
 
-// === publicState отдаёт carrier клиенту в тестовом режиме (CHEATS_ENABLED) ===
+// === publicState отдаёт carrier клиенту ТОЛЬКО в тестовом режиме (иначе ни следа) ===
 {
   const g = setup();
   const st = publicState(g, 'A').shipTypes;
-  check('carrier виден клиенту при включённых читах', !!st.carrier, Object.keys(st).join(','));
+  check(
+    CHEATS_ENABLED ? 'carrier виден клиенту при включённых читах' : 'carrier скрыт от клиента при выключенных читах',
+    CHEATS_ENABLED ? !!st.carrier : !st.carrier,
+    Object.keys(st).join(','));
 }
 
 console.log(`\nИтого читы/авианосец: ${ok} ок, ${fail} провал(ов)`);

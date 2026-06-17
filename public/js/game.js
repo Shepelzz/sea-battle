@@ -179,9 +179,9 @@ function animTick(now) {
   effects = effects.filter(e => now < e.start + e.dur);
   if (fogFade.length) fogFade = fogFade.filter(f => now - f.born < f.hold + f.fade); // отсев догоревших затуханий тумана
   updateBaseFires(dt);
-  render();
+  render(true); // каждый кадр — только канвас (DOM не трогаем, иначе магазин пересобирается 60 раз/сек)
   if (effects.length || anyBurning() || fogFade.length) requestAnimationFrame(animTick);
-  else { rafOn = false; animPos.clear(); render(); }
+  else { rafOn = false; animPos.clear(); render(); } // анимация кончилась — финальный полный рендер (DOM тоже)
 }
 
 function playEvents(events) {
@@ -890,10 +890,16 @@ function drawBaseFires() {
   }
 }
 
-function render() {
+function render(canvasOnly) {
   if (!state) return;
-  renderSidebar();
-  renderOverlays();
+  // DOM (сайдбар/магазин/оверлеи) перерисовываем ТОЛЬКО на смену состояния и по UI-событиям —
+  // НЕ на каждом кадре анимации. Иначе пока крутится аним-цикл (горящие базы/эффекты), renderShop
+  // переписывал #shopList.innerHTML 60 раз/сек → кнопки магазина пересоздавались и не кликались
+  // (ни клика, ни :hover). Кадровый путь (animTick) зовёт render(true) — только канвас.
+  if (!canvasOnly) {
+    renderSidebar();
+    renderOverlays();
+  }
   if (!state.map) { // лобби — карты ещё нет
     ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
     return;
