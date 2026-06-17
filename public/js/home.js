@@ -190,7 +190,8 @@ $('#createBtn').addEventListener('click', async () => {
         nick,
         color: onlineColor,
         maxPlayers: +$('#maxPlayers').value,
-        turnTimer: +$('#turnTimer').value
+        turnTimer: +$('#turnTimer').value,
+        fog: $('#onlineFog').checked
       })
     });
     const data = await res.json();
@@ -220,7 +221,8 @@ $('#botBtn').addEventListener('click', async () => {
         nick,
         bots: +$('#botCount').value,
         level: $('#botLevel').value,
-        color: botColor
+        color: botColor,
+        fog: $('#botFog').checked
       })
     });
     const data = await res.json();

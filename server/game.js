@@ -62,6 +62,12 @@ function pushLog(game, text, type = 'info') {
   if (game.log.length > 80) game.log.splice(0, game.log.length - 80);
 }
 
+// Журнал при тумане войны — абстрактные события без деталей (что/где/сколько),
+// чтобы не палить позиции и экономику. Без тумана — подробный текст.
+function logEvent(game, detailed, abstract, type = 'info') {
+  pushLog(game, game.config.fog ? abstract : detailed, type);
+}
+
 // События последнего хода — клиент проигрывает по ним анимации
 // (полёт ядра, взрывы, всплывающее «+золото», плавные перемещения).
 function pushEvent(game, ev) {
@@ -220,7 +226,9 @@ function pirateAct(game, pir) {
       target.hp -= D;
       pir.angryAt = target.owner;
       pushEvent(game, { type: 'shot', fx: pir.x, fy: pir.y, tx: target.x, ty: target.y, dmg: D });
-      pushLog(game, `🏴‍☠️ ${pir.boss ? 'БОСС-пират атакует' : 'Пираты атакуют'} ${SHIP_TYPES[target.type].name} игрока ${game.players[target.owner].nick} (−${D} HP)`, 'battle');
+      logEvent(game,
+        `🏴‍☠️ ${pir.boss ? 'БОСС-пират атакует' : 'Пираты атакуют'} ${SHIP_TYPES[target.type].name} игрока ${game.players[target.owner].nick} (−${D} HP)`,
+        `🏴‍☠️ Пираты напали на игрока ${game.players[target.owner].nick}`, 'battle');
       if (target.hp <= 0) sinkShip(game, target, null);
       return true;
     }
@@ -329,7 +337,7 @@ function advanceTurn(game) {
     if (catch_) {
       np.gold += catch_;
       np.stats.goldCollected += catch_;
-      pushLog(game, `🐟 Рыбаки ${np.nick} наловили рыбы: +${catch_} зол.`);
+      // нотиф про улов не пишем — это шум; остаётся всплывающее «+золото» на карте
     }
   }
 }
@@ -357,7 +365,9 @@ function sinkShip(game, ship, killer) {
     killer.stats.shipsSunk++;
     killer.stats.goldCollected += ship.bounty;
     pushEvent(game, { type: 'gold', x: ship.x, y: ship.y, amount: ship.bounty });
-    pushLog(game, `💥 Пиратский корабль потоплен! ${killer.nick} забирает награду ${ship.bounty} золота`, 'battle');
+    logEvent(game,
+      `💥 Пиратский корабль потоплен! ${killer.nick} забирает награду ${ship.bounty} золота`,
+      `💥 ${killer.nick} потопил пиратский корабль`, 'battle');
     return;
   }
   const owner = game.players[ship.owner];
@@ -368,9 +378,13 @@ function sinkShip(game, ship, killer) {
     killer.stats.shipsSunk++;
     killer.stats.goldCollected += plunder;
     pushEvent(game, { type: 'gold', x: ship.x, y: ship.y, amount: plunder });
-    pushLog(game, `💥 ${SHIP_TYPES[ship.type].name} игрока ${owner.nick} потоплен! ${killer.nick} лутает ${plunder} золота с обломков`, 'battle');
+    logEvent(game,
+      `💥 ${SHIP_TYPES[ship.type].name} игрока ${owner.nick} потоплен! ${killer.nick} лутает ${plunder} золота с обломков`,
+      `💥 ${killer.nick} потопил корабль игрока ${owner.nick}`, 'battle');
   } else {
-    pushLog(game, `💥 ${SHIP_TYPES[ship.type].name} игрока ${owner.nick} потоплен пиратами!`, 'battle');
+    logEvent(game,
+      `💥 ${SHIP_TYPES[ship.type].name} игрока ${owner.nick} потоплен пиратами!`,
+      `💥 Пираты потопили корабль игрока ${owner.nick}`, 'battle');
   }
 }
 
@@ -387,7 +401,9 @@ function eliminatePlayer(game, victimIdx, killer) {
     const base = game.map.bases[victimIdx];
     pushEvent(game, { type: 'explosion', x: base.x, y: base.y, big: true });
     pushEvent(game, { type: 'gold', x: base.x, y: base.y, amount: tribute });
-    pushLog(game, `🏴‍☠️ Порт игрока ${victim.nick} разрушен! ${killer.nick} забирает ${tribute} золота. ${victim.nick} выбывает`, 'battle');
+    logEvent(game,
+      `🏴‍☠️ Порт игрока ${victim.nick} разрушен! ${killer.nick} забирает ${tribute} золота. ${victim.nick} выбывает`,
+      `🏴‍☠️ ${killer.nick} разбил базу игрока ${victim.nick} — ${victim.nick} выбывает`, 'battle');
   } else {
     pushLog(game, `🏳️ ${victim.nick} спускает флаг и покидает баттл`, 'battle');
   }
@@ -500,7 +516,9 @@ export function applyAction(game, playerId, action) {
         bought.push(SHIP_TYPES[type].name);
       }
       player.gold -= cost;
-      pushLog(game, `🛠 ${player.nick} покупает: ${bought.join(', ')} (−${cost} зол.)`);
+      logEvent(game,
+        `🛠 ${player.nick} покупает: ${bought.join(', ')} (−${cost} зол.)`,
+        `🛠 ${player.nick} сходил на верфь`);
       break;
     }
 
@@ -522,7 +540,9 @@ export function applyAction(game, playerId, action) {
       if (!gained) return { ok: false, error: 'Нечего собирать: нет кораблей у нелутанных островов с кладом' };
       player.gold += gained;
       player.stats.goldCollected += gained;
-      pushLog(game, `💰 ${player.nick} собирает добычу: +${gained} зол. (${notes.join(', ')})`);
+      logEvent(game,
+        `💰 ${player.nick} собирает добычу: +${gained} зол. (${notes.join(', ')})`,
+        `💰 ${player.nick} собирает добычу`);
       break;
     }
 
@@ -536,7 +556,9 @@ export function applyAction(game, playerId, action) {
       if (blocked) return { ok: false, error: blocked };
       pushEvent(game, { type: 'move', shipId: ship.id, fx: ship.x, fy: ship.y, tx: x, ty: y });
       ship.x = x; ship.y = y;
-      pushLog(game, `🧭 ${player.nick} ведёт ${SHIP_TYPES[ship.type].name} на новую позицию`);
+      logEvent(game,
+        `🧭 ${player.nick} ведёт ${SHIP_TYPES[ship.type].name} на новую позицию`,
+        `🧭 ${player.nick} сделал ход`);
       break;
     }
 
@@ -557,7 +579,10 @@ export function applyAction(game, playerId, action) {
         const targetName = target.owner === -1
           ? 'пиратскому кораблю'
           : `${SHIP_TYPES[target.type].name} игрока ${game.players[target.owner].nick}`;
-        pushLog(game, `🔥 ${player.nick}: ${st.name} бьёт по ${targetName} (−${st.dmg} HP)`, 'battle');
+        const abstractFoe = target.owner === -1 ? 'пиратов' : `флот игрока ${game.players[target.owner].nick}`;
+        logEvent(game,
+          `🔥 ${player.nick}: ${st.name} бьёт по ${targetName} (−${st.dmg} HP)`,
+          `🔥 ${player.nick} напал на ${abstractFoe}`, 'battle');
         if (target.hp <= 0) sinkShip(game, target, player);
         else if (target.owner === -1) target.angryAt = pIdx; // пираты запоминают обидчика
       } else if (action.targetType === 'port') {
@@ -572,7 +597,9 @@ export function applyAction(game, playerId, action) {
         player.stats.shotsFired++;
         player.stats.damageDealt += portDmg;
         pushEvent(game, { type: 'shot', fx: ship.x, fy: ship.y, tx: base.x, ty: base.y, dmg: portDmg });
-        pushLog(game, `🔥 ${player.nick} обстреливает порт игрока ${victim.nick} (−${portDmg} HP, осталось ${Math.max(0, victim.portHp)})`, 'battle');
+        logEvent(game,
+          `🔥 ${player.nick} обстреливает порт игрока ${victim.nick} (−${portDmg} HP, осталось ${Math.max(0, victim.portHp)})`,
+          `🔥 ${player.nick} напал на базу игрока ${victim.nick}`, 'battle');
         if (victim.portHp <= 0) {
           victim.portHp = 0;
           eliminatePlayer(game, targetIdx, player);
@@ -581,7 +608,9 @@ export function applyAction(game, playerId, action) {
           const retDmg = Math.round(PORT_RETURN_DMG * (ship.type === 'linkor' ? PORT_RETURN_LINKOR_MULT : 1));
           ship.hp -= retDmg;
           pushEvent(game, { type: 'shot', fx: base.x, fy: base.y, tx: ship.x, ty: ship.y, dmg: retDmg });
-          pushLog(game, `🏰 Порт игрока ${victim.nick} огрызается по ${SHIP_TYPES[ship.type].name} (−${retDmg} HP)`, 'battle');
+          logEvent(game,
+            `🏰 Порт игрока ${victim.nick} огрызается по ${SHIP_TYPES[ship.type].name} (−${retDmg} HP)`,
+            `🏰 База игрока ${victim.nick} даёт отпор`, 'battle');
           if (ship.hp <= 0) sinkShip(game, ship, victim); // защитник забирает обломки
         }
       } else {
@@ -616,8 +645,10 @@ export function applyAction(game, playerId, action) {
       player.stats.shotsFired++;
       pushEvent(game, { type: 'broadside', fx: ship.x, fy: ship.y, hits });
       for (const t of toSink) sinkShip(game, t, player); // взрывы — после полёта залпа
-      pushLog(game, `💥 ${player.nick}: ${st.name} даёт бортовой залп по ${targets.length} целям` +
-        (toSink.length ? ` — потоплено ${toSink.length}!` : '') + ` (−${dmg} каждой)`, 'battle');
+      logEvent(game,
+        `💥 ${player.nick}: ${st.name} даёт бортовой залп по ${targets.length} целям` +
+        (toSink.length ? ` — потоплено ${toSink.length}!` : '') + ` (−${dmg} каждой)`,
+        `💥 ${player.nick} даёт бортовой залп`, 'battle');
       break;
     }
 

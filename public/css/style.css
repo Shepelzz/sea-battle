@@ -357,6 +357,31 @@ aside.panel {
   padding: 10px 12px; margin-bottom: 12px; cursor: pointer; font-size: 16px;
 }
 .info-toggle input { width: 20px; height: 20px; accent-color: #2b3a55; flex: none; }
+/* Тумблер «от руки» (туман войны) — в стиле листочка в клетку.
+   Стилизуем сам input (appearance:none), чтобы клик по тумблеру всегда срабатывал. */
+.fog-toggle {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin: 14px 0 4px; cursor: pointer; font-size: 15px; user-select: none;
+}
+.fog-toggle input {
+  appearance: none; -webkit-appearance: none; margin: 0; flex: none;
+  position: relative; width: 48px; height: 26px; cursor: pointer;
+  border: 1.8px solid var(--ink); background: var(--paper);
+  border-radius: 14px 10px 13px 11px / 11px 13px 10px 14px;
+  box-shadow: var(--shadow); transition: background .15s ease, transform .08s ease;
+}
+.fog-toggle input::before {
+  content: ''; position: absolute; top: 2px; left: 3px;
+  width: 18px; height: 18px; border: 1.6px solid var(--ink); background: var(--paper);
+  border-radius: 50% 47% 52% 49% / 49% 51% 48% 52%;
+  transition: transform .15s ease;
+}
+.fog-toggle input:checked { background: var(--ink); }
+.fog-toggle input:checked::before { transform: translateX(21px); }
+.fog-toggle input:focus-visible { outline: 2px dashed var(--ink-light); outline-offset: 3px; }
+.fog-toggle input:hover { transform: translate(-1px, -1px) rotate(-0.6deg); }
+.fog-label { font-weight: 700; }
+.fog-toggle .muted { font-size: 13px; }
 .info-body {
   overflow-y: auto; flex: 1;
   display: flex; flex-direction: column; gap: 12px;

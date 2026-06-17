@@ -172,6 +172,10 @@ function animTick(now) {
 }
 
 function playEvents(events) {
+  // туман войны: события вне зоны видимости не анимируем и не озвучиваем (иначе видно бой в тумане)
+  const fog = fogActive();
+  const vis = fog ? visionCircles() : null;
+  const hidden = (x, y) => fog && !fogVisible(x, y, vis);
   let delay = 0;
   for (const ev of events) {
     if (ev.type === 'move') {
@@ -182,13 +186,15 @@ function playEvents(events) {
       const lead = Math.min(d * 0.45, FX.sail.lead);
       const cx = ev.fx + Math.cos(prevAng) * lead;
       const cy = ev.fy + Math.sin(prevAng) * lead;
-      headings.set(ev.shipId, Math.atan2(ev.ty - cy, ev.tx - cx)); // курс на финише
+      headings.set(ev.shipId, Math.atan2(ev.ty - cy, ev.tx - cx)); // курс на финише (трекаем всегда)
+      if (hidden(ev.fx, ev.fy) && hidden(ev.tx, ev.ty)) continue;
       if (!String(ev.shipId).startsWith('p')) Sound.playAt('move', delay); // пираты — без плеска
       addEffect({
         kind: 'sail', shipId: ev.shipId, fx: ev.fx, fy: ev.fy, cx, cy, tx: ev.tx, ty: ev.ty,
         moveDur: FX.sail.moveDur, dur: FX.sail.moveDur + FX.sail.wakeFade, delay
       });
     } else if (ev.type === 'shot') {
+      if (hidden(ev.fx, ev.fy) && hidden(ev.tx, ev.ty)) continue;
       Sound.playAt('shot', delay);
       addEffect({ kind: 'shell', fx: ev.fx, fy: ev.fy, tx: ev.tx, ty: ev.ty, dur: FX.shell.dur, delay });
       const impact = delay + FX.shell.dur - 20;
@@ -197,6 +203,7 @@ function playEvents(events) {
       if (ev.dmg) addEffect({ kind: 'dmg', x: ev.tx, y: ev.ty, amount: ev.dmg, dur: 1300, delay: impact });
       delay += FX.shell.dur + 140;
     } else if (ev.type === 'broadside') {
+      if (hidden(ev.fx, ev.fy)) continue;
       // залп: один звук, все ядра летят разом, взрывы и красные цифры вместе
       Sound.playAt('shot', delay);
       const impact = delay + FX.shell.dur - 20;
@@ -208,6 +215,7 @@ function playEvents(events) {
       }
       delay += FX.shell.dur + 220;
     } else if (ev.type === 'explosion') {
+      if (hidden(ev.x, ev.y)) continue;
       // потопленный корабль ещё виден, пока к нему летит ядро
       if (ev.ship && delay > 0) {
         addEffect({ kind: 'ghost', shipId: ev.shipId, ship: ev.ship, x: ev.x, y: ev.y, dur: delay });
@@ -228,6 +236,7 @@ function playEvents(events) {
       });
       delay += 350;
     } else if (ev.type === 'gold') {
+      if (hidden(ev.x, ev.y)) continue;
       Sound.playAt('coin', delay);
       addEffect({ kind: 'gold', x: ev.x, y: ev.y, amount: ev.amount, dur: FX.gold.dur, delay });
       delay += 180;
@@ -515,6 +524,101 @@ function hpBar(px, py, w, frac, color) {
   ctx.strokeRect(px - w / 2, py, w, 5);
 }
 
+// Отрисовка базы (вынесено, чтобы рисовать врагов и в норме, и сквозь туман).
+// hpFrac=null → шкала HP не показывается (база ещё не разведана); dim → тускло (под туманом).
+function drawBase(b, i, { alive, hpFrac, dim }) {
+  const p = state.players[i];
+  ctx.globalAlpha = dim ? 0.4 : 1;
+  drawPolygon(b.x, b.y, b.shape, alive ? '#e8d9a8' : '#d8d3c2', '#8a7a45');
+  ctx.beginPath();
+  ctx.moveTo(sx(b.x), sy(b.y) - 26 * view.scale);
+  ctx.lineTo(sx(b.x), sy(b.y) + 4);
+  ctx.strokeStyle = '#2b3a55'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(sx(b.x), sy(b.y) - 26 * view.scale);
+  ctx.lineTo(sx(b.x) + 16, sy(b.y) - 20 * view.scale);
+  ctx.lineTo(sx(b.x), sy(b.y) - 14 * view.scale);
+  ctx.closePath();
+  ctx.fillStyle = p.color; ctx.fill();
+  ctx.font = `bold ${Math.max(12, 15 * view.scale)}px Neucha, cursive`;
+  ctx.fillStyle = '#2b3a55'; ctx.textAlign = 'center';
+  ctx.fillText(p.nick, sx(b.x), sy(b.y + b.radius) + 16);
+  ctx.globalAlpha = 1;
+  if (alive && hpFrac != null) hpBar(sx(b.x), sy(b.y + b.radius) + 22, 56, hpFrac, '#27ae60');
+  else if (!alive) { ctx.font = `${20 * view.scale + 8}px serif`; ctx.fillText('💀', sx(b.x), sy(b.y) + 6); }
+}
+
+// ===== Туман войны — чисто клиентский визуал (см. config.fog) =====
+let fogGameId = null, fogLayer = null, fogLayerCtx = null;
+const fogCells = new Set();   // исследованные клетки карты (показ островов/зон)
+const fogLastSeen = {};       // i → {portHp, alive} на момент последней видимости базы врага
+const FOG_CELL = 48, FOG_SHIP_MULT = 1.3, FOG_BASE_EXTRA = 200;
+
+function fogActive() {
+  return !!(state?.config?.fog) && !state.config.hotseat
+    && state.status === 'active' && state.players[myIdx()]?.alive;
+}
+function fogResetMem() {
+  fogCells.clear();
+  for (const k in fogLastSeen) delete fogLastSeen[k];
+}
+function visionCircles() {
+  const me = myIdx(), circles = [], m = state.map;
+  const base = m.bases[me];
+  if (base) circles.push({ x: base.x, y: base.y, r: base.radius + FOG_BASE_EXTRA });
+  for (const s of state.ships) if (s.owner === me) {
+    const st = ST(s.type);
+    const pos = animPos.get(s.id) || s; // во время «плавания» — промежуточная позиция: туман плавно едет за лодкой
+    circles.push({ x: pos.x, y: pos.y, r: Math.max(st.move, st.fireRange) * FOG_SHIP_MULT });
+  }
+  return circles;
+}
+const fogVisible = (x, y, circles) => circles.some(c => Math.hypot(x - c.x, y - c.y) <= c.r);
+const fogExploredAt = (x, y) => fogCells.has(((x / FOG_CELL) | 0) + ',' + ((y / FOG_CELL) | 0));
+
+function fogUpdate(circles) {
+  if (fogGameId !== state.id) { fogGameId = state.id; fogResetMem(); } // новая игра — забыть разведанное
+  for (const c of circles) {                     // отметить клетки разведанными (острова/зоны остаются видны)
+    for (let gx = c.x - c.r; gx <= c.x + c.r; gx += FOG_CELL)
+      for (let gy = c.y - c.r; gy <= c.y + c.r; gy += FOG_CELL)
+        if (Math.hypot(gx - c.x, gy - c.y) <= c.r)
+          fogCells.add(((gx / FOG_CELL) | 0) + ',' + ((gy / FOG_CELL) | 0));
+  }
+  state.map.bases.forEach((b, i) => {            // запомнить HP/статус видимых баз врага
+    if (i === myIdx()) return;
+    if (fogVisible(b.x, b.y, circles)) {
+      const p = state.players[i]; if (p) fogLastSeen[i] = { portHp: p.portHp, alive: p.alive };
+    }
+  });
+}
+
+function drawFogOverlay(circles) {
+  const cw = canvas.clientWidth, ch = canvas.clientHeight, m = state.map;
+  const dpr = window.devicePixelRatio || 1;
+  if (!fogLayer || fogLayer.width !== canvas.width || fogLayer.height !== canvas.height) {
+    fogLayer = document.createElement('canvas');
+    fogLayer.width = canvas.width; fogLayer.height = canvas.height;
+    fogLayerCtx = fogLayer.getContext('2d');
+  }
+  const f = fogLayerCtx;
+  f.setTransform(dpr, 0, 0, dpr, 0, 0);
+  f.clearRect(0, 0, cw, ch);
+  f.fillStyle = 'rgba(150,160,178,0.46)';                       // единый ЛЁГКИЙ туман по всей карте
+  f.fillRect(sx(0), sy(0), m.w * view.scale, m.h * view.scale);
+  f.globalCompositeOperation = 'destination-out';
+  for (const c of circles) {                                    // текущая видимость — чисто, с мягким краем
+    const cx = sx(c.x), cy = sy(c.y), cr = c.r * view.scale;
+    const g = f.createRadialGradient(cx, cy, cr * 0.6, cx, cy, cr);
+    g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+    f.fillStyle = g; f.beginPath(); f.arc(cx, cy, cr, 0, Math.PI * 2); f.fill();
+  }
+  f.globalCompositeOperation = 'source-over';
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);                           // композитим 1:1 в device-пикселях
+  ctx.drawImage(fogLayer, 0, 0);
+  ctx.restore();
+}
+
 function render() {
   if (!state) return;
   renderSidebar();
@@ -527,6 +631,11 @@ function render() {
   const m = state.map;
   const cw = canvas.clientWidth, ch = canvas.clientHeight;
   ctx.clearRect(0, 0, cw, ch);
+
+  // туман войны: круги видимости (база + мои корабли) и обновление разведанного
+  const fog = fogActive();
+  const vis = fog ? visionCircles() : [];
+  if (fog) fogUpdate(vis);
 
   // лист: фон и клетка до краёв экрана — сетка продолжается за границами карты
   ctx.fillStyle = '#fdfbf3';
@@ -553,6 +662,7 @@ function render() {
   // рыбные места
   const FISH_CAP = 4; // место кормит не больше 4 судов (см. FISH_ZONE_CAP на сервере)
   for (const z of m.fishZones) {
+    if (fog && !fogExploredAt(z.x, z.y)) continue; // под туманом — пока не разведано
     ctx.beginPath();
     ctx.arc(sx(z.x), sy(z.y), z.radius * view.scale, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(120,170,210,.16)';
@@ -571,6 +681,7 @@ function render() {
 
   // лут-острова
   for (const isl of m.lootIslands) {
+    if (fog && !fogExploredAt(isl.x, isl.y)) continue; // под туманом — пока не разведано
     ctx.globalAlpha = isl.looted ? 0.45 : 1;
     drawPolygon(isl.x, isl.y, isl.shape, '#e8d9a8', '#8a7a45');
     ctx.font = `${Math.max(12, 18 * view.scale)}px serif`;
@@ -584,31 +695,13 @@ function render() {
     ctx.globalAlpha = 1;
   }
 
-  // базы
+  // базы (под туманом вражеские рисуем ПОСЛЕ оверлея — см. ниже)
+  const portMax = state.portMax || 840;
   m.bases.forEach((b, i) => {
     const p = state.players[i];
     if (!p) return;
-    drawPolygon(b.x, b.y, b.shape, p.alive ? '#e8d9a8' : '#d8d3c2', '#8a7a45');
-    // флаг цвета игрока
-    ctx.beginPath();
-    ctx.moveTo(sx(b.x), sy(b.y) - 26 * view.scale);
-    ctx.lineTo(sx(b.x), sy(b.y) + 4);
-    ctx.strokeStyle = '#2b3a55';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(sx(b.x), sy(b.y) - 26 * view.scale);
-    ctx.lineTo(sx(b.x) + 16, sy(b.y) - 20 * view.scale);
-    ctx.lineTo(sx(b.x), sy(b.y) - 14 * view.scale);
-    ctx.closePath();
-    ctx.fillStyle = p.color;
-    ctx.fill();
-    ctx.font = `bold ${Math.max(12, 15 * view.scale)}px Neucha, cursive`;
-    ctx.fillStyle = '#2b3a55';
-    ctx.textAlign = 'center';
-    ctx.fillText(p.nick, sx(b.x), sy(b.y + b.radius) + 16);
-    if (p.alive) hpBar(sx(b.x), sy(b.y + b.radius) + 22, 56, p.portHp / (state.portMax || 840), '#27ae60');
-    else { ctx.font = `${20 * view.scale + 8}px serif`; ctx.fillText('💀', sx(b.x), sy(b.y) + 6); }
+    if (fog && i !== myIdx()) return; // враги — сквозь туман, отдельным проходом
+    drawBase(b, i, { alive: p.alive, hpFrac: p.portHp / portMax, dim: false });
   });
 
   // подсветки выбранного корабля
@@ -622,16 +715,33 @@ function render() {
   // пенные следы — под кораблями
   drawEffects(true);
 
-  // корабли
+  // корабли (под туманом чужие/пиратов видно только в зоне видимости)
   for (const s of state.ships) {
+    if (fog && s.owner !== myIdx() && !fogVisible(s.x, s.y, vis)) continue;
     drawShip(s, s.id === selectedShipId);
   }
   // тонущие: уже исчезли из состояния, но ядро ещё летит
   const nowGhost = performance.now();
   for (const e of effects) {
     if (e.kind === 'ghost' && nowGhost >= e.start && nowGhost < e.start + e.dur) {
+      if (fog && e.ship.owner !== myIdx() && !fogVisible(e.x, e.y, vis)) continue;
       drawShip({ id: e.shipId, owner: e.ship.owner, type: e.ship.type, x: e.x, y: e.y, hp: 1, bounty: e.ship.bounty }, false);
     }
+  }
+
+  // ТУМАН: затягиваем карту и проявляем вражеские базы сквозь дымку (тускло/последнее виденное)
+  if (fog) {
+    drawFogOverlay(vis);
+    m.bases.forEach((b, i) => {
+      if (i === myIdx()) return;
+      const p = state.players[i]; if (!p) return;
+      if (fogVisible(b.x, b.y, vis)) {                 // в зоне видимости — живые данные
+        drawBase(b, i, { alive: p.alive, hpFrac: p.portHp / portMax, dim: false });
+      } else {                                         // вне — тускло, статус/HP на момент последней разведки
+        const seen = fogLastSeen[i];
+        drawBase(b, i, { alive: seen ? seen.alive : true, hpFrac: seen ? seen.portHp / portMax : null, dim: true });
+      }
+    });
   }
 
   // цели в режиме атаки
@@ -1252,7 +1362,9 @@ function renderSidebar() {
   $('#playersList').innerHTML = state.players.map((p, i) => {
     const show = state.status !== 'lobby' && canSee(i);
     const stats = show ? `💰${p.gold} · 🏠${p.portHp}` : '';
-    return `<div class="player-row ${p.alive ? '' : 'dead'} ${state.status === 'active' && i === state.turn.idx ? 'current' : ''}">
+    // под туманом статус врага — на момент последней разведки (не крестим вслепую)
+    const aliveShown = (fogActive() && i !== myIdx()) ? (fogLastSeen[i]?.alive ?? true) : p.alive;
+    return `<div class="player-row ${aliveShown ? '' : 'dead'} ${state.status === 'active' && i === state.turn.idx ? 'current' : ''}">
       <span class="dot" style="background:${p.color}"></span>
       <span>${p.isBot ? '🤖 ' : ''}${escapeHtml(p.nick)}${p.id === myId ? ' (ты)' : ''}</span>
       <span class="gold">${stats}</span>

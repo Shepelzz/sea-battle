@@ -224,6 +224,7 @@ app.post('/api/games', (req, res) => {
     if (!nick?.trim()) return res.status(400).json({ error: 'Нужен ник' });
     const game = createGame(id, { maxPlayers: 1 + botCount, turnTimer: 0 });
     game.config.botGame = true;
+    game.config.fog = req.body.fog !== false; // туман войны (по умолчанию вкл), визуал для игрока
     db.upsertPlayer(pid, nick.trim());
     addPlayer(game, pid, nick.trim(), color);              // цвет игрока — по выбору
     for (let i = 0; i < botCount; i++) {
@@ -241,6 +242,7 @@ app.post('/api/games', (req, res) => {
   if (!nick?.trim()) return res.status(400).json({ error: 'Нужны ник и токен' });
   const game = createGame(id, { maxPlayers: +maxPlayers, turnTimer: +turnTimer });
   game.config.listed = true; // онлайн-игра попадает в браузер лобби
+  game.config.fog = req.body.fog !== false; // туман войны (по умолчанию вкл)
   db.upsertPlayer(pid, nick.trim());
   addPlayer(game, pid, nick.trim(), color);
   games.set(id, game);
