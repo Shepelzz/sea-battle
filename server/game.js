@@ -4,7 +4,7 @@ import {
   SHIP_TYPES, START_FLEET, START_GOLD, PORT_HP, PORT_RETURN_DMG, PORT_INCOME,
   PORT_RETURN_LINKOR_MULT, PORT_NO_SHIP_INCOME_MULT, PORT_INCOME_TURN_FACTOR,
   SHIP_COLLISION_DIST, LOOT_REACH, WRECK_LOOT_FRAC, TRIBUTE_FRAC,
-  BROADSIDE_MULT, BROADSIDE_ENABLED, FISH_ZONE_CAP,
+  BROADSIDE_MULT, BROADSIDE_ENABLED, FISH_ZONE_CAP, movesBudget, SHIP_ACTIONS,
   MAP_EDGE_MARGIN, ISLAND_BLOCK_GAP, SPAWN_FAN_N, SPAWN_FAN_RINGS, SPAWN_FAN_R0, SPAWN_FAN_RING_STEP,
   PIRATE, PIRATE_MAX, PIRATE_ENGAGE_MULT, PIRATE_MIN_LIFETIME, PIRATE_STEP_MIN,
   PIRATE_DESPAWN_CHANCE, PIRATE_SPAWN_CHANCE, PIRATE_MOVE_CHANCE, PIRATE_BOSS_CHANCE, PIRATE_BOSS_HP,
@@ -31,6 +31,7 @@ export function randomFreeColor(game) {
   return pool[Math.floor(Math.random() * pool.length)];
 }
 const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
+const SHIP_ACTION_SET = new Set(SHIP_ACTIONS); // действия, привязанные к конкретному кораблю
 
 let shipSeq = 1;
 
@@ -50,7 +51,7 @@ export function createGame(id, config) {
     map: null,
     players: [], // {id, nick, color, gold, portHp, alive, placement, stats, votedSkip}
     ships: [],
-    turn: { idx: 0, number: 0, deadline: null },
+    turn: { idx: 0, number: 0, deadline: null, moves: 0, actedShips: [] },
     log: [],
     winner: null,
     createdAt: Date.now()
@@ -120,7 +121,7 @@ export function startGame(game, playerId) {
   });
   for (let i = 0; i < Math.min(PIRATE_MAX, game.players.length); i++) spawnPirate(game, true, false, i);
   game.status = 'active';
-  game.turn = { idx: 0, number: 1, deadline: turnDeadline(game), nudged: false };
+  game.turn = { idx: 0, number: 1, deadline: turnDeadline(game), nudged: false, moves: 0, actedShips: [] };
   pushLog(game, `⚔️ Баттл начался! Первым ходит ${game.players[0].nick}`, 'battle');
   return { ok: true };
 }
@@ -313,6 +314,8 @@ function advanceTurn(game) {
   game.turn.number++;
   game.turn.deadline = turnDeadline(game);
   game.turn.nudged = false;
+  game.turn.moves = 0;        // счётчик ходов кораблями этого хода (режим «ход тремя судами»)
+  game.turn.actedShips = [];  // какие корабли уже сходили в этом ходу
   // порт приносит немного золота в начале хода — чтобы никто не застрял на нуле.
   // в аномально затянувшейся партии (дольше нормальной людской) доход выключаем —
   // «внезапная смерть», чтобы экономика истощалась и игра сходилась к финалу.
@@ -496,6 +499,9 @@ export function applyAction(game, playerId, action) {
   if (pIdx === -1) return { ok: false, error: 'Вы не участник игры' };
   if (pIdx !== game.turn.idx) return { ok: false, error: 'Сейчас не ваш ход' };
   const player = game.players[pIdx];
+  // режим «ход тремя судами»: одним кораблём за ход ходить можно только раз
+  if (SHIP_ACTION_SET.has(action.type) && (game.turn.actedShips || []).includes(action.shipId))
+    return { ok: false, error: 'Этот корабль уже ходил' };
   freshEvents(game); // события этого хода для анимаций на клиенте
 
   switch (action.type) {
@@ -525,21 +531,27 @@ export function applyAction(game, playerId, action) {
     case 'collect': {
       let gained = 0;
       const notes = [];
-      // Рыбалка теперь пассивная (капает в advanceTurn). Тут — только клад с островов:
-      // любой корабль, дотянувшийся до нелутанного острова.
+      // Рыбалка теперь пассивная (капает в advanceTurn). Тут — только клад с островов.
+      // Клад берут лишь корабли, ещё НЕ ходившие в этом ходу: нельзя «походить кораблём,
+      // а затем им же собрать клад» (каждый корабль — одно действие за ход). Собравшие корабли
+      // помечаются сходившими. В классике actedShips пуст → как раньше, сбор любым кораблём.
+      const actedSet = new Set(game.turn.actedShips || []);
+      const reachers = new Set();
       for (const isl of game.map.lootIslands.filter(i => !i.looted)) {
-        const reach = game.ships.some(s => s.owner === pIdx &&
+        const ships = game.ships.filter(s => s.owner === pIdx && !actedSet.has(s.id) &&
           dist(s.x, s.y, isl.x, isl.y) <= isl.radius + LOOT_REACH);
-        if (reach) {
+        if (ships.length) {
           isl.looted = true;
           gained += isl.loot;
           notes.push(`🏝 клад ${isl.loot}`);
           pushEvent(game, { type: 'gold', x: isl.x, y: isl.y, amount: isl.loot });
+          ships.forEach(s => reachers.add(s.id));
         }
       }
-      if (!gained) return { ok: false, error: 'Нечего собирать: нет кораблей у нелутанных островов с кладом' };
+      if (!gained) return { ok: false, error: 'Нечего собирать: нет (ещё не ходивших) кораблей у нелутанных островов' };
       player.gold += gained;
       player.stats.goldCollected += gained;
+      reachers.forEach(id => (game.turn.actedShips ??= []).push(id)); // собравшие — походили этим ходом
       logEvent(game,
         `💰 ${player.nick} собирает добычу: +${gained} зол. (${notes.join(', ')})`,
         `💰 ${player.nick} собирает добычу`);
@@ -653,14 +665,29 @@ export function applyAction(game, playerId, action) {
     }
 
     case 'skip':
-      pushLog(game, `⏭ ${player.nick} пропускает ход`);
+    case 'endTurn':
+      // в многоходовом режиме после сделанных ходов это «завершить ход», а не «пропустить»
+      pushLog(game, game.turn.moves > 0
+        ? `✅ ${player.nick} завершает ход`
+        : `⏭ ${player.nick} пропускает ход`);
       break;
 
     default:
       return { ok: false, error: 'Неизвестное действие' };
   }
 
-  if (game.status === 'active') advanceTurn(game);
+  // любое успешное действие (ход/выстрел/залп/покупка/сбор) тратит один из ходов;
+  // ход конкретным кораблём вдобавок помечает его сходившим (нельзя дважды за ход).
+  // Ход завершается, когда исчерпан бюджет, явно нажата «Завершить»/«Пропустить»,
+  // либо включён классический режим (там любое действие = конец хода).
+  if (action.type !== 'skip' && action.type !== 'endTurn') {
+    game.turn.moves = (game.turn.moves || 0) + 1;
+    if (SHIP_ACTION_SET.has(action.type)) (game.turn.actedShips ??= []).push(action.shipId);
+  }
+  const endsTurn = action.type === 'skip' || action.type === 'endTurn'
+    || !game.config.multiMove
+    || game.turn.moves >= movesBudget(game.config);
+  if (game.status === 'active' && endsTurn) advanceTurn(game);
   return { ok: true };
 }
 
@@ -718,6 +745,7 @@ export function publicState(game, viewerPid) {
     eventSeq: game.eventSeq || 0,
     lootReach: LOOT_REACH,
     portMax: PORT_HP,
+    movesPerTurn: movesBudget(game.config), // 3 в режиме «ход тремя судами», иначе 1
     palette: PALETTE,
     shipTypes: { ...SHIP_TYPES, pirate: PIRATE }
   };

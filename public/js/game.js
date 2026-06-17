@@ -107,6 +107,7 @@ socket.on('state', s => {
     lastEventSeq = s.eventSeq;
   }
   render();
+  maybeMovesToast(prev, s); // «осталось N ходов» после моего суб-хода (режим ход-тремя-судами)
   if (anyBurning()) ensureAnimLoop(); // низкое HP базы → запустить анимацию огня/дыма
   Sound.onState(prev, s, myIdx());
   updateTab();
@@ -396,12 +397,54 @@ const myIdx = () => {
 const isMyTurn = () => state && state.status === 'active' && myIdx() === state.turn.idx && state.players[myIdx()]?.alive;
 const ST = t => state.shipTypes[t];
 
+// ── режим «ход тремя судами» ──
+const movesPerTurn = () => state?.movesPerTurn || 1;          // бюджет ходов кораблями за ход
+const multiMoveOn = () => movesPerTurn() > 1;                 // включён ли многоходовый режим
+const movesUsed = () => state?.turn?.moves || 0;              // сколько уже сходило в этом ходу
+const movesLeft = () => Math.max(0, movesPerTurn() - movesUsed());
+const shipActed = id => (state?.turn?.actedShips || []).includes(id); // корабль уже ходил в этом ходу
+
 function toast(msg) {
   const el = $('#toast');
   el.textContent = msg;
   el.classList.add('show');
   clearTimeout(el._t);
   el._t = setTimeout(() => el.classList.remove('show'), 2600);
+}
+
+// Информационный нотиф сверху экрана (в т.ч. «осталось N ходов») — сам растворяется.
+function hudToast(msg, ms = 2600) {
+  const el = $('#hudToast');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.remove('show'), ms);
+}
+
+// После моего суб-хода в режиме «ход тремя судами» — подсказать, сколько ходов осталось:
+// иначе после постановки корабля «на якорь» неочевидно, что ход продолжается.
+function maybeMovesToast(prev, s) {
+  if (!multiMoveOn() || spectator || !isMyTurn()) return;
+  if (!prev || prev.turn.idx !== s.turn.idx || prev.turn.number !== s.turn.number) return; // смена хода, а не суб-ход
+  if ((s.turn.moves || 0) <= (prev.turn.moves || 0)) return; // ходов не прибавилось — действие не моё
+  const left = movesLeft();
+  if (left > 0) hudToast(`⚓ Осталось ходов: ${left} — ходи дальше или «Завершить ход»`);
+}
+
+// Записка-стикер над кораблём «на якоре» (уже ходил). screenX/screenY — экранные px (под mapWrap).
+let shipNoteTimer = null;
+function showShipNote(screenX, screenY, text) {
+  const el = $('#shipNote');
+  if (!el) return;
+  el.textContent = text;
+  el.style.left = screenX + 'px';
+  el.style.top = screenY + 'px';
+  el.classList.add('show');
+}
+function hideShipNote() {
+  clearTimeout(shipNoteTimer);
+  $('#shipNote')?.classList.remove('show');
 }
 
 function sendAction(action) {
@@ -412,8 +455,9 @@ function sendAction(action) {
       basket = {};
       deselect();
       $('#shopOverlay').classList.add('hidden');
-      // на телефоне после хода сворачиваем меню — карта снова на весь экран
-      if (window.matchMedia('(max-width: 900px)').matches && !$('#panel').classList.contains('collapsed')) {
+      // на телефоне после хода сворачиваем меню — карта снова на весь экран.
+      // В многоходовом режиме НЕ сворачиваем: ход продолжается, игрок водит следующие суда.
+      if (!multiMoveOn() && window.matchMedia('(max-width: 900px)').matches && !$('#panel').classList.contains('collapsed')) {
         $('#panelToggle').click();
       }
     }
@@ -426,6 +470,7 @@ function deselect() {
   aim = null;
   hoverPt = null;
   moveDemo = null;
+  hideShipNote();
   $('#shipActions').classList.add('hidden');
   if (state) render();
 }
@@ -877,7 +922,18 @@ function render() {
   // корабли (под туманом чужие/пиратов видно только в зоне видимости)
   for (const s of state.ships) {
     if (fog && s.owner !== myIdx() && !fogVisible(s.x, s.y, vis)) continue;
+    // уже сходивший в этом ходу свой корабль — тусклый, с якорьком (режим «ход тремя судами»)
+    const acted = s.owner === myIdx() && isMyTurn() && shipActed(s.id);
+    if (acted) ctx.globalAlpha = 0.42;
     drawShip(s, s.id === selectedShipId);
+    if (acted) {
+      ctx.globalAlpha = 0.95;
+      ctx.font = `${Math.max(11, 14 * view.scale)}px serif`;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#2b3a55';
+      ctx.fillText('⚓', sx(s.x), sy(s.y) - ((SHIP_LEN[s.type] || 46) * 0.5 + 14) * view.scale);
+      ctx.globalAlpha = 1;
+    }
   }
   // тонущие: уже исчезли из состояния, но ядро ещё летит
   const nowGhost = performance.now();
@@ -1201,6 +1257,7 @@ const evPos = e => {
 
 canvas.addEventListener('pointerdown', e => {
   try { canvas.setPointerCapture(e.pointerId); } catch { /* синтетические события */ }
+  hideShipNote(); // тап/драг убирает записку (на тапе по «якорному» кораблю покажется заново)
   pointers.set(e.pointerId, evPos(e));
   if (pointers.size === 1) {
     const p = evPos(e);
@@ -1209,7 +1266,8 @@ canvas.addEventListener('pointerdown', e => {
     // «взводим» — тап просто выберет, а перетаскивание авто-активирует «Плыть». Мышь — как раньше.
     if (e.pointerType === 'touch' && state && isMyTurn() && (mode === 'move' || mode === 'idle')) {
       const sel = selectedShipId && state.ships.find(s => s.id === selectedShipId);
-      const onSel = sel && dist(p.x, p.y, sx(sel.x), sy(sel.y)) <= AIM_GRAB_PX;
+      // корабль, уже сходивший в этом ходу, не «хватаем» прицелом (drag → панорама)
+      const onSel = sel && !shipActed(sel.id) && dist(p.x, p.y, sx(sel.x), sy(sel.y)) <= AIM_GRAB_PX;
       if (mode === 'move' && onSel) {
         aim = { sel, armed: true, startX: p.x, startY: p.y };
         moveDemo = null;
@@ -1218,7 +1276,7 @@ canvas.addEventListener('pointerdown', e => {
         return;
       }
       const own = onSel ? sel
-        : state.ships.find(s => s.owner === myIdx() && dist(p.x, p.y, sx(s.x), sy(s.y)) <= AIM_GRAB_PX);
+        : state.ships.find(s => s.owner === myIdx() && !shipActed(s.id) && dist(p.x, p.y, sx(s.x), sy(s.y)) <= AIM_GRAB_PX);
       if (own) { aim = { sel: own, armed: false, startX: p.x, startY: p.y }; return; }
     }
     // палец «ездит» сильнее мыши — порог тапа больше
@@ -1290,6 +1348,11 @@ canvas.addEventListener('pointermove', e => {
   // наведение для «линейки» — только мышь (на тач курса-наведения нет, есть drag-aim)
   if (e.pointerType === 'mouse') {
     hoverPt = toMap(p.x, p.y);
+    // записка-стикер над сходившим своим кораблём при наведении мышью
+    const overActed = isMyTurn() && state.ships.find(s =>
+      s.owner === myIdx() && shipActed(s.id) && dist(p.x, p.y, sx(s.x), sy(s.y)) <= 28);
+    if (overActed) showShipNote(sx(overActed.x), sy(overActed.y) - 16, '⚓ Уже ходил');
+    else hideShipNote();
     if (mode === 'move') render();
   }
 });
@@ -1365,6 +1428,11 @@ function handleTap(pos, isTouch) {
 
   // выбор своего корабля
   if (clickedShip && clickedShip.owner === myIdx() && isMyTurn()) {
+    if (shipActed(clickedShip.id)) { // уже ходил — показываем записку (на тач сама исчезнет)
+      showShipNote(sx(clickedShip.x), sy(clickedShip.y) - 16, '⚓ Уже ходил');
+      if (isTouch) { clearTimeout(shipNoteTimer); shipNoteTimer = setTimeout(hideShipNote, 2200); }
+      return;
+    }
     selectedShipId = clickedShip.id;
     mode = 'idle';
     Sound.play('click');
@@ -1447,6 +1515,9 @@ function openInfo() {
         </div>`;
       }).join('');
   }
+  // карточка «Ход» — вариант под режим партии (одно действие / ход тремя судами)
+  $('#wikiTurnSingle')?.classList.toggle('hidden', multiMoveOn());
+  $('#wikiTurnMulti')?.classList.toggle('hidden', !multiMoveOn());
   $('#tutToggle').checked = localStorage.getItem('sb_tut_done') !== '1';
   $('#infoOverlay').classList.remove('hidden');
 }
@@ -1506,12 +1577,14 @@ function renderSidebar() {
   const me = state.players[myIdx()];
   const current = state.players[state.turn.idx];
 
-  // баннер хода
+  // баннер хода (в режиме «ход тремя судами» — счётчик оставшихся ходов кораблями)
   const banner = $('#turnBanner');
+  const showMoves = multiMoveOn() && state.status === 'active' && (isMyTurn() || state.config?.hotseat);
+  const movesTag = showMoves ? ` ⚓${movesLeft()}/${movesPerTurn()}` : '';
   if (state.status === 'lobby') banner.textContent = '⏳ Сбор флота…';
   else if (state.status === 'finished') banner.textContent = '🏁 Баттл окончен';
-  else if (state.config?.hotseat) banner.textContent = `✏️ Ходит: ${current?.nick} (№${state.turn.number})`;
-  else if (isMyTurn()) banner.textContent = '🔥 Твой ход!';
+  else if (state.config?.hotseat) banner.textContent = `✏️ Ходит: ${current?.nick} (№${state.turn.number})${movesTag}`;
+  else if (isMyTurn()) banner.textContent = `🔥 Твой ход!${movesTag}`;
   else banner.textContent = `Ход: ${current?.nick ?? '…'} (№${state.turn.number})`;
   banner.classList.toggle('my-turn', isMyTurn() && !state.config?.hotseat);
 
@@ -1539,20 +1612,29 @@ function renderSidebar() {
   $('#btnSurrender').classList.toggle('hidden', !showActions);
   if (showActions) {
     $('#btnShop').disabled = !isMyTurn();
-    $('#btnSkip').disabled = !isMyTurn();
+    // в многоходовом режиме «Пропустить» превращается в «Завершить ход» (когда уже что-то сходило)
+    const finishing = multiMoveOn() && movesUsed() > 0;
+    const btnSkip = $('#btnSkip');
+    btnSkip.disabled = !isMyTurn();
+    btnSkip.textContent = finishing ? '✅ Завершить ход' : '⏭ Пропустить';
+    btnSkip.classList.toggle('primary', finishing && isMyTurn());
     $('#btnNudge').classList.toggle('hidden',
       isMyTurn() || state.turn.nudged || !!state.players[state.turn.idx]?.isBot);
     $('#hint').textContent = isMyTurn()
-      ? 'Одно действие за ход: купить, собрать, передвинуть один корабль или выстрелить.'
+      ? (multiMoveOn()
+          ? `Ход тремя судами: до ${movesPerTurn()} действий за ход — двигай и стреляй разными кораблями, собирай добычу, покупай (осталось ${movesLeft()}). Закончил раньше — «Завершить ход».`
+          : 'Одно действие за ход: купить, собрать, передвинуть один корабль или выстрелить.')
       : `Ждём ход игрока ${current?.nick}…`;
     if (!$('#shopOverlay').classList.contains('hidden')) renderShop();
   } else {
     $('#shopOverlay').classList.add('hidden');
   }
 
-  // журнал (новые сверху за счёт column-reverse)
-  $('#log').innerHTML = state.log.map(l =>
+  // журнал: новые сообщения сверху (массив log — старые→новые, разворачиваем).
+  // innerHTML переписывается целиком → скролл сам встаёт наверх, к самым свежим.
+  $('#log').innerHTML = [...state.log].reverse().map(l =>
     `<div class="${l.type}">${escapeHtml(l.text)}</div>`).join('');
+  $('#log').scrollTop = 0;
 
   // высота свёрнутой панели могла измениться (баннер хода, кнопки) — подвинуть карту
   if ($('#mapWrap').style.bottom !== desiredMapBottom()) resize();
@@ -1793,7 +1875,9 @@ const Tutorial = (() => {
       { text: '⚓ <b>Привет, капитан!</b> Несколько коротких подсказок — и в бой. Это «морской бой на листке в клетку».' },
       { text: 'Это твой <b>порт и флот</b>. Порт приносит немного золота каждый ход и <b>огрызается</b> 🏰 по тому, кто его атакует. Разобьют порт — ты выбываешь, береги его!',
         target: { world: { x: myBase.x, y: myBase.y, r: myBase.radius } } },
-      { text: 'Ходите <b>по очереди</b>. За ход — только <b>одно</b> действие: поплыть, выстрелить, собрать добычу или сходить в верфь.',
+      { text: multiMoveOn()
+          ? 'Ходите <b>по очереди</b>. За ход — до <b>трёх действий</b>: двигай и стреляй <b>разными</b> кораблями (одним — раз за ход), собирай добычу, покупай в верфи. Готов раньше — жми <b>«✅ Завершить ход»</b>.'
+          : 'Ходите <b>по очереди</b>. За ход — только <b>одно</b> действие: поплыть, выстрелить, собрать добычу или сходить в верфь.',
         target: { sel: '#turnBanner' } },
       { text: 'Нажми на свой корабль → выбери <b>«Плыть»</b> (в пределах круга дальности) или <b>«Стрелять»</b> по врагу в радиусе огня.',
         target: myShip ? { world: { x: myShip.x, y: myShip.y, r: 26 } } : null },

@@ -40,6 +40,10 @@ const nearest = (from, list, getXY) => {
 export function chooseBotAction(game, pIdx, level = 'mid') {
   const me = game.players[pIdx];
   const myShips = game.ships.filter(s => s.owner === pIdx);
+  // режим «ход тремя судами»: корабль, уже сходивший в этом ходу, в этом ходу больше не действует.
+  // Считаем его в общем контексте (он на доске — прикрывает, входит в «стаю»), но НЕ генерируем им
+  // новых ходов/выстрелов/залпов. Покупка и сбор не привязаны к кораблю — остаются доступны.
+  const acted = new Set(game.turn?.actedShips || []);
   const foeShips = game.ships.filter(s =>
     s.owner >= 0 && s.owner !== pIdx && game.players[s.owner]?.alive);
   const cands = [{ score: 1, action: { type: 'skip' } }];
@@ -84,6 +88,7 @@ export function chooseBotAction(game, pIdx, level = 'mid') {
 
   // --- стрельба ---
   for (const ship of myShips) {
+    if (acted.has(ship.id)) continue; // уже сходил в этом ходу
     const st = SHIP_TYPES[ship.type];
     if (!st.dmg) continue;
     for (const t of game.ships) {
@@ -138,9 +143,11 @@ export function chooseBotAction(game, pIdx, level = 'mid') {
   }
 
   // --- сбор добычи (только клад с островов; рыбалка теперь капает пассивно) ---
+  // считаем лишь клад, до которого дотянулись ЕЩЁ НЕ ходившие корабли — нельзя «походить кораблём,
+  // а затем им же собрать» (иначе бот растрачивал ход впустую, а сервер всё равно отклонит).
   let gain = 0;
   for (const isl of game.map.lootIslands.filter(i => !i.looted)) {
-    if (myShips.some(s => dist(s.x, s.y, isl.x, isl.y) <= isl.radius + LOOT_REACH)) gain += isl.loot;
+    if (myShips.some(s => !acted.has(s.id) && dist(s.x, s.y, isl.x, isl.y) <= isl.radius + LOOT_REACH)) gain += isl.loot;
   }
   // сбор — рутина, а не стратегия: не должен перебивать манёвры и оборону
   if (gain > 0) {
@@ -181,6 +188,7 @@ export function chooseBotAction(game, pIdx, level = 'mid') {
   const isls = game.map.lootIslands.filter(i => !i.looted);
 
   for (const ship of myShips) {
+    if (acted.has(ship.id)) continue; // уже сходил в этом ходу
     const st = SHIP_TYPES[ship.type];
 
     // идёт ли этот корабль на штурм порта жертвы (тогда раненым не отступаем — добиваем)

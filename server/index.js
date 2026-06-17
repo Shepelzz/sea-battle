@@ -130,12 +130,18 @@ function broadcastLobbies() {
 
 // --- ходы ботов ---
 const BOT_DELAY_MS = +(process.env.BOT_DELAY_MS || 1500);
+const BOT_FOLLOWUP_MS = +(process.env.BOT_FOLLOWUP_MS || 650); // быстрее на 2-3-м судне того же хода
 const botTimers = new Map();
+const botStep = new Map(); // gameId -> "idx:number" последней суб-акции (для распознавания продолжения хода)
 
 function maybeBotTurn(game) {
   if (game.status !== 'active') return;
   const cur = game.players[game.turn.idx];
   if (!cur?.isBot || botTimers.has(game.id)) return;
+  // первый ход бота в свой ход — пауза «на раздумье»; последующие суда того же хода — быстрее
+  const stepKey = game.turn.idx + ':' + game.turn.number;
+  const delay = botStep.get(game.id) === stepKey ? BOT_FOLLOWUP_MS : BOT_DELAY_MS;
+  botStep.set(game.id, stepKey);
   botTimers.set(game.id, setTimeout(() => {
     botTimers.delete(game.id);
     const g = getGame(game.id);
@@ -149,7 +155,7 @@ function maybeBotTurn(game) {
     if (!r.ok) r = applyAction(g, bot.id, { type: 'skip' }); // страховка от невалидного хода
     if (g.status === 'finished') db.saveResults(g);
     persistAndBroadcast(g);
-  }, BOT_DELAY_MS));
+  }, delay));
 }
 
 // Все живые игроки-люди сдались → не заставляем смотреть, как боты доигрывают:
@@ -206,6 +212,7 @@ app.post('/api/games', (req, res) => {
     const cols = Array.isArray(colors) ? colors : [];
     const game = createGame(id, { maxPlayers: names.length, turnTimer: 0 });
     game.config.hotseat = true;
+    game.config.multiMove = req.body.multiMove !== false; // ход тремя судами (по умолчанию вкл)
     game.hotseatOwner = pid;
     names.forEach((n, i) => {
       db.upsertPlayer(pid + '#' + i, n);
@@ -225,6 +232,7 @@ app.post('/api/games', (req, res) => {
     const game = createGame(id, { maxPlayers: 1 + botCount, turnTimer: 0 });
     game.config.botGame = true;
     game.config.fog = req.body.fog !== false; // туман войны (по умолчанию вкл), визуал для игрока
+    game.config.multiMove = req.body.multiMove !== false; // ход тремя судами (по умолчанию вкл)
     db.upsertPlayer(pid, nick.trim());
     addPlayer(game, pid, nick.trim(), color);              // цвет игрока — по выбору
     for (let i = 0; i < botCount; i++) {
@@ -243,6 +251,7 @@ app.post('/api/games', (req, res) => {
   const game = createGame(id, { maxPlayers: +maxPlayers, turnTimer: +turnTimer });
   game.config.listed = true; // онлайн-игра попадает в браузер лобби
   game.config.fog = req.body.fog !== false; // туман войны (по умолчанию вкл)
+  game.config.multiMove = req.body.multiMove !== false; // ход тремя судами (по умолчанию вкл)
   db.upsertPlayer(pid, nick.trim());
   addPlayer(game, pid, nick.trim(), color);
   games.set(id, game);

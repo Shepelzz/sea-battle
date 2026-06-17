@@ -111,7 +111,7 @@ $('#hotseatBtn').addEventListener('click', async () => {
     const res = await fetch('/api/games', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: getToken(), mode: 'hotseat', nicks, colors: hotseatColors })
+      body: JSON.stringify({ token: getToken(), mode: 'hotseat', nicks, colors: hotseatColors, multiMove: $('#hotseatMulti').checked })
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Ошибка сервера');
@@ -191,7 +191,8 @@ $('#createBtn').addEventListener('click', async () => {
         color: onlineColor,
         maxPlayers: +$('#maxPlayers').value,
         turnTimer: +$('#turnTimer').value,
-        fog: $('#onlineFog').checked
+        fog: $('#onlineFog').checked,
+        multiMove: $('#onlineMulti').checked
       })
     });
     const data = await res.json();
@@ -222,7 +223,8 @@ $('#botBtn').addEventListener('click', async () => {
         bots: +$('#botCount').value,
         level: $('#botLevel').value,
         color: botColor,
-        fog: $('#botFog').checked
+        fog: $('#botFog').checked,
+        multiMove: $('#botMulti').checked
       })
     });
     const data = await res.json();

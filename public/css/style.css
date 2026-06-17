@@ -212,8 +212,6 @@ aside.panel {
   color: var(--pencil);
   max-height: 220px;
   overflow-y: auto;
-  display: flex;
-  flex-direction: column-reverse;
 }
 #log .battle { color: var(--red-pen); }
 #log div { padding: 2px 0; border-bottom: 1px dotted var(--grid); }
@@ -277,6 +275,46 @@ aside.panel {
   z-index: 30;
 }
 .toast.show { opacity: 1; }
+
+/* Информационный нотиф сверху (напр. «осталось N ходов» в режиме ход-тремя-судами) —
+   в стиле листочка, въезжает сверху и растворяется. Отдельно от красного тоста ошибок. */
+.hud-toast {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 14px); left: 50%;
+  transform: translate(-50%, -12px);
+  background: var(--paper); color: var(--ink);
+  border: 2px solid var(--ink);
+  border-radius: 13px 7px 12px 8px / 8px 12px 7px 13px;
+  font-family: var(--font-title); font-size: 18px;
+  padding: 8px 18px;
+  box-shadow: var(--shadow);
+  opacity: 0; pointer-events: none;
+  transition: opacity .3s ease, transform .3s ease;
+  z-index: 29; white-space: nowrap; max-width: 92vw;
+  text-align: center;
+}
+.hud-toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* Записка-стикер над кораблём «на якоре» (уже ходил): десктоп — при наведении, мобила — при тапе.
+   Позиционируется в JS в экранных px над кораблём; не ловит указатель. */
+.ship-note {
+  position: absolute;
+  transform: translate(-50%, -100%) rotate(-2.5deg);
+  background: #fdf3c4; color: var(--ink);
+  border: 1.6px solid var(--ink);
+  border-radius: 6px 10px 6px 9px / 9px 6px 10px 6px;
+  font-size: 14px; font-weight: 700; line-height: 1.15;
+  padding: 5px 11px;
+  box-shadow: var(--shadow);
+  opacity: 0; pointer-events: none;
+  transition: opacity .15s ease;
+  z-index: 28; white-space: nowrap;
+}
+.ship-note::after { /* загнутый уголок-«заметка» */
+  content: ''; position: absolute; right: 5px; bottom: -7px;
+  border-left: 7px solid transparent; border-top: 7px solid #fdf3c4;
+}
+.ship-note.show { opacity: 1; }
 
 /* модалки (лобби, ник, финал) */
 .overlay {

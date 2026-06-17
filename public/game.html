@@ -11,6 +11,8 @@
     <div id="mapWrap">
       <canvas id="map"></canvas>
       <div class="toast" id="toast"></div>
+      <div class="hud-toast" id="hudToast"></div>
+      <div class="ship-note" id="shipNote"></div>
       <div class="action-bar hidden" id="shipActions">
         <span id="shipActionsTitle" style="align-self:center"></span>
         <button class="small" id="btnMove">🧭 Плыть</button>
@@ -160,13 +162,25 @@
 
         <section class="info-card">
           <h3>🔄 Ход</h3>
-          <p>Игроки ходят по очереди. За ход — <b>одно</b> действие:</p>
-          <ul>
-            <li>🧭 <b>передвинуть</b> один корабль;</li>
-            <li>🔥 <b>выстрелить</b> кораблём по цели;</li>
-            <li>💰 <b>собрать</b> добычу;</li>
-            <li>🛒 сходить в <b>верфь</b> (купить корабли).</li>
-          </ul>
+          <div id="wikiTurnSingle">
+            <p>Игроки ходят по очереди. За ход — <b>одно</b> действие:</p>
+            <ul>
+              <li>🧭 <b>передвинуть</b> один корабль;</li>
+              <li>🔥 <b>выстрелить</b> кораблём по цели;</li>
+              <li>💰 <b>собрать</b> добычу;</li>
+              <li>🛒 сходить в <b>верфь</b> (купить корабли).</li>
+            </ul>
+          </div>
+          <div id="wikiTurnMulti" class="hidden">
+            <p>Игроки ходят по очереди. За один ход — <b>до трёх действий</b>. Передвинуть и выстрелить можно <b>разными</b> кораблями (одним кораблём — не больше раза за ход):</p>
+            <ul>
+              <li>🧭 <b>передвинуть</b> корабль;</li>
+              <li>🔥 <b>выстрелить</b> кораблём по цели;</li>
+              <li>💰 <b>собрать</b> добычу;</li>
+              <li>🛒 сходить в <b>верфь</b>.</li>
+            </ul>
+            <p>Любое из этих действий тратит один из трёх ходов. Закончил раньше (1–2 корабля — не повод тянуть) — жми <b>«✅ Завершить ход»</b>.</p>
+          </div>
         </section>
 
         <section class="info-card">
