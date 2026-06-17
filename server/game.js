@@ -726,11 +726,26 @@ function findFreeSpotNearBase(game, base) {
   // корабли встают со стороны базы, ОБРАЩЁННОЙ К ЦЕНТРУ карты (а не всегда на восток) —
   // иначе игроку в правом углу флот спавнило в угол, в стену. Перебор веером от направления
   // к центру: 0, ±шаг, ±2·шаг… — первое свободное место всегда на «центровой» стороне.
-  const cx = game.map.w / 2, cy = game.map.h / 2;
+  //
+  // ВАЖНО (фикс «верфь говорит нет места, хотя деньги есть»): раньше перебирались только 5 колец ×
+  // 14 секторов = 70 точек у базы. У разросшегося флота (долгий стояк, особенно с непотопляемым
+  // авианосцем; быстрая экономика «хода тремя судами») эти 70 точек кончались — и покупка
+  // отклонялась, хотя золота хватало. Теперь кольца идут НАРУЖУ до края карты, а в дальних кольцах
+  // секторов гуще (равномерный шаг по дуге) — место находится ВСЕГДА, пока физически есть вода.
+  // Первые SPAWN_FAN_RINGS колец и их угловое разрешение НЕ изменены — расстановка обычных (некрупных)
+  // флотов остаётся точно прежней; дальний поиск включается, лишь когда ближние точки заняты.
+  const m = game.map;
+  const cx = m.w / 2, cy = m.h / 2;
   const toCenter = Math.atan2(cy - base.y, cx - base.x);
-  const N = SPAWN_FAN_N, step = (Math.PI * 2) / N;
-  for (let ring = 0; ring < SPAWN_FAN_RINGS; ring++) {
+  const maxR = Math.hypot(m.w, m.h); // дальше любой достижимой точки карты — предел расширения
+  for (let ring = 0; ; ring++) {
     const r = base.radius + SPAWN_FAN_R0 + ring * SPAWN_FAN_RING_STEP;
+    if (r > maxR) break;
+    // ближние кольца — как раньше (N=SPAWN_FAN_N); дальше — гуще, чтобы плотный флот всё равно поместился
+    const N = ring < SPAWN_FAN_RINGS
+      ? SPAWN_FAN_N
+      : Math.max(SPAWN_FAN_N, Math.round((2 * Math.PI * r) / (SHIP_COLLISION_DIST * 1.2)));
+    const step = (Math.PI * 2) / N;
     for (let i = 0; i < N; i++) {
       const ang = toCenter + (i % 2 ? 1 : -1) * Math.ceil(i / 2) * step;
       const x = Math.round(base.x + Math.cos(ang) * r);
@@ -738,7 +753,7 @@ function findFreeSpotNearBase(game, base) {
       if (!shipPlacementBlocked(game, x, y, null)) return { x, y };
     }
   }
-  return null;
+  return null; // вся вода вокруг базы до края карты занята — практически недостижимо
 }
 
 // Автопропуск по таймеру.
