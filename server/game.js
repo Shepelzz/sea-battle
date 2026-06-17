@@ -292,14 +292,14 @@ function currentPlayer(game) {
   return game.players[game.turn.idx];
 }
 
-// Все рыбацкие суда (любых владельцев), стоящие в зоне. Доход капает только первым FISH_ZONE_CAP
-// из них (по стабильному порядку id) — место не может кормить больше четырёх.
+// Все рыбацкие суда (любых владельцев), стоящие в зоне. Доход капает только первым zone.cap
+// из них (по стабильному порядку id) — лимит зависит от размера зоны (крупная кормит на 1 больше).
 function fishOccupants(game, zone) {
   return game.ships
     .filter(s => SHIP_TYPES[s.type]?.fishing > 0 && dist(s.x, s.y, zone.x, zone.y) <= zone.radius)
     .sort((a, b) => (a.id < b.id ? -1 : 1));
 }
-const fishEarners = (game, zone) => fishOccupants(game, zone).slice(0, FISH_ZONE_CAP);
+const fishEarners = (game, zone) => fishOccupants(game, zone).slice(0, zone.cap || FISH_ZONE_CAP);
 
 function advanceTurn(game) {
   movePirates(game);

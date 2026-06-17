@@ -84,19 +84,20 @@ function freshGame() {
     `(нужно ${shots}, расчёт ${need}, было бы при ×2: ${Math.ceil(PORT_HP / (SHIP_TYPES.linkor.dmg*2))})`);
 }
 
-// === 5. Рыбная зона кормит не больше FISH_ZONE_CAP судов ===
+// === 5. Рыбная зона кормит не больше zone.cap судов (4 или 5 по размеру) ===
 {
   const g = freshGame();
   const zone = g.map.fishZones[0];
-  // 5 баркасов Боба в одной зоне — доход должен прийти только за 4
-  for (let i = 0; i < 5; i++)
+  const cap = zone.cap; // лимит конкретной зоны (4 для обычной, 5 для крупной)
+  // cap+2 баркасов Боба в одной зоне — доход должен прийти только за cap
+  for (let i = 0; i < cap + 2; i++)
     g.ships.push({ id: 'bkc' + i, owner: 1, type: 'barkas', x: zone.x, y: zone.y, hp: SHIP_TYPES.barkas.hp });
   const before = g.players[1].gold;
   applyAction(g, 'A', { type: 'skip' }); // → ход Боба, капает доход
   const delta = g.players[1].gold - before;
-  const expected = PORT_INCOME + FISH_ZONE_CAP * SHIP_TYPES.barkas.fishing;
-  check(`рыбная зона кормит максимум ${FISH_ZONE_CAP} судов`, delta === expected,
-    `(Δ=${delta}, ждали ${expected} — а не ${PORT_INCOME + 5 * SHIP_TYPES.barkas.fishing} за 5)`);
+  const expected = PORT_INCOME + cap * SHIP_TYPES.barkas.fishing;
+  check(`рыбная зона кормит максимум ${cap} судов (cap зоны)`, delta === expected,
+    `(Δ=${delta}, ждали ${expected} — а не ${PORT_INCOME + (cap + 2) * SHIP_TYPES.barkas.fishing} за ${cap + 2})`);
 }
 
 // === 6. Безфлотный игрок: порт даёт на 50% больше ===

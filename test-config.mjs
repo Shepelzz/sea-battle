@@ -3,7 +3,8 @@
 // ни одной цифры. Если правишь баланс намеренно — обнови ожидания здесь же.
 import {
   SHIP_TYPES, START_FLEET, START_GOLD, PORT_HP, PORT_RETURN_DMG, PORT_INCOME,
-  PORT_DMG_TO_SHIPS, SHIP_COLLISION_DIST, LOOT_REACH, BROADSIDE_MULT, FISH_ZONE_CAP,
+  PORT_DMG_TO_SHIPS, SHIP_COLLISION_DIST, LOOT_REACH, BROADSIDE_MULT,
+  FISH_ZONE_CAP, FISH_ZONE_CAP_BIG, FISH_BIG_RADIUS, fishZoneCap,
   PIRATE, PIRATE_DESPAWN_CHANCE, PIRATE_SPAWN_CHANCE, PIRATE_MOVE_CHANCE,
   PIRATE_BOSS_CHANCE, PIRATE_BOSS_HP, PIRATE_REVENGE_SHOT, PIRATE_FLEE_CHANCE, PIRATE_CALM_CHANCE
 } from './server/ships.js';
@@ -32,6 +33,12 @@ for (const [type, want] of Object.entries(FLEET)) {
 // === Бой / экономика / порт ===
 eq('BROADSIDE_MULT', BROADSIDE_MULT, 0.8);
 eq('FISH_ZONE_CAP', FISH_ZONE_CAP, 4);
+eq('FISH_ZONE_CAP_BIG', FISH_ZONE_CAP_BIG, 5);
+eq('FISH_BIG_RADIUS', FISH_BIG_RADIUS, 110);
+eq('fishZoneCap(90)=4', fishZoneCap(90), 4);
+eq('fishZoneCap(110)=4 (порог не включительно)', fishZoneCap(110), 4);
+eq('fishZoneCap(111)=5', fishZoneCap(111), 5);
+eq('fishZoneCap(120)=5', fishZoneCap(120), 5);
 eq('START_FLEET', START_FLEET, ['shkhuna', 'shkhuna', 'fregat']);
 eq('START_GOLD', START_GOLD, 250);
 eq('PORT_HP', PORT_HP, 840);
@@ -67,6 +74,9 @@ eq('base.radius', m2.bases[0].radius, 105);
 eq('lootCount = n+3 (2и)', m2.lootIslands.length, 5);
 eq('lootCount = n+3 (4и)', m4.lootIslands.length, 7);
 eq('fishCount', m2.fishZones.length, 3);
+// у каждой зоны есть cap, согласованный с радиусом (4 или 5)
+eq('у зон есть cap по радиусу', m4.fishZones.every(z => z.cap === fishZoneCap(z.radius)), true);
+eq('cap только 4 или 5', m4.fishZones.every(z => z.cap === 4 || z.cap === 5), true);
 // клад: кратен 10, в диапазоне 100..300
 const loots = m4.lootIslands.map(i => i.loot);
 eq('лут кратен 10', loots.every(l => l % 10 === 0), true);

@@ -6,7 +6,7 @@ import {
   LOOT_COUNT_EXTRA, LOOT_RADIUS_MIN, LOOT_RADIUS_RAND, LOOT_AREA_X0, LOOT_AREA_XR,
   LOOT_AREA_Y0, LOOT_AREA_YR, LOOT_BASE_GAP, LOOT_GAP, LOOT_VALUE_MIN, LOOT_VALUE_RAND, LOOT_VALUE_STEP,
   FISH_COUNT, FISH_RADIUS_MIN, FISH_RADIUS_RAND, FISH_AREA_X0, FISH_AREA_XR, FISH_AREA_Y0, FISH_AREA_YR,
-  FISH_BASE_GAP, FISH_LOOT_GAP, FISH_GAP, ISLAND_SHAPE_MIN_PTS, ISLAND_SHAPE_RAND_PTS,
+  FISH_BASE_GAP, FISH_LOOT_GAP, FISH_GAP, fishZoneCap, ISLAND_SHAPE_MIN_PTS, ISLAND_SHAPE_RAND_PTS,
   ISLAND_SHAPE_R_MIN, ISLAND_SHAPE_R_RAND, START_SPAWN_SPREAD, START_SPAWN_RING
 } from './config.js';
 
@@ -83,7 +83,7 @@ export function generateMap(seed, playerCount) {
     if (bases.some(b => dist(x, y, b.x, b.y) < b.radius + radius + FISH_BASE_GAP)) continue;
     if (lootIslands.some(o => dist(x, y, o.x, o.y) < o.radius + radius + FISH_LOOT_GAP)) continue;
     if (fishZones.some(z => dist(x, y, z.x, z.y) < z.radius + radius + FISH_GAP)) continue;
-    fishZones.push({ x, y, radius });
+    fishZones.push({ x, y, radius, cap: fishZoneCap(radius) }); // лимит судов зависит от размера зоны
   }
 
   return { w: W, h: H, bases, lootIslands, fishZones };

@@ -660,9 +660,9 @@ function render() {
   ctx.setLineDash([]);
 
   // рыбные места
-  const FISH_CAP = 4; // место кормит не больше 4 судов (см. FISH_ZONE_CAP на сервере)
   for (const z of m.fishZones) {
     if (fog && !fogExploredAt(z.x, z.y)) continue; // под туманом — пока не разведано
+    const cap = z.cap || 4; // лимит судов зависит от размера зоны (см. fishZoneCap на сервере)
     ctx.beginPath();
     ctx.arc(sx(z.x), sy(z.y), z.radius * view.scale, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(120,170,210,.16)';
@@ -676,7 +676,7 @@ function render() {
       Math.hypot(s.x - z.x, s.y - z.y) <= z.radius).length;
     ctx.font = `${Math.max(10, 12 * view.scale)}px Neucha, cursive`;
     ctx.fillStyle = 'rgba(80,130,180,.85)';
-    ctx.fillText(`${Math.min(taken, FISH_CAP)}/${FISH_CAP}`, sx(z.x), sy(z.y) + 20);
+    ctx.fillText(`${Math.min(taken, cap)}/${cap}`, sx(z.x), sy(z.y) + 20);
   }
 
   // лут-острова
