@@ -52,17 +52,23 @@ const myShip = (g, type, x, y, hp) => {
 }
 
 // === 4. Бой/бегство: потрёпанный пират в окружении сильных НЕ-добиваемых — убегает ===
+// (бегство уводит пирата случайным дрейфом — проверяем статистически по N прогонам:
+//  НИ РАЗУ не атакует, и в подавляющем большинстве отдаляется.)
 {
-  const g = game2(); clearPirates(g);
-  const pir = addPirate(g, 600, 600, 18);                       // мало hp
-  const b1 = myShip(g, 'brig', 600, 690, 200);                 // близко, дальнобойный, не добить
-  const b2 = myShip(g, 'brig', 690, 600, 200);
-  const dBefore = Math.min(dist(pir, b1), dist(pir, b2));
-  applyAction(g, 'p0', { type: 'skip' });
-  const pirNow = g.ships.find(s => s.id === 'PIR');
-  const noDamage = b1.hp === 200 && b2.hp === 200;
-  const fled = pirNow && Math.min(dist(pirNow, b1), dist(pirNow, b2)) > dBefore;
-  check('слабый пират в окружении убегает (не атакует)', noDamage && fled, `(урона нет: ${noDamage}, отдалился: ${fled})`);
+  let attacked = 0, fledCount = 0, N = 30;
+  for (let k = 0; k < N; k++) {
+    const g = game2(); clearPirates(g);
+    const pir = addPirate(g, 600, 600, 18);                     // мало hp
+    const b1 = myShip(g, 'brig', 600, 690, 200);               // близко, дальнобойный, не добить
+    const b2 = myShip(g, 'brig', 690, 600, 200);
+    const dBefore = Math.min(dist(pir, b1), dist(pir, b2));
+    applyAction(g, 'p0', { type: 'skip' });
+    const pirNow = g.ships.find(s => s.id === 'PIR');
+    if (b1.hp !== 200 || b2.hp !== 200) attacked++;
+    if (pirNow && Math.min(dist(pirNow, b1), dist(pirNow, b2)) > dBefore) fledCount++;
+  }
+  check('слабый пират в окружении НИ РАЗУ не атакует', attacked === 0, `(атак ${attacked}/${N})`);
+  check('…и в большинстве случаев отдаляется (убегает)', fledCount >= N * 0.7, `(убежал ${fledCount}/${N})`);
 }
 
 // === 5. Вовлечённый пират не исчезает (pirateAct перехватывает до despawn) ===
@@ -89,15 +95,30 @@ const myShip = (g, type, x, y, hp) => {
     if (!g.ships.some(s => s.id === 'PIR')) youngGone++;
   }
   check('молодой пират (age<5) не исчезает', youngGone === 0, `(исчез ${youngGone}/${N})`);
-  // старый (age 10): иногда исчезает (despawn ~8%)
-  let oldGone = 0; N = 120;
+  // старые пираты МОГУТ растворяться, КОГДА их больше одного; но море при этом не пустеет
+  let dropped = 0, emptied = 0; N = 200;
+  for (let k = 0; k < N; k++) {
+    const g = game2(); g.ships = [];                         // без игроков рядом → не «вовлечён»
+    const p1 = addPirate(g, g.map.w / 2, g.map.h / 2); p1.turnSlot = 0; p1.bornTurn = g.turn.number - 10;
+    const p2 = addPirate(g, g.map.w / 2 + 300, g.map.h / 2); p2.id = 'PIR2'; p2.turnSlot = 0; p2.bornTurn = g.turn.number - 10;
+    applyAction(g, 'p0', { type: 'skip' });
+    const left = g.ships.filter(s => s.owner === -1).length;
+    if (left < 2) dropped++;
+    if (left === 0) emptied++;
+  }
+  check('старые пираты иногда растворяются (когда их >1)', dropped > 0, `(растворений ${dropped}/${N})`);
+  check('последний пират не растворяется — море не пустеет', emptied === 0, `(пустых ${emptied}/${N})`);
+}
+// === 6б. Единственный пират не исчезает, даже старый (last-pirate protection) ===
+{
+  let gone = 0, N = 120;
   for (let k = 0; k < N; k++) {
     const g = game2(); g.ships = [];
     const p = addPirate(g, g.map.w / 2, g.map.h / 2); p.turnSlot = 0; p.bornTurn = g.turn.number - 10;
     applyAction(g, 'p0', { type: 'skip' });
-    if (!g.ships.some(s => s.id === 'PIR')) oldGone++;
+    if (!g.ships.some(s => s.owner === -1)) gone++;
   }
-  check('старый пират (age≥5) может исчезнуть', oldGone > 0, `(исчез ${oldGone}/${N})`);
+  check('единственный пират никогда не растворяется', gone === 0, `(исчез ${gone}/${N})`);
 }
 
 // === 7. Ход раз в цикл: пират со слотом игрока 2 действует только после хода игрока 2 ===

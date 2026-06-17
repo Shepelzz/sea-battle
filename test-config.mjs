@@ -4,7 +4,7 @@
 import {
   SHIP_TYPES, START_FLEET, START_GOLD, PORT_HP, PORT_RETURN_DMG, PORT_INCOME,
   PORT_DMG_TO_SHIPS, SHIP_COLLISION_DIST, LOOT_REACH, BROADSIDE_MULT,
-  FISH_ZONE_CAP, FISH_ZONE_CAP_BIG, FISH_BIG_RADIUS, fishZoneCap,
+  FISH_ZONE_CAP, FISH_ZONE_CAP_BIG, FISH_BIG_RADIUS, fishZoneCap, FISH_INCOME,
   PIRATE, PIRATE_DESPAWN_CHANCE, PIRATE_SPAWN_CHANCE, PIRATE_MOVE_CHANCE,
   PIRATE_BOSS_CHANCE, PIRATE_BOSS_HP, PIRATE_REVENGE_SHOT, PIRATE_FLEE_CHANCE, PIRATE_CALM_CHANCE
 } from './server/ships.js';
@@ -18,7 +18,7 @@ const eq = (n, got, want) => {
 
 // === Флот: каждое поле каждого класса ===
 const FLEET = {
-  barkas:  { name: 'Рыбацкий баркас', price: 60,  hp: 30,  dmg: 5,  fireRange: 70,  move: 140, fishing: 4, broadside: undefined, portBonus: undefined },
+  barkas:  { name: 'Рыбацкий баркас', price: 60,  hp: 30,  dmg: 5,  fireRange: 70,  move: 140, fishing: 5, broadside: undefined, portBonus: undefined },
   shkhuna: { name: 'Шхуна',           price: 110, hp: 60,  dmg: 15, fireRange: 110, move: 170, fishing: 0, broadside: undefined, portBonus: undefined },
   brig:    { name: 'Бриг',            price: 220, hp: 110, dmg: 28, fireRange: 140, move: 135, fishing: 0, broadside: undefined, portBonus: undefined },
   fregat:  { name: 'Фрегат',          price: 380, hp: 170, dmg: 42, fireRange: 165, move: 110, fishing: 0, broadside: true,      portBonus: undefined },
@@ -33,6 +33,8 @@ for (const [type, want] of Object.entries(FLEET)) {
 
 // === Бой / экономика / порт ===
 eq('BROADSIDE_MULT', BROADSIDE_MULT, 0.8);
+eq('FISH_INCOME', FISH_INCOME, 5);
+eq('barkas.fishing === FISH_INCOME', SHIP_TYPES.barkas.fishing, FISH_INCOME);
 eq('FISH_ZONE_CAP', FISH_ZONE_CAP, 4);
 eq('FISH_ZONE_CAP_BIG', FISH_ZONE_CAP_BIG, 5);
 eq('FISH_BIG_RADIUS', FISH_BIG_RADIUS, 102); // 15% от макс. радиуса 120
@@ -41,9 +43,9 @@ eq('fishZoneCap(101)=4 (ниже порога)', fishZoneCap(101), 4);
 eq('fishZoneCap(102)=5 (порог включительно)', fishZoneCap(102), 5);
 eq('fishZoneCap(120)=5', fishZoneCap(120), 5);
 eq('START_FLEET', START_FLEET, ['shkhuna', 'shkhuna', 'fregat']);
-eq('START_GOLD', START_GOLD, 250);
+eq('START_GOLD', START_GOLD, 350);
 eq('PORT_HP', PORT_HP, 840);
-eq('PORT_RETURN_DMG', PORT_RETURN_DMG, 15);
+eq('PORT_RETURN_DMG', PORT_RETURN_DMG, 25);
 eq('PORT_INCOME', PORT_INCOME, 6);
 eq('PORT_DMG_TO_SHIPS', PORT_DMG_TO_SHIPS, 0);
 eq('SHIP_COLLISION_DIST', SHIP_COLLISION_DIST, 26);

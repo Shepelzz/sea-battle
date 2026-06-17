@@ -2,7 +2,7 @@
 import { generateMap, spawnPoints } from './mapgen.js';
 import {
   SHIP_TYPES, START_FLEET, START_GOLD, PORT_HP, PORT_RETURN_DMG, PORT_INCOME,
-  PORT_RETURN_LINKOR_MULT, PORT_NO_SHIP_INCOME_MULT, PORT_INCOME_TURN_FACTOR,
+  PORT_RETURN_LINKOR_MULT, PORT_NO_SHIP_INCOME_MULT,
   SHIP_COLLISION_DIST, LOOT_REACH, WRECK_LOOT_FRAC, TRIBUTE_FRAC,
   BROADSIDE_MULT, BROADSIDE_ENABLED, FISH_ZONE_CAP, movesBudget, SHIP_ACTIONS, CHEATS_ENABLED,
   MAP_EDGE_MARGIN, ISLAND_BLOCK_GAP, SPAWN_FAN_N, SPAWN_FAN_RINGS, SPAWN_FAN_R0, SPAWN_FAN_RING_STEP,
@@ -267,8 +267,10 @@ function movePirates(game) {
     if (pirateAct(game, pir)) continue; // вовлечён в бой/бегство — без исчезновения
 
     pir.angryAt = null;
-    // не исчезать раньше 5 ходов с момента появления
-    if (game.turn.number - (pir.bornTurn || 0) >= PIRATE_MIN_LIFETIME && Math.random() < PIRATE_DESPAWN_CHANCE) {
+    // не исчезать раньше 5 ходов с момента появления; и НИКОГДА не растворять ПОСЛЕДНЕГО пирата —
+    // море не должно оставаться пустым (иначе «пиратов нет всю вторую половину игры»).
+    const piratesLeft = game.ships.filter(s => s.owner === -1).length;
+    if (piratesLeft > 1 && game.turn.number - (pir.bornTurn || 0) >= PIRATE_MIN_LIFETIME && Math.random() < PIRATE_DESPAWN_CHANCE) {
       game.ships = game.ships.filter(s => s.id !== pir.id);
       pushLog(game, '🌫 Пиратский корабль растворился в тумане…');
       continue;
@@ -316,12 +318,12 @@ function advanceTurn(game) {
   game.turn.nudged = false;
   game.turn.moves = 0;        // счётчик ходов кораблями этого хода (режим «ход тремя судами»)
   game.turn.actedShips = [];  // какие корабли уже сходили в этом ходу
-  // порт приносит немного золота в начале хода — чтобы никто не застрял на нуле.
-  // в аномально затянувшейся партии (дольше нормальной людской) доход выключаем —
-  // «внезапная смерть», чтобы экономика истощалась и игра сходилась к финалу.
+  // Порт ВСЕГДА приносит немного золота в начале хода — БЕЗ каких-либо ограничений по числу ходов.
+  // (Раньше доход срезался после players*80 ходов «для сходимости» — убрано: экономику не лимитируем,
+  // иначе в долгой партии золото переставало капать и в верфи становилось нечего купить.)
   const np = game.players[next];
-  // порт без единого корабля приносит на 50% больше золота — игроку, потерявшему флот, легче встать на ноги.
-  if (np?.alive && game.turn.number <= n * PORT_INCOME_TURN_FACTOR) {
+  if (np?.alive) {
+    // порт без единого корабля приносит на 50% больше золота — игроку, потерявшему флот, легче встать на ноги.
     const hasShips = game.ships.some(s => s.owner === next);
     np.gold += hasShips ? PORT_INCOME : Math.round(PORT_INCOME * PORT_NO_SHIP_INCOME_MULT);
   }

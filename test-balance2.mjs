@@ -135,5 +135,24 @@ function freshGame() {
   check('сдача бригу — обычная', brLost === PORT_RETURN_DMG, `(−${brLost}, ждали −${PORT_RETURN_DMG})`);
 }
 
+// === Доход порта НЕ ограничен НИКАК: капает на любом ходу, и людям, и ботам ===
+{
+  const g = freshGame();                 // A и B — живые люди
+  g.turn.number = 5000;                  // сколь угодно поздно — лимита нет
+  const before = g.players[1].gold;
+  applyAction(g, 'A', { type: 'skip' }); // → ход Боба, ему капает доход порта
+  check('доход капает и на ходу 5000 (нет анти-затяжки) — верфь работает всю партию',
+    g.players[1].gold - before === PORT_INCOME, `(Δ=${g.players[1].gold - before}, ход ${g.turn.number})`);
+}
+{
+  const g = freshGame();
+  g.players.forEach(p => { p.isBot = true; }); // даже у ботов доход больше не срезается
+  g.turn.number = 5000;
+  const before = g.players[1].gold;
+  applyAction(g, 'A', { type: 'skip' });
+  check('доход у ботов тоже не срезается на большом ходу',
+    g.players[1].gold - before === PORT_INCOME, `(Δ=${g.players[1].gold - before})`);
+}
+
 console.log(`\nИтого: ${ok} ок, ${fail} провал(ов)`);
 process.exit(fail ? 1 : 0);

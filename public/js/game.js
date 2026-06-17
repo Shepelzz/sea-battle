@@ -207,8 +207,9 @@ function playEvents(events) {
       const cx = ev.fx + Math.cos(prevAng) * lead;
       const cy = ev.fy + Math.sin(prevAng) * lead;
       headings.set(ev.shipId, Math.atan2(ev.ty - cy, ev.tx - cx)); // курс на финише (трекаем всегда)
-      if (hidden(ev.fx, ev.fy) && hidden(ev.tx, ev.ty)) continue;
-      if (!String(ev.shipId).startsWith('p')) Sound.playAt('move', delay); // пираты — без плеска
+      const isPirateMove = String(ev.shipId).startsWith('p'); // пираты видны всегда — их дрейф анимируем и в тумане
+      if (!isPirateMove && hidden(ev.fx, ev.fy) && hidden(ev.tx, ev.ty)) continue;
+      if (!isPirateMove) Sound.playAt('move', delay); // пираты — без плеска
       addEffect({
         kind: 'sail', shipId: ev.shipId, fx: ev.fx, fy: ev.fy, cx, cy, tx: ev.tx, ty: ev.ty,
         moveDur: FX.sail.moveDur, dur: FX.sail.moveDur + FX.sail.wakeFade, delay
@@ -986,9 +987,10 @@ function render() {
   // пенные следы — под кораблями
   drawEffects(true);
 
-  // корабли (под туманом чужие/пиратов видно только в зоне видимости)
+  // корабли. Под туманом чужие видно только в зоне видимости, а вот ПИРАТЫ (owner -1) —
+  // нейтральные бродяги, их видно всегда (иначе под туманом «пиратов вообще нет»).
   for (const s of state.ships) {
-    if (fog && s.owner !== myIdx() && !fogVisible(s.x, s.y, vis)) continue;
+    if (fog && s.owner !== myIdx() && s.owner !== -1 && !fogVisible(s.x, s.y, vis)) continue;
     // уже сходивший в этом ходу свой корабль — тусклый, с якорьком (режим «ход тремя судами»)
     const acted = s.owner === myIdx() && isMyTurn() && shipActed(s.id);
     if (acted) ctx.globalAlpha = 0.42;
@@ -1006,7 +1008,7 @@ function render() {
   const nowGhost = performance.now();
   for (const e of effects) {
     if (e.kind === 'ghost' && nowGhost >= e.start && nowGhost < e.start + e.dur) {
-      if (fog && e.ship.owner !== myIdx() && !fogVisible(e.x, e.y, vis)) continue;
+      if (fog && e.ship.owner !== myIdx() && e.ship.owner !== -1 && !fogVisible(e.x, e.y, vis)) continue;
       drawShip({ id: e.shipId, owner: e.ship.owner, type: e.ship.type, x: e.x, y: e.y, hp: 1, bounty: e.ship.bounty }, false);
     }
   }
