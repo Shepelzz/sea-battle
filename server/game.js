@@ -584,6 +584,7 @@ export function applyAction(game, playerId, action) {
       const ship = game.ships.find(s => s.id === action.shipId);
       if (!ship || ship.owner !== pIdx) return { ok: false, error: 'Это не ваш корабль' };
       const st = SHIP_TYPES[ship.type];
+      if (st.repairer || !st.dmg) return { ok: false, error: 'Этот корабль не умеет стрелять — он чинит' };
       const volley = st.volley || 1; // авианосец (чит) бьёт залпом из нескольких снарядов подряд
 
       if (action.targetType === 'ship') {
@@ -639,6 +640,29 @@ export function applyAction(game, playerId, action) {
       } else {
         return { ok: false, error: 'Неизвестная цель' };
       }
+      break;
+    }
+
+    case 'repair': {
+      // Ремонтник латает ОДИН свой корабль в радиусе (как выстрел, но восстанавливает HP).
+      const ship = game.ships.find(s => s.id === action.shipId);
+      if (!ship || ship.owner !== pIdx) return { ok: false, error: 'Это не ваш корабль' };
+      const st = SHIP_TYPES[ship.type];
+      if (!st.repairer) return { ok: false, error: 'Этот корабль не умеет чинить' };
+      const target = game.ships.find(s => s.id === action.targetId);
+      if (!target || target.owner !== pIdx) return { ok: false, error: 'Чинить можно только свои корабли' };
+      if (target.id === ship.id) return { ok: false, error: 'Ремонтник не чинит сам себя' };
+      if (dist(ship.x, ship.y, target.x, target.y) > st.fireRange + 0.5)
+        return { ok: false, error: 'Цель вне радиуса ремонта' };
+      const maxHp = SHIP_TYPES[target.type].hp;
+      if (target.hp >= maxHp) return { ok: false, error: 'Этот корабль и так целёхонек' };
+      // ремонт = доля от МАКСИМАЛЬНОГО HP цели (healFrac), не больше недостающего
+      const healed = Math.min(Math.round(maxHp * st.healFrac), maxHp - target.hp);
+      target.hp += healed;
+      pushEvent(game, { type: 'repair', fx: ship.x, fy: ship.y, tx: target.x, ty: target.y, heal: healed });
+      logEvent(game,
+        `🛟 ${player.nick}: ${st.name} латает ${SHIP_TYPES[target.type].name} (+${healed} HP)`,
+        `🛟 ${player.nick} ремонтирует свой флот`);
       break;
     }
 

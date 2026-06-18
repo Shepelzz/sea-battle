@@ -18,11 +18,12 @@ const eq = (n, got, want) => {
 
 // === Флот: каждое поле каждого класса ===
 const FLEET = {
-  barkas:  { name: 'Рыбацкий баркас', price: 60,  hp: 30,  dmg: 5,  fireRange: 70,  move: 140, fishing: 5, broadside: undefined, portBonus: undefined },
+  barkas:  { name: 'Рыбацкий баркас', price: 60,  hp: 30,  dmg: 5,  fireRange: 70,  move: 180, fishing: 5, broadside: undefined, portBonus: undefined },
   shkhuna: { name: 'Шхуна',           price: 110, hp: 60,  dmg: 15, fireRange: 110, move: 170, fishing: 0, broadside: undefined, portBonus: undefined },
   brig:    { name: 'Бриг',            price: 220, hp: 110, dmg: 28, fireRange: 140, move: 135, fishing: 0, broadside: undefined, portBonus: undefined },
   fregat:  { name: 'Фрегат',          price: 380, hp: 170, dmg: 42, fireRange: 165, move: 110, fishing: 0, broadside: true,      portBonus: undefined },
   linkor:  { name: 'Линкор',          price: 500, hp: 280, dmg: 65, fireRange: 190, move: 90,  fishing: 0, broadside: true,      portBonus: 1.5 },
+  repair:  { name: 'Ремонтник',       price: 280, hp: 130, dmg: 0,  fireRange: 115, move: 135, fishing: 0, healFrac: 0.15, repairer: true, broadside: undefined, portBonus: undefined },
   carrier: { name: 'Авианосец',       price: 0,   hp: 1400,dmg: 65, fireRange: 320, move: 280, fishing: 0, volley: 5, cheat: true, broadside: true } // чит-корабль (тестовый режим)
 };
 eq('набор классов', Object.keys(SHIP_TYPES).sort(), Object.keys(FLEET).sort());

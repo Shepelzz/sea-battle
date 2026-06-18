@@ -260,6 +260,14 @@ function playEvents(events) {
         addEffect({ kind: 'dmg', x: h.tx, y: h.ty, amount: h.dmg, dur: 1300, delay: impact });
       }
       delay += FX.shell.dur + 220;
+    } else if (ev.type === 'repair') {
+      // ремонт: жёлтый «луч» от ремонтника к цели + всплывающее зелёное «+N»
+      if (hidden(ev.fx, ev.fy) && hidden(ev.tx, ev.ty)) continue;
+      const TR = 240;
+      addEffect({ kind: 'beam', fx: ev.fx, fy: ev.fy, tx: ev.tx, ty: ev.ty, dur: TR, delay });
+      const impact = delay + TR - 20;
+      if (ev.heal) addEffect({ kind: 'heal', x: ev.tx, y: ev.ty, amount: ev.heal, dur: 1200, delay: impact });
+      delay += TR + 120;
     } else if (ev.type === 'explosion') {
       if (hidden(ev.x, ev.y)) continue;
       // потопленный корабль ещё виден, пока к нему летит ядро
@@ -436,6 +444,36 @@ function drawEffects(under = false) {
       ctx.fillStyle = '#c0392b';
       ctx.strokeText(`−${e.amount}`, dx, dy);
       ctx.fillText(`−${e.amount}`, dx, dy);
+      ctx.globalAlpha = 1;
+    } else if (e.kind === 'beam') {
+      // жёлтый ремонтный луч: тянется от ремонтника к цели и гаснет
+      const headP = Math.min(1, p * 1.7);
+      const hx = e.fx + (e.tx - e.fx) * headP, hy = e.fy + (e.ty - e.fy) * headP;
+      ctx.strokeStyle = `rgba(244,194,10,${0.85 * (1 - p)})`;
+      ctx.lineWidth = Math.max(2, 3.2 * view.scale);
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(sx(e.fx), sy(e.fy));
+      ctx.lineTo(sx(hx), sy(hy));
+      ctx.stroke();
+      ctx.lineCap = 'butt';
+      ctx.globalAlpha = 1 - p; // вспышка у цели
+      ctx.beginPath(); ctx.arc(sx(e.tx), sy(e.ty), Math.max(2, (3 + 4 * p) * view.scale), 0, Math.PI * 2);
+      ctx.fillStyle = '#fff3c0'; ctx.fill();
+      ctx.globalAlpha = 1;
+    } else if (e.kind === 'heal') {
+      // «+N» всплывает над починенной целью, зелёным
+      const dx = sx(e.x);
+      const dy = sy(e.y) - 30 * view.scale - 42 * p;
+      const scale = 1 + 0.35 * p;
+      ctx.globalAlpha = p < 0.12 ? p / 0.12 : Math.max(0, 1 - Math.max(0, (p - 0.45) / 0.55));
+      ctx.font = `bold ${Math.max(12, 14 * view.scale) * scale}px Neucha, cursive`;
+      ctx.textAlign = 'center';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = '#fdfbf3';
+      ctx.fillStyle = '#2e9e4f';
+      ctx.strokeText(`+${e.amount}`, dx, dy);
+      ctx.fillText(`+${e.amount}`, dx, dy);
       ctx.globalAlpha = 1;
     }
   }
@@ -659,20 +697,70 @@ function hpBar(px, py, w, frac, color) {
 
 // Отрисовка базы (вынесено, чтобы рисовать врагов и в норме, и сквозь туман).
 // hpFrac=null → шкала HP не показывается (база ещё не разведана); dim → тускло (под туманом).
+// Палитры порта-форта (камень — живой; серый — выбывший)
+const FORT_STONE = { wall: '#d8c89e', court: '#f1e9cf', keep: '#ece0bb', edge: '#8a7a45' };
+const FORT_DEAD = { wall: '#cbc7b8', court: '#e4e0d4', keep: '#dcd8cc', edge: '#9a937f' };
+
+// Бастионный ПЯТИУГОЛЬНИК (экранные точки): 5 угловых бастионов-наконечников + прямые куртины между ними.
+function fortShape(X, Y, R, { rot = -Math.PI / 2, depth = 0.18, flank = 0.3, N = 5 } = {}) {
+  const step = Math.PI * 2 / N;
+  const V = k => [X + Math.cos(rot + k * step) * R, Y + Math.sin(rot + k * step) * R];
+  const lerp = (a, b, t) => ({ x: a[0] + (b[0] - a[0]) * t, y: a[1] + (b[1] - a[1]) * t });
+  const pts = [];
+  for (let k = 0; k < N; k++) {
+    const vk = V(k), vp = V((k - 1 + N) % N), vn = V((k + 1) % N), a = rot + k * step;
+    pts.push(lerp(vk, vp, flank));                                                       // плечо к пред. углу
+    pts.push({ x: X + Math.cos(a) * R * (1 + depth), y: Y + Math.sin(a) * R * (1 + depth) }); // остриё бастиона
+    pts.push(lerp(vk, vn, flank));                                                       // плечо к след. углу → прямая куртина
+  }
+  return pts;
+}
+function regPentPts(X, Y, R, rot = -Math.PI / 2, N = 5) {
+  const step = Math.PI * 2 / N, pts = [];
+  for (let k = 0; k < N; k++) pts.push({ x: X + Math.cos(rot + k * step) * R, y: Y + Math.sin(rot + k * step) * R });
+  return pts;
+}
+function tracePoly(pts) { ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath(); }
+
+// Порт-форт «с цитаделью»: внешний бастионный вал + плац + домики + внутренняя цитадель + пушки + флаг игрока.
+function drawFort(X, Y, R, accent, pal, withFlag) {
+  const lw = Math.max(0.9, R * 0.034), inkw = Math.max(0.7, R * 0.018);
+  const outer = fortShape(X, Y, R, { depth: 0.18, flank: 0.3 });
+  ctx.save(); ctx.translate(R * 0.04, R * 0.08); tracePoly(outer); ctx.fillStyle = 'rgba(43,58,85,.16)'; ctx.fill(); ctx.restore(); // тень
+  tracePoly(outer); ctx.fillStyle = pal.wall; ctx.fill();
+  tracePoly(outer); ctx.strokeStyle = pal.edge; ctx.lineWidth = lw; ctx.lineJoin = 'round'; ctx.stroke();
+  tracePoly(outer); ctx.strokeStyle = '#2b3a55'; ctx.lineWidth = inkw; ctx.stroke();
+  const court = regPentPts(X, Y, R * 0.66);                                     // плац
+  tracePoly(court); ctx.fillStyle = pal.court; ctx.fill();
+  tracePoly(court); ctx.strokeStyle = pal.edge; ctx.lineWidth = inkw; ctx.stroke();
+  ctx.fillStyle = pal.edge;                                                     // домики во дворе
+  for (const [dx, dy] of [[-0.4, 0.12], [0.4, 0.12], [-0.26, 0.4], [0.26, 0.4]])
+    ctx.fillRect(X + dx * R - R * 0.07, Y + dy * R - R * 0.05, R * 0.14, R * 0.1);
+  const cit = fortShape(X, Y, R * 0.34, { depth: 0.22, flank: 0.28 });          // внутренняя цитадель
+  tracePoly(cit); ctx.fillStyle = pal.keep; ctx.fill();
+  tracePoly(cit); ctx.strokeStyle = '#2b3a55'; ctx.lineWidth = inkw; ctx.stroke();
+  ctx.fillStyle = '#2b3a55';                                                    // пушки на остриях бастионов
+  for (let k = 0; k < 5; k++) {
+    const a = -Math.PI / 2 + k * (Math.PI * 2 / 5), r = R * 1.18 * 0.9;
+    ctx.beginPath(); ctx.arc(X + Math.cos(a) * r, Y + Math.sin(a) * r, Math.max(1.4, R * 0.028), 0, Math.PI * 2); ctx.fill();
+  }
+  if (withFlag) {                                                               // флаг цвета игрока над цитаделью
+    const fh = R * 0.42;
+    ctx.strokeStyle = '#2b3a55'; ctx.lineWidth = Math.max(1.4, R * 0.03); ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(X, Y + R * 0.04); ctx.lineTo(X, Y - fh); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(X, Y - fh); ctx.lineTo(X + R * 0.26, Y - fh + R * 0.09); ctx.lineTo(X, Y - fh + R * 0.18); ctx.closePath();
+    ctx.fillStyle = accent; ctx.fill(); ctx.strokeStyle = '#2b3a55'; ctx.lineWidth = Math.max(0.6, R * 0.012); ctx.stroke();
+    ctx.lineCap = 'butt';
+  }
+}
+
 function drawBase(b, i, { alive, hpFrac, dim }) {
   const p = state.players[i];
   ctx.globalAlpha = dim ? 0.4 : 1;
-  drawPolygon(b.x, b.y, b.shape, alive ? '#e8d9a8' : '#d8d3c2', '#8a7a45');
-  ctx.beginPath();
-  ctx.moveTo(sx(b.x), sy(b.y) - 26 * view.scale);
-  ctx.lineTo(sx(b.x), sy(b.y) + 4);
-  ctx.strokeStyle = '#2b3a55'; ctx.lineWidth = 2; ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(sx(b.x), sy(b.y) - 26 * view.scale);
-  ctx.lineTo(sx(b.x) + 16, sy(b.y) - 20 * view.scale);
-  ctx.lineTo(sx(b.x), sy(b.y) - 14 * view.scale);
-  ctx.closePath();
-  ctx.fillStyle = p.color; ctx.fill();
+  // ОСТРОВ-основание (бледнее камня форта, чтобы форт читался поверх) — форт ПОМЕНЬШЕ, остров виден по краям
+  drawPolygon(b.x, b.y, b.shape, alive ? '#eee6cd' : '#e0dbcb', '#9a8a55');
+  // форт МЕНЬШЕ острова: остриё бастиона = R*1.18 ≈ 0.64·b.radius, а остров в самом узком месте ~0.69·b.radius → не вылезает
+  drawFort(sx(b.x), sy(b.y), b.radius * view.scale * 0.54, p.color, alive ? FORT_STONE : FORT_DEAD, alive);
   ctx.font = `bold ${Math.max(12, 15 * view.scale)}px Neucha, cursive`;
   ctx.fillStyle = '#2b3a55'; ctx.textAlign = 'center';
   ctx.fillText(p.nick, sx(b.x), sy(b.y + b.radius) + 16);
@@ -986,7 +1074,12 @@ function render(canvasOnly) {
   if (sel) {
     const st = ST(sel.type);
     if (mode === 'move' || mode === 'idle') dashedCircle(sel.x, sel.y, st.move, 'rgba(107,111,118,.8)', 1.6);
-    if (mode === 'attack' || mode === 'idle') dashedCircle(sel.x, sel.y, st.fireRange, 'rgba(192,57,43,.75)', 1.6);
+    if (st.repairer) {
+      // ремонтник: жёлтый радиус ремонта (чуть меньше хода), в режиме «Чинить» и при выборе
+      if (mode === 'repair' || mode === 'idle') dashedCircle(sel.x, sel.y, st.fireRange, 'rgba(244,194,10,.85)', 1.6);
+    } else if (mode === 'attack' || mode === 'idle') {
+      dashedCircle(sel.x, sel.y, st.fireRange, 'rgba(192,57,43,.75)', 1.6);
+    }
   }
 
   // пенные следы — под кораблями
@@ -1047,6 +1140,16 @@ function render(canvasOnly) {
       if (p && p.alive && i !== sel.owner && dist(sel.x, sel.y, b.x, b.y) <= st.fireRange + b.radius * 0.5)
         dashedCircle(b.x, b.y, b.radius + 10, '#c0392b', 2);
     });
+  }
+
+  // цели в режиме ремонта — свои ПОДБИТЫЕ корабли в радиусе (жёлтым)
+  if (sel && mode === 'repair') {
+    const st = ST(sel.type);
+    for (const s of state.ships) {
+      if (s.id !== sel.id && s.owner === sel.owner && s.hp < (s.maxHp || ST(s.type).hp) &&
+          dist(sel.x, sel.y, s.x, s.y) <= st.fireRange)
+        dashedCircle(s.x, s.y, 22, '#f4c20a', 2);
+    }
   }
 
   // «линейка» при перемещении
@@ -1190,8 +1293,8 @@ function drawCrosshair(x, y, col) {
 
 // Размеры корпусов в ЕДИНИЦАХ КАРТЫ — масштабируются строго одинаково,
 // пропорции классов не меняются при зуме (никаких min-капов на размер).
-const SHIP_LEN = { barkas: 34, shkhuna: 42, brig: 50, fregat: 60, linkor: 72, pirate: 50, carrier: 132 };
-const SHIP_MASTS = { barkas: 0, shkhuna: 1, brig: 2, fregat: 3, linkor: 3, pirate: 2 };
+const SHIP_LEN = { barkas: 34, shkhuna: 42, brig: 50, fregat: 60, linkor: 72, pirate: 50, carrier: 132, repair: 44 };
+const SHIP_MASTS = { barkas: 0, shkhuna: 1, brig: 2, fregat: 3, linkor: 3, pirate: 2, repair: 0 };
 const headings = new Map(); // shipId → направление носа (по последнему ходу)
 
 function currentHeading(s) {
@@ -1286,6 +1389,75 @@ function drawCarrier(s, p, px, py, pos, k, selected) {
   hpBar(px, py + L * 0.4 + 4, Math.max(22, L * 0.62), s.hp / (s.maxHp || 1400), '#27ae60');
 }
 
+// Ремонтник: силуэт как у обычного корабля, только чуть УГЛОВАТЕЕ (прямые грани вместо плавных)
+// и компактный; опознаётся жёлтым ремонтным крестом на палубе. Корпус — цвета игрока, как у всех.
+function drawRepairShip(s, p, px, py, pos, k, selected) {
+  const L = (SHIP_LEN.repair || 44) * k;
+  const W = L * 0.40;            // лишь немного шире обычного — корабельный силуэт, не баржа
+  const hull = p ? p.color : '#33363c';
+
+  if (selected) {
+    ctx.beginPath();
+    ctx.arc(px, py, L * 0.72, 0, Math.PI * 2);
+    ctx.strokeStyle = '#2b3a55';
+    ctx.lineWidth = 2; ctx.setLineDash([3, 3]); ctx.stroke(); ctx.setLineDash([]);
+  }
+
+  ctx.save();
+  ctx.translate(px, py);
+  ctx.rotate(pos.ang !== undefined ? pos.ang : currentHeading(s));
+
+  // корпус — угловатый: прямые борта, гранёный (чуть тупой) нос, слегка заострённая корма
+  ctx.beginPath();
+  ctx.moveTo(-L / 2, 0);                       // корма
+  ctx.lineTo(-L / 2 + L * 0.14, -W / 2);
+  ctx.lineTo(L / 2 - L * 0.18, -W / 2);        // прямой левый борт
+  ctx.lineTo(L / 2 + L * 0.05, 0);             // гранёный нос
+  ctx.lineTo(L / 2 - L * 0.18, W / 2);
+  ctx.lineTo(-L / 2 + L * 0.14, W / 2);        // прямой правый борт
+  ctx.closePath();
+  ctx.fillStyle = hull; ctx.fill();
+  ctx.strokeStyle = '#2b3a55'; ctx.lineWidth = Math.max(0.8, 1.6 * k); ctx.stroke();
+
+  // палуба — светлая, тоже угловатая, уже корпуса
+  ctx.beginPath();
+  ctx.moveTo(-L / 2 + L * 0.14, 0);
+  ctx.lineTo(-L / 2 + L * 0.2, -W * 0.28);
+  ctx.lineTo(L / 2 - L * 0.22, -W * 0.28);
+  ctx.lineTo(L / 2 - L * 0.1, 0);
+  ctx.lineTo(L / 2 - L * 0.22, W * 0.28);
+  ctx.lineTo(-L / 2 + L * 0.2, W * 0.28);
+  ctx.closePath();
+  ctx.fillStyle = '#e8d9a8'; ctx.fill();
+  ctx.lineWidth = Math.max(0.6, 1 * k); ctx.stroke();
+
+  // одна мачта (как у шхуны), ближе к корме — чтобы силуэт читался «кораблём»
+  const mx = -L * 0.16;
+  ctx.strokeStyle = '#2b3a55'; ctx.lineWidth = Math.max(1, 2 * k);
+  ctx.beginPath(); ctx.moveTo(mx, -W / 2 - W * 0.35); ctx.lineTo(mx, W / 2 + W * 0.35); ctx.stroke();
+  ctx.beginPath(); ctx.arc(mx, 0, Math.max(1.2, W * 0.15), 0, Math.PI * 2); ctx.fillStyle = '#2b3a55'; ctx.fill();
+
+  // жёлтый ремонтный крест на палубе (опознавательный знак), ближе к носу
+  const cs = Math.max(3, L * 0.18), ct = cs * 0.34, cx = L * 0.14;
+  ctx.fillStyle = '#f4c20a';
+  ctx.fillRect(cx - ct / 2, -cs / 2, ct, cs);
+  ctx.fillRect(cx - cs / 2, -ct / 2, cs, ct);
+  ctx.strokeStyle = '#8a6d00'; ctx.lineWidth = Math.max(0.5, 0.8 * k);
+  ctx.strokeRect(cx - ct / 2, -cs / 2, ct, cs);
+  ctx.strokeRect(cx - cs / 2, -ct / 2, cs, ct);
+
+  // вымпел цвета игрока на корме (как у всех кораблей)
+  ctx.beginPath();
+  ctx.moveTo(-L / 2 - 1, 0);
+  ctx.lineTo(-L / 2 - L * 0.2, -W * 0.3);
+  ctx.lineTo(-L / 2 - L * 0.2, W * 0.3);
+  ctx.closePath();
+  ctx.fillStyle = hull; ctx.fill();
+
+  ctx.restore();
+  hpBar(px, py + L * 0.42 + 4, Math.max(16, L * 0.9), s.hp / (s.maxHp || ST(s.type).hp), '#27ae60');
+}
+
 function drawShip(s, selected) {
   const isPirate = s.owner === -1;
   const p = isPirate ? null : state.players[s.owner];
@@ -1294,6 +1466,7 @@ function drawShip(s, selected) {
   const px = sx(pos.x), py = sy(pos.y);
   const k = view.scale;
   if (s.type === 'carrier') { drawCarrier(s, p, px, py, pos, k, selected); return; } // чит-авианосец — своя отрисовка
+  if (s.type === 'repair') { drawRepairShip(s, p, px, py, pos, k, selected); return; } // ремонтник — квадратный корпус с жёлтым крестом
   const L = (SHIP_LEN[s.type] || 46) * k * (s.boss ? 1.5 : 1); // босс крупнее
   const W = L * 0.36;
   const hull = isPirate ? (s.boss ? '#1c1c22' : '#33363c') : p.color;
@@ -1584,6 +1757,15 @@ function handleTap(pos, isTouch) {
     return;
   }
 
+  if (mode === 'repair' && selectedShipId) {
+    if (clickedShip && clickedShip.owner === myIdx() && clickedShip.id !== selectedShipId) {
+      sendAction({ type: 'repair', shipId: selectedShipId, targetId: clickedShip.id });
+      return;
+    }
+    errToast('Выбери свой подбитый корабль в радиусе ремонта');
+    return;
+  }
+
   // выбор своего корабля
   if (clickedShip && clickedShip.owner === myIdx() && isMyTurn()) {
     if (shipActed(clickedShip.id)) { // уже ходил — показываем записку (на тач сама исчезнет)
@@ -1597,6 +1779,10 @@ function handleTap(pos, isTouch) {
     $('#shipActions').classList.remove('hidden');
     positionActionBar(clickedShip); // панель — на противоположной кораблю половине экрана
     $('#shipActionsTitle').textContent = ST(clickedShip.type).icon + ' ' + ST(clickedShip.type).name;
+    // ремонтник вместо «Стрелять» показывает «Чинить»
+    const repairer = !!ST(clickedShip.type).repairer;
+    $('#btnFire').classList.toggle('hidden', repairer);
+    $('#btnRepair').classList.toggle('hidden', !repairer);
     // «Собрать» — если корабль дотягивается до клада (рыбалка теперь капает сама)
     $('#btnCollectHere').classList.toggle('hidden', !canShipCollect(clickedShip));
     // «Залп» — тяжёлый корабль и в радиусе 2+ вражеских кораблей
@@ -1647,6 +1833,7 @@ $('#btnMove').addEventListener('click', () => {
   render();
 });
 $('#btnFire').addEventListener('click', () => { mode = 'attack'; Sound.play('click'); render(); });
+$('#btnRepair').addEventListener('click', () => { mode = 'repair'; Sound.play('click'); render(); });
 $('#btnBroadside').addEventListener('click', () => { if (selectedShipId) sendAction({ type: 'broadside', shipId: selectedShipId }); });
 $('#btnCancel').addEventListener('click', deselect);
 
@@ -1665,12 +1852,14 @@ function openInfo() {
       .map(([, st]) => {
         const extra = [
           st.fishing ? `🐟 +${st.fishing}` : '',
+          st.healFrac ? `🛟 +${Math.round(st.healFrac * 100)}% HP` : '',
           st.portBonus ? `🏰 ×${st.portBonus}` : '',
           (st.broadside && BROADSIDE_ON) ? '💥 залп' : ''
         ].filter(Boolean).join(' · ');
+        const power = st.dmg ? `⚔️${st.dmg}` : '🛟 ремонт';
         return `<div class="info-fleet-row">
           <span class="nm">${st.icon} ${st.name}</span>
-          <span class="st">${st.price}з · ❤️${st.hp} · ⚔️${st.dmg} · 🎯${(st.fireRange / 40).toFixed(1)} · 🧭${(st.move / 40).toFixed(1)}${extra ? ' · ' + extra : ''}</span>
+          <span class="st">${st.price}з · ❤️${st.hp} · ${power} · 🎯${(st.fireRange / 40).toFixed(1)} · 🧭${(st.move / 40).toFixed(1)}${extra ? ' · ' + extra : ''}</span>
         </div>`;
       }).join('');
   }
@@ -1812,8 +2001,10 @@ function renderShop() {
       <div class="head"><span>${st.icon}</span><span class="nm">${st.name}</span><span class="price">${st.price} зол.</span></div>
       <div class="stats">
         <span title="Прочность">❤️ ${st.hp}</span>
-        <span title="Урон за выстрел">⚔️ ${st.dmg}</span>
-        <span title="Дальность стрельбы">🎯 ${(st.fireRange / 40).toFixed(1)} кл.</span>
+        ${st.repairer
+          ? `<span title="Ремонт союзника за действие: доля его макс. HP">🛟 +${Math.round(st.healFrac * 100)}% HP</span>`
+          : `<span title="Урон за выстрел">⚔️ ${st.dmg}</span>`}
+        <span title="${st.repairer ? 'Радиус ремонта' : 'Дальность стрельбы'}">🎯 ${(st.fireRange / 40).toFixed(1)} кл.</span>
         <span title="Дальность хода">🧭 ${(st.move / 40).toFixed(1)} кл.</span>
         ${st.fishing ? `<span title="Доход за каждый ход в рыбном месте">🐟 +${st.fishing}/ход</span>` : ''}
         ${st.portBonus ? `<span title="Урон по порту ×${st.portBonus}">🏰 ×${st.portBonus}</span>` : ''}

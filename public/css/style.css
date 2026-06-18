@@ -102,6 +102,7 @@ button:disabled { opacity: .45; cursor: not-allowed; transform: none; }
 
 button.primary { background: var(--ink); color: var(--paper); }
 button.danger { border-color: var(--red-pen); color: var(--red-pen); }
+button.repair { border-color: #c79a06; color: #9a7700; } /* ремонтник — янтарная кнопка «Чинить» */
 button.small { font-size: 15px; padding: 4px 12px; }
 
 .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }

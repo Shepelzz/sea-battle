@@ -31,7 +31,7 @@ eq('budget multiMove', movesBudget({ multiMove: true }), 3);
 eq('budget classic', movesBudget({ multiMove: false }), 1);
 eq('budget пустой конфиг', movesBudget({}), 1);
 eq('budget null', movesBudget(null), 1);
-eq('SHIP_ACTIONS', [...SHIP_ACTIONS].sort(), ['attack', 'broadside', 'move']);
+eq('SHIP_ACTIONS', [...SHIP_ACTIONS].sort(), ['attack', 'broadside', 'move', 'repair']);
 
 // === Классика: ЛЮБОЕ действие завершает ход (поведение не меняется) ===
 {
