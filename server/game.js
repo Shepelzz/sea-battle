@@ -5,6 +5,7 @@ import {
   PORT_RETURN_LINKOR_MULT, PORT_NO_SHIP_INCOME_MULT,
   SHIP_COLLISION_DIST, LOOT_REACH, WRECK_LOOT_FRAC, TRIBUTE_FRAC,
   BROADSIDE_MULT, BROADSIDE_ENABLED, FISH_ZONE_CAP, movesBudget, SHIP_ACTIONS, CHEATS_ENABLED,
+  modeStartGold, modeOf, isPeace, modePeaceRounds,
   MAP_EDGE_MARGIN, ISLAND_BLOCK_GAP, SPAWN_FAN_N, SPAWN_FAN_RINGS, SPAWN_FAN_R0, SPAWN_FAN_RING_STEP,
   PIRATE, PIRATE_MAX, PIRATE_ENGAGE_MULT, PIRATE_MIN_LIFETIME, PIRATE_STEP_MIN,
   PIRATE_DESPAWN_CHANCE, PIRATE_MOVE_CHANCE, PIRATE_BOSS_CHANCE, PIRATE_BOSS_HP,
@@ -51,7 +52,7 @@ export function createGame(id, config) {
     map: null,
     players: [], // {id, nick, color, gold, portHp, alive, placement, stats, votedSkip}
     ships: [],
-    turn: { idx: 0, number: 0, deadline: null, moves: 0, actedShips: [] },
+    turn: { idx: 0, number: 0, round: 1, deadline: null, moves: 0, actedShips: [] },
     log: [],
     winner: null,
     createdAt: Date.now()
@@ -93,7 +94,7 @@ export function addPlayer(game, playerId, nick, color = null) {
   game.players.push({
     id: playerId, nick,
     color: pickColor(game, color),
-    gold: START_GOLD, portHp: PORT_HP,
+    gold: modeStartGold(game), portHp: PORT_HP, // дезматч даёт больше золота на старте (режим)
     alive: true, placement: null,
     stats: newStats()
   });
@@ -106,7 +107,9 @@ export function startGame(game, playerId) {
   if (game.players[0]?.id !== playerId) return { ok: false, error: 'Начать игру может только создатель' };
   if (game.players.length < 2) return { ok: false, error: 'Нужно минимум 2 игрока' };
 
-  game.map = generateMap(game.config.seed, game.players.length);
+  // в «Развитии» — у каждой базы своя большая рыбозона и все зоны на 5 слотов (опции режима)
+  const md = modeOf(game);
+  game.map = generateMap(game.config.seed, game.players.length, { baseFishZone: !!md.baseFishZone, allFishZonesBig: !!md.allFishZonesBig });
   game.players.forEach((p, idx) => {
     const base = game.map.bases[idx];
     const pts = spawnPoints(game.map, base, START_FLEET.length);
@@ -121,7 +124,7 @@ export function startGame(game, playerId) {
   });
   for (let i = 0; i < Math.min(PIRATE_MAX, game.players.length); i++) spawnPirate(game, true, false, i);
   game.status = 'active';
-  game.turn = { idx: 0, number: 1, deadline: turnDeadline(game), nudged: false, moves: 0, actedShips: [] };
+  game.turn = { idx: 0, number: 1, round: 1, deadline: turnDeadline(game), nudged: false, moves: 0, actedShips: [] };
   pushLog(game, `⚔️ Баттл начался! Первым ходит ${game.players[0].nick}`, 'battle');
   return { ok: true };
 }
@@ -318,6 +321,8 @@ function advanceTurn(game) {
   }
   game.turn.idx = next;
   game.turn.number++;
+  // РАУНД = полный круг: счётчик растёт, когда ход вернулся к первому живому игроку (для мирного периода режима «Развитие»)
+  if (next === game.players.findIndex(p => p.alive)) game.turn.round = (game.turn.round || 1) + 1;
   game.turn.deadline = turnDeadline(game);
   game.turn.nudged = false;
   game.turn.moves = 0;        // счётчик ходов кораблями этого хода (режим «ход тремя судами»)
@@ -572,6 +577,12 @@ export function applyAction(game, playerId, action) {
       if (dist(ship.x, ship.y, x, y) > range + 0.5) return { ok: false, error: 'Слишком далеко: линейка не дотягивается' };
       const blocked = shipPlacementBlocked(game, x, y, ship.id);
       if (blocked) return { ok: false, error: blocked };
+      // мирное время («Развитие»): нельзя подходить к чужой базе ближе keepout
+      if (isPeace(game)) {
+        const keep = modeOf(game).peaceBaseKeepout || 0;
+        if (keep && game.map.bases.some((b, bi) => bi !== pIdx && game.players[bi]?.alive && dist(x, y, b.x, b.y) < keep))
+          return { ok: false, error: '🕊 Мирное время: к чужой базе подходить нельзя' };
+      }
       pushEvent(game, { type: 'move', shipId: ship.id, fx: ship.x, fy: ship.y, tx: x, ty: y });
       ship.x = x; ship.y = y;
       logEvent(game,
@@ -590,6 +601,8 @@ export function applyAction(game, playerId, action) {
       if (action.targetType === 'ship') {
         const target = game.ships.find(s => s.id === action.targetId);
         if (!target || target.owner === pIdx) return { ok: false, error: 'Неверная цель' };
+        // мирное время: на игроков нападать нельзя (пиратов — можно)
+        if (target.owner >= 0 && isPeace(game)) return { ok: false, error: '🕊 Мирное время: на игроков нападать нельзя' };
         if (dist(ship.x, ship.y, target.x, target.y) > st.fireRange + 0.5)
           return { ok: false, error: 'Цель вне дальности стрельбы' };
         const total = st.dmg * volley;
@@ -611,6 +624,7 @@ export function applyAction(game, playerId, action) {
         const targetIdx = action.targetId;
         const victim = game.players[targetIdx];
         if (!victim || targetIdx === pIdx || !victim.alive) return { ok: false, error: 'Неверная цель' };
+        if (isPeace(game)) return { ok: false, error: '🕊 Мирное время: базы трогать нельзя' };
         const base = game.map.bases[targetIdx];
         if (dist(ship.x, ship.y, base.x, base.y) > st.fireRange + base.radius * 0.5)
           return { ok: false, error: 'Порт вне дальности стрельбы' };
@@ -671,6 +685,7 @@ export function applyAction(game, playerId, action) {
       if (!ship || ship.owner !== pIdx) return { ok: false, error: 'Это не ваш корабль' };
       const st = SHIP_TYPES[ship.type];
       if (!st.broadside) return { ok: false, error: 'Этот корабль не умеет залп' };
+      if (isPeace(game)) return { ok: false, error: '🕊 Мирное время: залп нельзя' };
       // залп может быть глобально выключен — но чит-корабль (авианосец) бьёт им ВСЕГДА
       if (!BROADSIDE_ENABLED && !st.cheat) return { ok: false, error: 'Бортовой залп сейчас отключён' };
       // вражеские цели в радиусе. Обычный залп не трогает рыбацкие баркасы; авианосец (cheat) — валит ВСЕХ.
@@ -820,6 +835,9 @@ export function publicState(game, viewerPid) {
     portMax: PORT_HP,
     movesPerTurn: movesBudget(game.config), // 3 в режиме «ход тремя судами», иначе 1
     palette: PALETTE,
+    // режим партии + мирный период (для баннера и подсказок клиента)
+    mode: game.config.mode || 'classic',
+    peace: { active: isPeace(game), round: game.turn?.round || 1, until: modePeaceRounds(game) },
     shipTypes
   };
 }

@@ -18,7 +18,9 @@ import {
 } from './game.js';
 import { chooseBotAction, BOT_NAMES } from './bot.js';
 import { applyCheat } from './cheats.js';
-import { BROADSIDE_ENABLED, CHEATS_ENABLED } from './config.js';
+import { BROADSIDE_ENABLED, CHEATS_ENABLED, GAME_MODES, enabledModes, DEFAULT_MODE } from './config.js';
+// валидируем игровой режим из запроса (classic/deathmatch/develop) — только из включённых
+const pickMode = m => enabledModes().includes(m) ? m : DEFAULT_MODE;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -179,7 +181,11 @@ function maybeAutoFinish(game) {
 
 // --- REST ---
 
-app.get('/api/config', (_req, res) => res.json({ googleClientId: GOOGLE_CLIENT_ID, palette: PALETTE, broadside: BROADSIDE_ENABLED, cheats: CHEATS_ENABLED }));
+app.get('/api/config', (_req, res) => res.json({
+  googleClientId: GOOGLE_CLIENT_ID, palette: PALETTE, broadside: BROADSIDE_ENABLED, cheats: CHEATS_ENABLED,
+  // доступные игровые режимы (для селектора при создании игры)
+  modes: enabledModes().map(k => ({ key: k, name: GAME_MODES[k].name, desc: GAME_MODES[k].desc }))
+}));
 
 app.post('/api/auth/google', async (req, res) => {
   if (!googleClient) return res.status(400).json({ error: 'Вход через Google не настроен' });
@@ -214,6 +220,7 @@ app.post('/api/games', (req, res) => {
     const game = createGame(id, { maxPlayers: names.length, turnTimer: 0 });
     game.config.hotseat = true;
     game.config.multiMove = req.body.multiMove !== false; // ход тремя судами (по умолчанию вкл)
+    game.config.mode = pickMode(req.body.gameMode);        // режим (до addPlayer — влияет на старт. золото)
     game.hotseatOwner = pid;
     names.forEach((n, i) => {
       db.upsertPlayer(pid + '#' + i, n);
@@ -234,6 +241,7 @@ app.post('/api/games', (req, res) => {
     game.config.botGame = true;
     game.config.fog = req.body.fog !== false; // туман войны (по умолчанию вкл), визуал для игрока
     game.config.multiMove = req.body.multiMove !== false; // ход тремя судами (по умолчанию вкл)
+    game.config.mode = pickMode(req.body.gameMode);       // режим (до addPlayer — влияет на старт. золото)
     db.upsertPlayer(pid, nick.trim());
     addPlayer(game, pid, nick.trim(), color);              // цвет игрока — по выбору
     for (let i = 0; i < botCount; i++) {
@@ -253,6 +261,7 @@ app.post('/api/games', (req, res) => {
   game.config.listed = true; // онлайн-игра попадает в браузер лобби
   game.config.fog = req.body.fog !== false; // туман войны (по умолчанию вкл)
   game.config.multiMove = req.body.multiMove !== false; // ход тремя судами (по умолчанию вкл)
+  game.config.mode = pickMode(req.body.gameMode);       // режим (до addPlayer — влияет на старт. золото)
   db.upsertPlayer(pid, nick.trim());
   addPlayer(game, pid, nick.trim(), color);
   games.set(id, game);

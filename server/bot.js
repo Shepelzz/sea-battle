@@ -1,7 +1,7 @@
 // Бот: на своём ходу собирает все осмысленные действия, оценивает и берёт лучшее.
 // Уровни: easy (Юнга) — шумные оценки и случайные ходы, mid (Боцман) — лучший ход,
 // hard (Адмирал) — лучший ход + фокус раненых, удушение экономики, ранняя агрессия.
-import { SHIP_TYPES, PIRATE, LOOT_REACH, PORT_RETURN_DMG, BROADSIDE_ENABLED } from './config.js';
+import { SHIP_TYPES, PIRATE, LOOT_REACH, PORT_RETURN_DMG, BROADSIDE_ENABLED, modeOf, isPeace } from './config.js';
 import { shipPlacementBlocked } from './game.js';
 
 const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
@@ -83,8 +83,10 @@ export function chooseBotAction(game, pIdx, level = 'mid') {
   const foes = game.players.map((p, i) => ({ p, i })).filter(x => x.i !== pIdx && x.p.alive);
   let victim = null;
   for (const x of foes) if (!victim || powerOf(x.i) < powerOf(victim.i)) victim = x;
-  const aggressive = turnPressure || foeShips.length === 0 ||
-    (victim && myPower > powerOf(victim.i) * (level === 'hard' ? 1.1 : 1.3));
+  // режимы: дезматч → боты всегда агрессивны; развитие → мирный период (не трогаем игроков, развиваемся)
+  const peace = isPeace(game);
+  const aggressive = !peace && (modeOf(game).botAggro || turnPressure || foeShips.length === 0 ||
+    (victim && myPower > powerOf(victim.i) * (level === 'hard' ? 1.1 : 1.3)));
 
   // --- стрельба ---
   for (const ship of myShips) {
@@ -93,6 +95,7 @@ export function chooseBotAction(game, pIdx, level = 'mid') {
     if (!st.dmg) continue;
     for (const t of game.ships) {
       if (t.owner === pIdx) continue;
+      if (t.owner >= 0 && peace) continue; // мир: игроков не трогаем (пиратов — можно)
       if (t.owner >= 0 && !game.players[t.owner]?.alive) continue;
       if (dist(ship.x, ship.y, t.x, t.y) > st.fireRange) continue;
       const tdef = t.owner === -1 ? PIRATE : SHIP_TYPES[t.type];
@@ -127,7 +130,7 @@ export function chooseBotAction(game, pIdx, level = 'mid') {
       }
     }
     game.players.forEach((p, i) => {
-      if (i === pIdx || !p.alive) return;
+      if (i === pIdx || !p.alive || peace) return; // мир: базы не атакуем
       const base = game.map.bases[i];
       if (dist(ship.x, ship.y, base.x, base.y) <= st.fireRange + base.radius * 0.5) {
         const portDmg = st.dmg * (st.portBonus || 1);
@@ -259,13 +262,14 @@ export function chooseBotAction(game, pIdx, level = 'mid') {
     // в одиночку — вяло (чтобы не скармливать корабли по одному). Множитель скромный (до ~1.5×).
     const pack = 1 + Math.min(3, packmates(ship)) * 0.17;
 
-    // на сближение с флотом противника — только когда готовы драться, и охотнее в группе
+    // на сближение с флотом противника — только когда готовы драться, и охотнее в группе.
+    // В мирный период («Развитие») к врагам/базам не лезем — развиваемся (сближение/осаду пропускаем).
     const foe = nearest(ship, foeShips, f => [f.x, f.y]);
-    if (foe) addMove(ship, foe.x, foe.y, (aggressive ? (level === 'hard' ? 18 : 14) : 7) * pack);
+    if (foe && !peace) addMove(ship, foe.x, foe.y, (aggressive ? (level === 'hard' ? 18 : 14) : 7) * pack);
 
     // осада порта жертвы. В режиме добивания осада ДОЛЖНА перебивать лут/охоту за
     // пиратами (иначе флот распыляется и порт не падает) — даём ей явный приоритет.
-    if (victim) {
+    if (victim && !peace) {
       const b = game.map.bases[victim.i];
       // осаду ведут тяжёлые корабли (фрегат/линкор соло пробивают порт, переживая ответку),
       // лёгкие — в хвосте. Скор выше лута(24)/пиратов(28), но ниже выстрела по порту. В группе — плотнее.

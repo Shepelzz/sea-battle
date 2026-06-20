@@ -6,8 +6,9 @@ import { SHIP_TYPES } from './server/ships.js';
 
 const TURN_CAP = 1500; // защита от вечной партии (в advance-ходах)
 
-function simulate(nPlayers, level) {
+function simulate(nPlayers, level, mode = 'classic') {
   const game = createGame('sim', { maxPlayers: nPlayers, turnTimer: 0 });
+  game.config.mode = mode;
   for (let i = 0; i < nPlayers; i++) {
     addPlayer(game, 'b' + i, 'Bot' + i);
     game.players[i].isBot = true;
@@ -70,9 +71,9 @@ function simulate(nPlayers, level) {
   return m;
 }
 
-function run(label, n, nPlayers, level) {
+function run(label, n, nPlayers, level, mode = 'classic') {
   const rows = [];
-  for (let i = 0; i < n; i++) rows.push(simulate(nPlayers, level));
+  for (let i = 0; i < n; i++) rows.push(simulate(nPlayers, level, mode));
   const avg = f => rows.reduce((s, r) => s + f(r), 0) / rows.length;
   const sum = f => rows.reduce((s, r) => s + f(r), 0);
 
@@ -122,4 +123,8 @@ run('Дуэль, Адмирал', 200, 2, 'hard');
 run('Дуэль, Юнга', 150, 2, 'easy');
 run('Трое', 120, 3, 'mid');
 run('Четверо', 120, 4, 'mid');
+run('ДЕЗМАТЧ дуэль mid', 200, 2, 'mid', 'deathmatch');
+run('ДЕЗМАТЧ дуэль hard', 150, 2, 'hard', 'deathmatch');
+run('РАЗВИТИЕ дуэль mid', 200, 2, 'mid', 'develop');
+run('РАЗВИТИЕ трое mid', 120, 3, 'mid', 'develop');
 console.log('\n✅ готово');

@@ -111,6 +111,7 @@ socket.on('state', s => {
   }
   render();
   maybeMovesToast(prev, s); // «осталось N ходов» после моего суб-хода (режим ход-тремя-судами)
+  updatePeaceBanner(prev, s); // баннер мирного времени (режим «Развитие»)
   if (anyBurning()) ensureAnimLoop(); // низкое HP базы → запустить анимацию огня/дыма
   Sound.onState(prev, s, myIdx());
   updateTab();
@@ -533,6 +534,22 @@ function maybeMovesToast(prev, s) {
   if ((s.turn.moves || 0) <= (prev.turn.moves || 0)) return; // ходов не прибавилось — действие не моё
   const left = movesLeft();
   if (left > 0) hudToast(`⚓ Осталось ходов: ${left} — ходи дальше или «Завершить ход»`);
+}
+
+// Баннер мирного времени (режим «Развитие»): сверху карты, ненавязчиво. Тает, когда мир кончился.
+function updatePeaceBanner(prev, s) {
+  const el = $('#peaceBanner');
+  if (!el) return;
+  const pc = s?.peace;
+  const show = s?.status === 'active' && pc && pc.active && pc.until > 0;
+  el.classList.toggle('hidden', !show);
+  if (show) {
+    const left = Math.max(1, pc.until - pc.round + 1);
+    const word = left === 1 ? 'раунд' : left < 5 ? 'раунда' : 'раундов';
+    el.textContent = `🕊 Мирное время — до войны ${left} ${word}`;
+  } else if (prev?.peace?.active && pc && !pc.active) {
+    hudToast('⚔️ Мирное время кончилось — война!', 4000); // разовый сигнал на старте войны
+  }
 }
 
 // Записка-стикер над кораблём «на якоре» (уже ходил). screenX/screenY — экранные px (под mapWrap).

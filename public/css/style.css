@@ -435,6 +435,20 @@ aside.panel {
 .fog-toggle input:hover { transform: translate(-1px, -1px) rotate(-0.6deg); }
 .fog-label { font-weight: 700; }
 .fog-toggle .muted { font-size: 13px; }
+/* строка выбора игрового режима */
+.mode-row { display: flex; align-items: center; gap: 8px; margin: 8px 0; flex-wrap: wrap; }
+.mode-row select { flex: 0 1 auto; }
+.mode-row .mode-desc { font-size: 13px; flex: 1 1 100%; }
+/* баннер мирного времени (режим «Развитие») — сверху карты, ненавязчиво */
+.peace-banner {
+  position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+  z-index: 22; pointer-events: none;
+  font-family: var(--font-title); font-size: 19px; color: #2e7d5b;
+  background: rgba(253, 251, 243, 0.82); border: 1.5px solid rgba(46, 125, 91, .5);
+  border-radius: 10px; padding: 4px 14px; box-shadow: 1px 2px 0 rgba(43, 58, 85, .12);
+  white-space: nowrap; transition: opacity .4s; backdrop-filter: blur(1px);
+}
+.peace-banner.hidden { display: none; }
 .info-body {
   overflow-y: auto; flex: 1;
   display: flex; flex-direction: column; gap: 12px;

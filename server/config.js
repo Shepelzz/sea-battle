@@ -25,6 +25,29 @@ export const SHIP_ACTIONS = ['move', 'attack', 'broadside', 'repair'];
 // в клиент они не попадают (ни в исходники, ни в devtools). Тут — только вкл/выкл.
 export const CHEATS_ENABLED = false;
 
+// ─── Игровые режимы ───────────────────────────────────────────────────────────
+// Выбираются при создании партии (game.config.mode). На СТАТЫ кораблей НЕ влияют —
+// только стартовые условия / правила / поведение ботов. enabled — показывать ли в выборе
+// (глобальная доступность режимов). Классика = поведение «как сейчас».
+export const GAME_MODES = {
+  classic:    { name: 'Классический', desc: 'Стандартные правила.', enabled: true },
+  deathmatch: { name: 'Дезматч',      desc: 'Много золота на старте — сразу большой флот и мясо. Боты агрессивны.',
+                enabled: true, startGold: 3500, botAggro: true },
+  develop:    { name: 'Развитие',     desc: 'Мирные первые раунды: качай экономику и оборону, потом война. У каждой базы своя рыбозона.',
+                enabled: true, peaceRounds: 10, peaceBaseKeepout: 610, baseFishZone: true, allFishZonesBig: true },
+};
+export const DEFAULT_MODE = 'classic';
+// доступные в выборе режимы (ключи), отфильтрованные по enabled
+export const enabledModes = () => Object.keys(GAME_MODES).filter(k => GAME_MODES[k].enabled);
+// настройки текущего режима партии
+export const modeOf = (game) => GAME_MODES[game?.config?.mode] || GAME_MODES[DEFAULT_MODE];
+// стартовое золото с учётом режима (классика/развитие → START_GOLD; дезматч → свой startGold)
+export const modeStartGold = (game) => modeOf(game).startGold ?? START_GOLD;
+// длина мирного периода в РАУНДАХ (0 — мира нет)
+export const modePeaceRounds = (game) => modeOf(game).peaceRounds || 0;
+// идёт ли сейчас мирное время (раунд ≤ peaceRounds)
+export const isPeace = (game) => (game?.turn?.round || 1) <= modePeaceRounds(game);
+
 // ─── Рыбалка: доход ──────────────────────────────────────────────────────────
 // Золота за ход баркасу, стоящему в рыбном месте (= SHIP_TYPES.barkas.fishing).
 // fishing>0 ещё и помечает корабль «рыбаком». Лимит судов на зону — ниже (FISH_ZONE_CAP).

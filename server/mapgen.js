@@ -33,7 +33,7 @@ function islandShape(rnd, radius) {
 
 const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
 
-export function generateMap(seed, playerCount) {
+export function generateMap(seed, playerCount, opts = {}) {
   const rnd = mulberry32(seed);
   const W = MAP_W, H = MAP_H, M = BASE_CORNER_MARGIN;
 
@@ -75,15 +75,26 @@ export function generateMap(seed, playerCount) {
 
   // Рыбные места: зоны, где баркасы добывают рыбу.
   const fishZones = [];
-  guard = 0;
-  while (fishZones.length < FISH_COUNT && guard++ < MAPGEN_GUARD) {
-    const radius = FISH_RADIUS_MIN + Math.round(rnd() * FISH_RADIUS_RAND);
-    const x = Math.round(W * FISH_AREA_X0 + rnd() * W * FISH_AREA_XR);
-    const y = Math.round(H * FISH_AREA_Y0 + rnd() * H * FISH_AREA_YR);
-    if (bases.some(b => dist(x, y, b.x, b.y) < b.radius + radius + FISH_BASE_GAP)) continue;
-    if (lootIslands.some(o => dist(x, y, o.x, o.y) < o.radius + radius + FISH_LOOT_GAP)) continue;
-    if (fishZones.some(z => dist(x, y, z.x, z.y) < z.radius + radius + FISH_GAP)) continue;
-    fishZones.push({ x, y, radius, cap: fishZoneCap(radius) }); // лимит судов зависит от размера зоны
+  const bigR = FISH_RADIUS_MIN + FISH_RADIUS_RAND; // макс. радиус → крупная зона (5 слотов)
+  if (opts.baseFishZone) {
+    // режим «Развитие»: у КАЖДОЙ базы своя большая рыбозона (в сторону центра), ВМЕСТО разбросанных —
+    // у всех честный домашний доход на время мирного периода.
+    for (const b of bases) {
+      const ang = Math.atan2(H / 2 - b.y, W / 2 - b.x);
+      const d = b.radius + bigR + FISH_BASE_GAP;
+      fishZones.push({ x: Math.round(b.x + Math.cos(ang) * d), y: Math.round(b.y + Math.sin(ang) * d), radius: bigR, cap: fishZoneCap(bigR) });
+    }
+  } else {
+    guard = 0;
+    while (fishZones.length < FISH_COUNT && guard++ < MAPGEN_GUARD) {
+      const radius = opts.allFishZonesBig ? bigR : (FISH_RADIUS_MIN + Math.round(rnd() * FISH_RADIUS_RAND));
+      const x = Math.round(W * FISH_AREA_X0 + rnd() * W * FISH_AREA_XR);
+      const y = Math.round(H * FISH_AREA_Y0 + rnd() * H * FISH_AREA_YR);
+      if (bases.some(b => dist(x, y, b.x, b.y) < b.radius + radius + FISH_BASE_GAP)) continue;
+      if (lootIslands.some(o => dist(x, y, o.x, o.y) < o.radius + radius + FISH_LOOT_GAP)) continue;
+      if (fishZones.some(z => dist(x, y, z.x, z.y) < z.radius + radius + FISH_GAP)) continue;
+      fishZones.push({ x, y, radius, cap: fishZoneCap(radius) }); // лимит судов зависит от размера зоны
+    }
   }
 
   return { w: W, h: H, bases, lootIslands, fishZones };

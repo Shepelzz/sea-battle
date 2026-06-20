@@ -111,7 +111,7 @@ $('#hotseatBtn').addEventListener('click', async () => {
     const res = await fetch('/api/games', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: getToken(), mode: 'hotseat', nicks, colors: hotseatColors, multiMove: $('#hotseatMulti').checked })
+      body: JSON.stringify({ token: getToken(), mode: 'hotseat', nicks, colors: hotseatColors, multiMove: $('#hotseatMulti').checked, gameMode: $('#hotseatMode').value })
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Ошибка сервера');
@@ -136,6 +136,14 @@ $('#hotseatBtn').addEventListener('click', async () => {
     renderOnlineColor();
     renderBotColor();
     renderHotseatNames();
+    // селекторы игрового режима (из включённых на сервере) + показ описания выбранного
+    const modes = Array.isArray(cfg.modes) && cfg.modes.length ? cfg.modes : [{ key: 'classic', name: 'Классический', desc: '' }];
+    document.querySelectorAll('.game-mode-sel').forEach(sel => {
+      sel.innerHTML = modes.map(m => `<option value="${m.key}">${m.name}</option>`).join('');
+      const desc = sel.parentElement.querySelector('.mode-desc');
+      const upd = () => { if (desc) desc.textContent = (modes.find(m => m.key === sel.value) || {}).desc || ''; };
+      sel.addEventListener('change', upd); upd();
+    });
 
     if (!cfg.googleClientId) return;
     $('#authBox').classList.remove('hidden');
@@ -192,7 +200,8 @@ $('#createBtn').addEventListener('click', async () => {
         maxPlayers: +$('#maxPlayers').value,
         turnTimer: +$('#turnTimer').value,
         fog: $('#onlineFog').checked,
-        multiMove: $('#onlineMulti').checked
+        multiMove: $('#onlineMulti').checked,
+        gameMode: $('#onlineMode').value
       })
     });
     const data = await res.json();
@@ -224,7 +233,8 @@ $('#botBtn').addEventListener('click', async () => {
         level: $('#botLevel').value,
         color: botColor,
         fog: $('#botFog').checked,
-        multiMove: $('#botMulti').checked
+        multiMove: $('#botMulti').checked,
+        gameMode: $('#botMode').value
       })
     });
     const data = await res.json();
