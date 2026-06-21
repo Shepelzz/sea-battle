@@ -374,7 +374,7 @@ function sinkShip(game, ship, killer) {
   // ship-данные нужны клиенту: тонущий корабль рисуется, пока до него летит ядро
   pushEvent(game, {
     type: 'explosion', x: ship.x, y: ship.y, big: true,
-    shipId: ship.id, ship: { type: ship.type, owner: ship.owner, bounty: ship.bounty }
+    shipId: ship.id, ship: { type: ship.type, owner: ship.owner, bounty: ship.bounty, boss: !!ship.boss }
   });
   if (ship.owner === -1) {
     killer.gold += ship.bounty;
@@ -671,7 +671,7 @@ export function applyAction(game, playerId, action) {
       if (!ship || ship.owner !== pIdx) return { ok: false, error: 'Это не ваш корабль' };
       const st = SHIP_TYPES[ship.type];
       if (!st.repairer) return { ok: false, error: 'Этот корабль не умеет чинить' };
-      if ((ship.repairCharges ?? 0) <= 0) return { ok: false, error: 'Нет материалов — вернись на базу и пополни' };
+      if ((ship.repairCharges ?? REPAIR_CHARGES) <= 0) return { ok: false, error: 'Нет материалов — вернись на базу и пополни' };
       const target = game.ships.find(s => s.id === action.targetId);
       if (!target || target.owner !== pIdx) return { ok: false, error: 'Чинить можно только свои корабли' };
       if (target.id === ship.id) return { ok: false, error: 'Ремонтник не чинит сам себя' };
@@ -682,7 +682,7 @@ export function applyAction(game, playerId, action) {
       // ремонт = доля от МАКСИМАЛЬНОГО HP цели (healFrac), не больше недостающего
       const healed = Math.min(Math.round(maxHp * st.healFrac), maxHp - target.hp);
       target.hp += healed;
-      ship.repairCharges -= 1; // потратили один заряд материалов
+      ship.repairCharges = (ship.repairCharges ?? REPAIR_CHARGES) - 1; // потратили один заряд материалов (undefined=полный для старых сейвов)
       pushEvent(game, { type: 'repair', fx: ship.x, fy: ship.y, tx: target.x, ty: target.y, heal: healed });
       logEvent(game,
         `🛟 ${player.nick}: ${st.name} латает ${SHIP_TYPES[target.type].name} (+${healed} HP, осталось зарядов ${ship.repairCharges})`,
@@ -696,7 +696,7 @@ export function applyAction(game, playerId, action) {
       if (!ship || ship.owner !== pIdx) return { ok: false, error: 'Это не ваш корабль' };
       const st = SHIP_TYPES[ship.type];
       if (!st.repairer) return { ok: false, error: 'Пополнять материалы умеет только ремонтник' };
-      if ((ship.repairCharges ?? 0) >= REPAIR_CHARGES) return { ok: false, error: 'Запас материалов уже полный' };
+      if ((ship.repairCharges ?? REPAIR_CHARGES) >= REPAIR_CHARGES) return { ok: false, error: 'Запас материалов уже полный' };
       const base = game.map.bases[pIdx];
       if (dist(ship.x, ship.y, base.x, base.y) > base.radius + REPAIR_DOCK_REACH)
         return { ok: false, error: 'Пополнить материалы можно только у своей базы' };

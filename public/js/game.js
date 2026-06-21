@@ -775,6 +775,16 @@ function hpBar(px, py, w, frac, color) {
   ctx.lineWidth = 0.8;
   ctx.strokeRect(px - w / 2, py, w, 5);
 }
+// жёлтая шкала запаса ремонта — как HP-полоска, только жёлтая (заполнение = остаток зарядов / макс)
+function chargeBar(px, py, w, n, max) {
+  const frac = Math.max(0, Math.min(1, n / max));
+  ctx.fillStyle = 'rgba(255,255,255,.75)';
+  ctx.fillRect(px - w / 2, py, w, 5);
+  ctx.fillStyle = '#f4c20a';
+  ctx.fillRect(px - w / 2, py, w * frac, 5);
+  ctx.strokeStyle = '#2b3a55'; ctx.lineWidth = 0.8;
+  ctx.strokeRect(px - w / 2, py, w, 5);
+}
 
 // Отрисовка базы (вынесено, чтобы рисовать врагов и в норме, и сквозь туман).
 // hpFrac=null → шкала HP не показывается (база ещё не разведана); dim → тускло (под туманом).
@@ -1189,7 +1199,7 @@ function render(canvasOnly) {
   for (const e of effects) {
     if (e.kind === 'ghost' && nowGhost >= e.start && nowGhost < e.start + e.dur) {
       if (fog && e.ship.owner !== myIdx() && !fogVisible(e.x, e.y, vis)) continue;
-      drawShip({ id: e.shipId, owner: e.ship.owner, type: e.ship.type, x: e.x, y: e.y, hp: 1, bounty: e.ship.bounty }, false);
+      drawShip({ id: e.shipId, owner: e.ship.owner, type: e.ship.type, x: e.x, y: e.y, hp: 1, bounty: e.ship.bounty, boss: e.ship.boss }, false);
     }
   }
 
@@ -1550,7 +1560,11 @@ function drawRepairShip(s, p, px, py, pos, k, selected) {
   ctx.fillStyle = hull; ctx.fill();
 
   ctx.restore();
-  hpBar(px, py + L * 0.42 + 4, Math.max(16, L * 0.9), s.hp / (s.maxHp || ST(s.type).hp), '#27ae60');
+  const bw = Math.max(16, L * 0.9);
+  hpBar(px, py + L * 0.42 + 4, bw, s.hp / (s.maxHp || ST(s.type).hp), '#27ae60');
+  // жёлтая шкала запаса ремонта под полоской HP
+  const cmax = state.repairChargesMax || 8;
+  chargeBar(px, py + L * 0.42 + 11, bw, s.repairCharges ?? cmax, cmax);
 }
 
 function drawShip(s, selected) {
@@ -1934,6 +1948,13 @@ function canShipCollect(ship) {
   return state.map.lootIslands.some(i => !i.looted &&
     dist(ship.x, ship.y, i.x, i.y) <= i.radius + (state.lootReach || 55));
 }
+// ремонтник с неполным запасом материалов, стоящий у СВОЕЙ базы — может «Пополнить»
+function repairChargesMax() { return state.repairChargesMax || 8; }
+function canShipRecharge(ship) {
+  if (!ST(ship.type).repairer || (ship.repairCharges ?? repairChargesMax()) >= repairChargesMax()) return false;
+  const base = state.map.bases[myIdx()];
+  return !!base && dist(ship.x, ship.y, base.x, base.y) <= base.radius + (state.repairDockReach || 60);
+}
 
 // у корабля есть бортовые пушки (залп)
 function canBroadside(ship) { return !!(state.broadside?.cannons?.[ship.type]); }
@@ -1951,14 +1972,18 @@ function updateActionButtons() {
   if (shipActed(sel.id)) { deselect(); return; } // полностью отстрелялся — снять выбор
   const st = ST(sel.type);
   const fired = firedSides(sel.id), committed = fired.length > 0;
+  const noCharges = st.repairer && (sel.repairCharges ?? repairChargesMax()) <= 0; // ремонтник без материалов
   $('#btnFire').classList.toggle('hidden', !canMortar(sel));     // 🎯 Мортира — фрегат/линкор
   $('#btnRepair').classList.toggle('hidden', !st.repairer);      // 🛟 Чинить
   $('#btnBroadside').classList.toggle('hidden', !canBroadside(sel)); // 💥 Залп
   $('#btnCollectHere').classList.toggle('hidden', !canShipCollect(sel));
+  $('#btnRecharge').classList.toggle('hidden', !canShipRecharge(sel)); // 🔧 Пополнить (у базы)
+  $('#rechargeNote').classList.toggle('hidden', !noCharges);     // заметка «нет материалов — на базу»
   $('#btnMove').disabled = committed;
   $('#btnFire').disabled = committed;
-  $('#btnRepair').disabled = committed;
+  $('#btnRepair').disabled = committed || noCharges;             // чинить нечем без материалов
   $('#btnCollectHere').disabled = committed;
+  $('#btnRecharge').disabled = committed;
   $('#btnBroadside').disabled = fired.length >= 2;               // оба борта отстреляны
 }
 
@@ -2032,7 +2057,8 @@ function openInfo() {
         const extra = [
           isMortar ? `🎯 мортира ${Math.round(st.dmg * mm)}, порт ${Math.round(st.dmg * (st.portBonus || 1))}` : '',
           st.fishing ? `🐟 +${st.fishing}` : '',
-          st.healFrac ? `🛟 +${Math.round(st.healFrac * 100)}% HP` : ''
+          st.healFrac ? `🛟 +${Math.round(st.healFrac * 100)}% HP` : '',
+          st.repairer ? `🔧 ${repairChargesMax()} ремонтов` : ''
         ].filter(Boolean).join(' · ');
         const power = st.repairer ? '🛟 ремонт' : (cannons ? `💥 залп до ${st.dmg}` : `⚔️${st.dmg}`);
         return `<div class="info-fleet-row">
@@ -2065,6 +2091,7 @@ if (window.matchMedia('(max-width: 900px)').matches) {
 }
 
 $('#btnCollectHere').addEventListener('click', () => sendAction({ type: 'collect' }));
+$('#btnRecharge').addEventListener('click', () => sendAction({ type: 'recharge', shipId: selectedShipId })); // 🔧 пополнить материалы у базы
 $('#btnSkip').addEventListener('click', () => sendAction({ type: 'skip' }));
 $('#btnShop').addEventListener('click', () => {
   basket = {};

@@ -1,7 +1,7 @@
 // Корабль-ремонтник: действие 'repair' чинит союзный корабль в радиусе (жёлтый луч),
 // сам не атакует, тратит один ход (как остальные). Прямые вызовы game.js.
 import { createGame, addPlayer, startGame, applyAction } from './server/game.js';
-import { SHIP_TYPES } from './server/ships.js';
+import { SHIP_TYPES, REPAIR_CHARGES, REPAIR_DOCK_REACH } from './server/ships.js';
 
 let ok = 0, fail = 0;
 const check = (n, c, extra = '') => { c ? (ok++, console.log('✓', n, extra)) : (fail++, console.error('✗', n, extra)); };
@@ -103,6 +103,50 @@ const healOf = type => Math.round(SHIP_TYPES[type].hp * R.healFrac); // ожид
   const ally = put(g, 0, 'brig', 500, 560, 50);
   repair(g, rep.id, ally.id);
   check('классика: после ремонта ход перешёл', g.turn.idx === 1, `(idx ${g.turn.idx})`);
+}
+
+// === Запас материалов: ремонт тратит заряд ===
+{
+  const g = setup();
+  const rep = put(g, 0, 'repair', 500, 500); rep.repairCharges = 2;
+  const a1 = put(g, 0, 'brig', 500, 560, 50);
+  check('REPAIR_CHARGES задан', typeof REPAIR_CHARGES === 'number' && REPAIR_CHARGES > 0, `(${REPAIR_CHARGES})`);
+  repair(g, rep.id, a1.id);
+  check('ремонт тратит один заряд (2→1)', rep.repairCharges === 1, `(${rep.repairCharges})`);
+}
+
+// === Без материалов чинить нельзя; пополнить можно У СВОЕЙ базы ===
+{
+  const g = setup();
+  const base = g.map.bases[0];
+  const rep = put(g, 0, 'repair', base.x + base.radius + 20, base.y); rep.repairCharges = 0;
+  const a1 = put(g, 0, 'brig', rep.x, rep.y + 50, 50);
+  check('без материалов чинить нельзя', repair(g, rep.id, a1.id).ok === false, `(заряды ${rep.repairCharges})`);
+  const r = applyAction(g, 'A', { type: 'recharge', shipId: rep.id });
+  check('пополнить у базы — ок', r.ok, JSON.stringify(r));
+  check('запас восстановлен до максимума', rep.repairCharges === REPAIR_CHARGES, `(${rep.repairCharges})`);
+  check('пополнение тратит ход (acted + moves)', (g.turn.actedShips || []).includes(rep.id) && g.turn.moves === 1, `(moves ${g.turn.moves})`);
+}
+
+// === Пополнять вдали от базы / при полном запасе нельзя ===
+{
+  const g = setup();
+  const rep = put(g, 0, 'repair', 500, 500); rep.repairCharges = 0; // далеко от базы
+  check('пополнить вдали от базы нельзя', applyAction(g, 'A', { type: 'recharge', shipId: rep.id }).ok === false);
+
+  const g2 = setup();
+  const base = g2.map.bases[0];
+  const rep2 = put(g2, 0, 'repair', base.x + base.radius + 20, base.y); // полный (undefined=полный)
+  check('пополнять полный запас нельзя', applyAction(g2, 'A', { type: 'recharge', shipId: rep2.id }).ok === false);
+}
+
+// === Купленный ремонтник получает полный запас материалов ===
+{
+  const g = setup();
+  g.players[0].gold = 9999;
+  const r = applyAction(g, 'A', { type: 'buy', ships: ['repair'] });
+  const bought = g.ships.find(s => s.owner === 0 && s.type === 'repair');
+  check('купленный ремонтник имеет полный запас', r.ok && bought && bought.repairCharges === REPAIR_CHARGES, `(${bought?.repairCharges})`);
 }
 
 console.log(`\nИтого ремонтник: ${ok} ок, ${fail} провал(ов)`);

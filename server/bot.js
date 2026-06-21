@@ -1,7 +1,7 @@
 // Бот: на своём ходу собирает все осмысленные действия, оценивает и берёт лучшее.
 // Уровни: easy (Юнга) — шумные оценки и случайные ходы, mid (Боцман) — лучший ход,
 // hard (Адмирал) — лучший ход + фокус раненых, удушение экономики, ранняя агрессия.
-import { SHIP_TYPES, PIRATE, LOOT_REACH, PORT_RETURN_DMG, BROADSIDE_CANNONS, BROADSIDE_HALF_ARC, BROADSIDE_FALLOFF_MIN, BROADSIDE_SIDE_MIN, MORTAR_SHIPS, MORTAR_SHIP_MULT, modeOf, isPeace } from './config.js';
+import { SHIP_TYPES, PIRATE, LOOT_REACH, PORT_RETURN_DMG, BROADSIDE_CANNONS, BROADSIDE_HALF_ARC, MORTAR_SHIPS, MORTAR_SHIP_MULT, modeOf, isPeace } from './config.js';
 import { shipPlacementBlocked } from './game.js';
 
 const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
@@ -145,9 +145,12 @@ export function chooseBotAction(game, pIdx, level = 'mid') {
         tgt = t; tgtSide = side; bestD = d; bestOff = off;
       }
       if (tgt) {
-        const falloff = 1 - (1 - BROADSIDE_FALLOFF_MIN) * (bestD / st.fireRange);
-        const angle = 1 - (1 - BROADSIDE_SIDE_MIN) * Math.min(1, bestOff / BROADSIDE_HALF_ARC);
-        let score = st.dmg * angle * falloff * 0.8; // как и сервер: урон судна × положение × дистанция
+        // КАЧЕСТВО выстрела для РЕШЕНИЯ бота — крутое и НЕ зависит от флоров урона (SIDE_MIN/FALLOFF_MIN).
+        // Иначе при мягких флорах (пользователь поднял урон) бот начинает палить и по краям сектора → капкан/паты.
+        // Бот лупит залпом, ТОЛЬКО когда борт реально наведён (хороший угол И близко); кривой/дальний — осада важнее.
+        const aq = Math.max(0, 1 - bestOff / BROADSIDE_HALF_ARC);   // 1 на перпендикуляре → 0 на краю сектора
+        const dq = Math.max(0, 1 - bestD / st.fireRange);           // 1 в упор → 0 на краю радиуса
+        let score = st.dmg * aq * dq * 2.0;
         if (tgt.owner >= 0 && dist(tgt.x, tgt.y, myBase.x, myBase.y) < threatR) score += 35; // оборона базы
         cands.push({ score, action: { type: 'broadside', shipId: ship.id, tx: tgt.x, ty: tgt.y } });
       }
@@ -285,9 +288,8 @@ export function chooseBotAction(game, pIdx, level = 'mid') {
       const eng = aggressive ? (level === 'hard' ? 18 : 14) : 7;
       const fd = dist(ship.x, ship.y, foe.x, foe.y);
       if (cannons && fd <= st.fireRange) {
-        // враг уже в радиусе — ЗАХОД БОРТОМ по СПИРАЛИ: идём по диагонали (≈65° от линии на врага), чтобы он встал
-        // на борт И мы при этом сближались к упору, где залп бьёт сильнее. Делают ВСЕ боевые (залп — сильнейшая атака
-        // по судам теперь и у фрегата/линкора; мортиру они приберегают для порта). Следующим ходом борт наведён → залп.
+        // враг в радиусе — ЗАХОД БОРТОМ по спирали (≈65°), чтобы он встал на борт и мы сближались к упору.
+        // ВАЖНО: score = eng (НЕ выше осады) — иначе боты «танцуют» бортами в открытом море и не штурмуют порт → 70% патов.
         const dir = Math.atan2(foe.y - ship.y, foe.x - ship.x);
         for (const s of [1, -1]) {
           const a = dir + s * (Math.PI / 2) * 0.72;

@@ -222,6 +222,7 @@ aside.panel {
   left: 50%; bottom: 18px;
   transform: translateX(-50%);
   display: flex; gap: 10px;
+  flex-wrap: wrap; justify-content: center; /* подсказка (.move-hint, flex-basis:100%) переносится ПОД кнопки и на десктопе */
   background: var(--paper);
   border: 2px solid var(--ink);
   border-radius: 14px 6px 12px 8px / 8px 12px 6px 14px;
