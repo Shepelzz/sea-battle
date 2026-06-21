@@ -14,8 +14,12 @@ import { Server } from 'socket.io';
 import * as db from './db.js';
 import {
   createGame, addPlayer, startGame, applyAction, leaveGame, nudge,
-  timeoutTurn, publicState, setColor, randomFreeColor, forceFinish, PALETTE
+  timeoutTurn, publicState, setColor, randomFreeColor, forceFinish, isRanked, PALETTE
 } from './game.js';
+import {
+  SESSION_COOKIE, pidOf, googlePid, cleanNick, resolveAccountNick, parseCookies,
+  buildSetCookie, buildClearCookie, createSessionStore, newSessionToken
+} from './auth.js';
 import { chooseBotAction, BOT_NAMES } from './bot.js';
 import { applyCheat } from './cheats.js';
 import { CHEATS_ENABLED, GAME_MODES, enabledModes, DEFAULT_MODE } from './config.js';
@@ -24,6 +28,7 @@ const pickMode = m => enabledModes().includes(m) ? m : DEFAULT_MODE;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
+app.set('trust proxy', 1); // за прокси (Render): корректный протокол — нужно для Secure-cookie
 const server = http.createServer(app);
 const io = new Server(server);
 const PORT = process.env.PORT || 3456;
@@ -73,21 +78,13 @@ async function sendNudgeEmail(email, nick, gameUrl) {
   }
 }
 
-// Личность: секрет (гостевой токен или серверная сессия Google) живёт в браузере,
-// сервер везде использует его производный id.
-const pidOf = token => crypto.createHash('sha256').update(String(token)).digest('hex').slice(0, 16);
-
-// Серверные сессии Google-входа: token -> pid. Держим в памяти (предзагружаем на старте,
-// дополняем при логине) — чтобы resolvePid оставался синхронным.
-const sessionPids = new Map();
-
-function resolvePid({ token, session }) {
-  if (session) {
-    const pid = sessionPids.get(session);
-    if (pid) return pid;
-  }
-  return token ? pidOf(token) : null;
-}
+// Личность: pidOf (гость) и googlePid (аккаунт) — в auth.js. Серверные сессии Google-входа
+// держим в памяти (грузим на старте, дополняем при логине) — pid аккаунта резолвится синхронно.
+const cookieSecure = () => process.env.NODE_ENV === 'production' || /^https:/i.test(process.env.BASE_URL || '');
+const sessions = createSessionStore();
+// pid аккаунта по cookie-токену (с проверкой срока) или null; протухшую сессию чистим и в БД.
+const accountPidFromSession = token => sessions.pid(token, t => db.deleteSession(t));
+const accountPidFromReq = req => accountPidFromSession(parseCookies(req.headers.cookie)[SESSION_COOKIE]);
 
 // Игры в памяти — источник истины в рантайме (single-instance). Все игры предзагружаются
 // из MySQL на старте, а изменения асинхронно сохраняются обратно (durability на деплой).
@@ -156,7 +153,7 @@ function maybeBotTurn(game) {
     catch (e) { console.error('bot:', e.message); action = { type: 'skip' }; }
     let r = applyAction(g, bot.id, action);
     if (!r.ok) r = applyAction(g, bot.id, { type: 'skip' }); // страховка от невалидного хода
-    if (g.status === 'finished') db.saveResults(g);
+    if (g.status === 'finished' && isRanked(g)) db.saveResults(g); // в лидерборд — только онлайн
     persistAndBroadcast(g);
   }, delay));
 }
@@ -193,22 +190,46 @@ app.post('/api/auth/google', async (req, res) => {
     const { credential, nick } = req.body || {};
     const ticket = await googleClient.verifyIdToken({ idToken: credential, audience: GOOGLE_CLIENT_ID });
     const payload = ticket.getPayload();
-    const pid = 'g' + crypto.createHash('sha256').update(payload.sub).digest('hex').slice(0, 15);
-    const finalNick = (nick || '').trim() || payload.name || payload.email.split('@')[0];
-    db.upsertPlayer(pid, finalNick, payload.email);
-    const session = crypto.randomBytes(24).toString('base64url');
-    sessionPids.set(session, pid);
+    // Личность аккаунта — стабильный pid из Google sub (а не из email: email может меняться).
+    const pid = googlePid(payload.sub);
+    // Ник аккаунта = его сохранённый ник (вспоминаем при возврате). Ник от клиента берём ТОЛЬКО при
+    // ПЕРВОМ входе (аккаунта ещё нет) — иначе устаревший/чужой ник из localStorage затёр бы свой.
+    const existing = await db.getPlayer(pid);
+    const finalNick = resolveAccountNick(existing?.nick, nick, payload.name, payload.email);
+    const avatar = payload.picture || null;
+    db.upsertPlayer(pid, finalNick, payload.email, 'google', avatar);
+    // Серверная сессия: секрет в httpOnly-cookie (недоступна из JS — защита от XSS-кражи).
+    const session = newSessionToken();
+    sessions.add(session, pid);
     db.createSession(session, pid);
-    res.json({ session, nick: finalNick, email: payload.email });
+    res.append('Set-Cookie', buildSetCookie(session, { secure: cookieSecure() }));
+    res.json({ nick: finalNick, email: payload.email, avatar });
   } catch (e) {
     console.error('Google auth:', e.message);
     res.status(401).json({ error: 'Не удалось проверить вход Google' });
   }
 });
 
+// Кто я (по cookie-сессии). Email/аватар отдаём только владельцу — не в публичный стейт.
+app.get('/api/auth/me', async (req, res) => {
+  const pid = accountPidFromReq(req);
+  if (!pid) return res.json({ loggedIn: false });
+  const prof = await db.getPlayer(pid);
+  res.json({ loggedIn: true, nick: prof?.nick || '', email: prof?.email || '', avatar: prof?.avatar || '' });
+});
+
+// Выход: инвалидируем серверную сессию и стираем cookie.
+app.post('/api/auth/logout', (req, res) => {
+  const session = parseCookies(req.headers.cookie)[SESSION_COOKIE];
+  if (session) { sessions.delete(session); db.deleteSession(session); }
+  res.append('Set-Cookie', buildClearCookie({ secure: cookieSecure() }));
+  res.json({ ok: true });
+});
+
 app.post('/api/games', (req, res) => {
-  const { token, session, nick, maxPlayers, turnTimer, mode, nicks, color, colors } = req.body || {};
-  const pid = resolvePid({ token, session });
+  const { token, nick, maxPlayers, turnTimer, mode, nicks, color, colors } = req.body || {};
+  const accountPid = accountPidFromReq(req);                 // вошёл через Google? (по cookie)
+  const pid = accountPid || (token ? pidOf(token) : null);   // иначе — гостевой токен (одиночка/хотсит)
   if (!pid) return res.status(400).json({ error: 'Нужен токен' });
   const id = crypto.randomBytes(5).toString('base64url');
 
@@ -236,14 +257,15 @@ app.post('/api/games', (req, res) => {
   if (mode === 'bot') {
     const level = ['easy', 'mid', 'hard'].includes(req.body.level) ? req.body.level : 'mid';
     const botCount = Math.min(3, Math.max(1, +req.body.bots || 1));
-    if (!nick?.trim()) return res.status(400).json({ error: 'Нужен ник' });
+    const nm = cleanNick(nick);
+    if (!nm) return res.status(400).json({ error: 'Нужен ник' });
     const game = createGame(id, { maxPlayers: 1 + botCount, turnTimer: 0 });
     game.config.botGame = true;
     game.config.fog = req.body.fog !== false; // туман войны (по умолчанию вкл), визуал для игрока
     game.config.multiMove = req.body.multiMove !== false; // ход тремя судами (по умолчанию вкл)
     game.config.mode = pickMode(req.body.gameMode);       // режим (до addPlayer — влияет на старт. золото)
-    db.upsertPlayer(pid, nick.trim());
-    addPlayer(game, pid, nick.trim(), color);              // цвет игрока — по выбору
+    db.upsertPlayer(pid, nm);
+    addPlayer(game, pid, nm, color);                      // цвет игрока — по выбору
     for (let i = 0; i < botCount; i++) {
       addPlayer(game, 'bot:' + id + ':' + i, BOT_NAMES[level][i], randomFreeColor(game)); // ботам — рандом из оставшихся
       const bp = game.players[game.players.length - 1];
@@ -256,14 +278,18 @@ app.post('/api/games', (req, res) => {
     return res.json({ gameId: id });
   }
 
-  if (!nick?.trim()) return res.status(400).json({ error: 'Нужны ник и токен' });
+  // Онлайн-баттл требует аккаунт (когда вход через Google настроен) — гостя не пускаем.
+  if (googleClient && !accountPid)
+    return res.status(401).json({ error: 'Войдите через Google, чтобы играть онлайн', needAuth: true });
+  const nm = cleanNick(nick);
+  if (!nm) return res.status(400).json({ error: 'Нужны ник и токен' });
   const game = createGame(id, { maxPlayers: +maxPlayers, turnTimer: +turnTimer });
-  game.config.listed = true; // онлайн-игра попадает в браузер лобби
+  game.config.listed = true; // онлайн-игра попадает в браузер лобби (и засчитывается в лидерборд)
   game.config.fog = req.body.fog !== false; // туман войны (по умолчанию вкл)
   game.config.multiMove = req.body.multiMove !== false; // ход тремя судами (по умолчанию вкл)
   game.config.mode = pickMode(req.body.gameMode);       // режим (до addPlayer — влияет на старт. золото)
-  db.upsertPlayer(pid, nick.trim());
-  addPlayer(game, pid, nick.trim(), color);
+  db.upsertPlayer(pid, nm);
+  addPlayer(game, pid, nm, color);
   games.set(id, game);
   db.saveGame(game);
   res.json({ gameId: id });
@@ -279,6 +305,8 @@ app.get('/game/:id', (_req, res) => res.sendFile(path.join(__dirname, '..', 'pub
 io.on('connection', socket => {
   let joinedGameId = null;
   let myPid = null;
+  // pid аккаунта по cookie-сессии (один раз на подключение) — для гейта онлайна
+  socket.data.accountPid = accountPidFromSession(parseCookies(socket.handshake.headers.cookie)[SESSION_COOKIE]);
 
   // подписка на браузер лобби (с главной страницы)
   socket.on('lobbies:subscribe', ack => {
@@ -287,11 +315,16 @@ io.on('connection', socket => {
   });
   socket.on('lobbies:unsubscribe', () => socket.leave('lobbies'));
 
-  socket.on('join', ({ gameId, token, session, nick, color }, ack) => {
+  socket.on('join', ({ gameId, token, nick, color }, ack) => {
     const game = getGame(gameId);
     if (!game) return ack?.({ ok: false, error: 'Игра не найдена' });
-    const pid = resolvePid({ token, session });
-    if (!pid || !nick?.trim()) return ack?.({ ok: false, error: 'Введите ник' });
+    const accountPid = socket.data.accountPid;
+    // Онлайн-участие (вход в лобби) требует аккаунт; смотреть уже идущую игру можно и гостю.
+    if (game.config?.listed && googleClient && game.status === 'lobby' && !accountPid)
+      return ack?.({ ok: false, error: 'Войдите через Google, чтобы играть онлайн', needAuth: true });
+    const pid = accountPid || (token ? pidOf(token) : null);
+    const nm = cleanNick(nick);
+    if (!pid || !nm) return ack?.({ ok: false, error: 'Введите ник' });
     // хотсит: владелец устройства управляет всеми игроками
     const isHotseatOwner = !!(game.config?.hotseat && game.hotseatOwner === pid);
     if (isHotseatOwner) {
@@ -303,8 +336,8 @@ io.on('connection', socket => {
       socket.emit('state', publicState(game, pid));
       return;
     }
-    db.upsertPlayer(pid, nick.trim());
-    const result = addPlayer(game, pid, nick.trim(), color);
+    db.upsertPlayer(pid, nm);
+    const result = addPlayer(game, pid, nm, color);
     // Не участник, но игра идёт — пускаем смотреть.
     const spectator = !result.ok && game.status !== 'lobby' && !game.players.some(p => p.id === pid);
     if (!result.ok && !spectator) return ack?.({ ok: false, error: result.error });
@@ -326,6 +359,23 @@ io.on('connection', socket => {
     db.saveGame(game);
     broadcastState(game);
     broadcastLobbies();
+    ack?.({ ok: true });
+  });
+
+  // Сменить свой ник (в лобби или в игре): обновляем у игрока, ЖЁСТКО пишем в БД (аккаунт запомнит
+  // ник — он же в лидерборде) и тут же рассылаем всем в комнате, чтобы соперники увидели в реальном времени.
+  socket.on('setNick', ({ nick } = {}, ack) => {
+    const game = joinedGameId && getGame(joinedGameId);
+    if (!game) return ack?.({ ok: false, error: 'Нет игры' });
+    const nm = cleanNick(nick);
+    if (!nm) return ack?.({ ok: false, error: 'Ник не может быть пустым' });
+    const p = game.players.find(pl => pl.id === myPid);
+    if (!p) return ack?.({ ok: false, error: 'Ты не участник этой игры' });
+    p.nick = nm;
+    db.upsertPlayer(myPid, nm);   // железно в БД — ник аккаунта меняется везде (вкл. лидерборд)
+    db.saveGame(game);
+    broadcastState(game);
+    broadcastLobbies();           // в витрине лобби имя хоста могло измениться
     ack?.({ ok: true });
   });
 
@@ -384,7 +434,7 @@ io.on('connection', socket => {
     if (!game) return ack?.({ ok: false, error: 'Нет игры' });
     const result = applyAction(game, myPid, action);
     if (!result.ok) return ack?.({ ok: false, error: result.error });
-    if (game.status === 'finished') db.saveResults(game);
+    if (game.status === 'finished' && isRanked(game)) db.saveResults(game); // в лидерборд — только онлайн
     else armTurnTimer(game);
     persistAndBroadcast(game);
     ack?.({ ok: true });
@@ -416,7 +466,7 @@ io.on('connection', socket => {
     const result = leaveGame(game, myPid);
     if (!result.ok) return ack?.({ ok: false, error: result.error });
     maybeAutoFinish(game); // все люди сдались → доигрываем за ботов и завершаем сразу
-    if (game.status === 'finished') db.saveResults(game);
+    if (game.status === 'finished' && isRanked(game)) db.saveResults(game); // в лидерборд — только онлайн
     else armTurnTimer(game);
     persistAndBroadcast(game);
     ack?.({ ok: true });
@@ -476,7 +526,8 @@ function armTurnTimer(game) {
 async function bootstrap() {
   try {
     await db.init();
-    for (const s of await db.getAllSessions()) sessionPids.set(s.token, s.pid);
+    // поднимаем сессии в память, протухшие — выбрасываем (и чистим в БД)
+    sessions.load(await db.getAllSessions(), token => db.deleteSession(token));
     let active = 0;
     for (const state of await db.getAllGames()) {
       games.set(state.id, state);

@@ -28,10 +28,13 @@ export async function init() {
 }
 export const getAllGames    = () => api.getAllGames();
 export const getAllSessions = () => api.getAllSessions();
-export const upsertPlayer   = (token, nick, email = null) => api.upsertPlayer(token, nick, email);
+export const upsertPlayer   = (token, nick, email = null, provider = null, avatar = null) =>
+  api.upsertPlayer(token, nick, email, provider, avatar);
 export const createSession  = (token, pid) => api.createSession(token, pid);
+export const deleteSession  = (token) => api.deleteSession(token);
 export const saveGame       = (game) => api.saveGame(game);
 export const saveResults    = (game) => api.saveResults(game);
+export const getPlayer      = (pid) => api.getPlayer(pid);
 export const getPlayerEmail = (pid) => api.getPlayerEmail(pid);
 export const countGames     = () => api.countGames();
 export const getLeaderboard = () => api.getLeaderboard();
@@ -69,7 +72,8 @@ async function makeSqlite() {
     async init() {
       db.exec(`
         CREATE TABLE IF NOT EXISTS players (
-          token TEXT PRIMARY KEY, nick TEXT NOT NULL, email TEXT, created_at INTEGER NOT NULL);
+          token TEXT PRIMARY KEY, nick TEXT NOT NULL, email TEXT,
+          provider TEXT, avatar TEXT, created_at INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS games (
           id TEXT PRIMARY KEY, status TEXT NOT NULL, state TEXT NOT NULL,
           created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
@@ -81,21 +85,29 @@ async function makeSqlite() {
         CREATE TABLE IF NOT EXISTS sessions (
           token TEXT PRIMARY KEY, pid TEXT NOT NULL, created_at INTEGER NOT NULL);
       `);
+      // миграция уже существующих баз: добавляем новые колонки, если их ещё нет
+      for (const [col, def] of [['provider', 'TEXT'], ['avatar', 'TEXT']])
+        try { db.exec(`ALTER TABLE players ADD COLUMN ${col} ${def}`); } catch { /* колонка уже есть */ }
       console.log('🗄  SQLite (локально): ' + file);
     },
     async getAllGames() {
       return db.prepare('SELECT state FROM games').all()
         .map(r => { try { return JSON.parse(r.state); } catch { return null; } }).filter(Boolean);
     },
-    async getAllSessions() { return db.prepare('SELECT token, pid FROM sessions').all(); },
-    async upsertPlayer(token, nick, email) {
-      run(`INSERT INTO players (token, nick, email, created_at) VALUES (?, ?, ?, ?)
+    async getAllSessions() { return db.prepare('SELECT token, pid, created_at FROM sessions').all(); },
+    async upsertPlayer(token, nick, email, provider, avatar) {
+      run(`INSERT INTO players (token, nick, email, provider, avatar, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)
            ON CONFLICT(token) DO UPDATE SET nick = excluded.nick,
-             email = COALESCE(excluded.email, players.email)`, token, nick, email, Date.now());
+             email = COALESCE(excluded.email, players.email),
+             provider = COALESCE(excluded.provider, players.provider),
+             avatar = COALESCE(excluded.avatar, players.avatar)`,
+        token, nick, email ?? null, provider ?? null, avatar ?? null, Date.now());
     },
     async createSession(token, pid) {
       run('INSERT OR REPLACE INTO sessions (token, pid, created_at) VALUES (?, ?, ?)', token, pid, Date.now());
     },
+    async deleteSession(token) { run('DELETE FROM sessions WHERE token = ?', token); },
     async saveGame(game) {
       run(`INSERT INTO games (id, status, state, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET status = excluded.status, state = excluded.state,
@@ -109,6 +121,10 @@ async function makeSqlite() {
              (game_id, player_token, placement, win, damage, sunk, lost, gold, finished_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, ...r, now);
       }
+    },
+    async getPlayer(pid) {
+      const r = db.prepare('SELECT nick, email, provider, avatar FROM players WHERE token = ?').get(pid);
+      return r ? { nick: r.nick, email: r.email ?? null, provider: r.provider ?? null, avatar: r.avatar ?? null } : null;
     },
     async getPlayerEmail(pid) {
       return db.prepare('SELECT email FROM players WHERE token = ?').get(pid)?.email ?? null;
@@ -155,7 +171,7 @@ async function makeMysql() {
     async init() {
       const tables = [
         `CREATE TABLE IF NOT EXISTS players (token VARCHAR(64) PRIMARY KEY, nick VARCHAR(255) NOT NULL,
-           email VARCHAR(255), created_at BIGINT NOT NULL) DEFAULT CHARSET=utf8mb4`,
+           email VARCHAR(255), provider VARCHAR(16), avatar VARCHAR(512), created_at BIGINT NOT NULL) DEFAULT CHARSET=utf8mb4`,
         `CREATE TABLE IF NOT EXISTS games (id VARCHAR(32) PRIMARY KEY, status VARCHAR(16) NOT NULL,
            state LONGTEXT NOT NULL, created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL) DEFAULT CHARSET=utf8mb4`,
         `CREATE TABLE IF NOT EXISTS results (game_id VARCHAR(32) NOT NULL, player_token VARCHAR(64) NOT NULL,
@@ -165,21 +181,28 @@ async function makeMysql() {
            created_at BIGINT NOT NULL) DEFAULT CHARSET=utf8mb4`
       ];
       for (const t of tables) await pool.query(t);
+      // миграция уже существующих баз: добавляем новые колонки, если их ещё нет
+      for (const [col, def] of [['provider', 'VARCHAR(16)'], ['avatar', 'VARCHAR(512)']])
+        try { await pool.query(`ALTER TABLE players ADD COLUMN ${col} ${def}`); } catch { /* колонка уже есть */ }
       console.log('🗄  MySQL: ' + cfg.host + '/' + cfg.database);
     },
     async getAllGames() {
       const [rows] = await pool.query('SELECT state FROM games');
       return rows.map(r => { try { return JSON.parse(r.state); } catch { return null; } }).filter(Boolean);
     },
-    async getAllSessions() { const [rows] = await pool.query('SELECT token, pid FROM sessions'); return rows; },
-    async upsertPlayer(token, nick, email) {
-      await q(`INSERT INTO players (token, nick, email, created_at) VALUES (?, ?, ?, ?)
-               ON DUPLICATE KEY UPDATE nick = VALUES(nick), email = COALESCE(VALUES(email), email)`,
-        [token, nick, email, Date.now()]);
+    async getAllSessions() { const [rows] = await pool.query('SELECT token, pid, created_at FROM sessions'); return rows; },
+    async upsertPlayer(token, nick, email, provider, avatar) {
+      await q(`INSERT INTO players (token, nick, email, provider, avatar, created_at) VALUES (?, ?, ?, ?, ?, ?)
+               ON DUPLICATE KEY UPDATE nick = VALUES(nick),
+                 email = COALESCE(VALUES(email), email),
+                 provider = COALESCE(VALUES(provider), provider),
+                 avatar = COALESCE(VALUES(avatar), avatar)`,
+        [token, nick, email ?? null, provider ?? null, avatar ?? null, Date.now()]);
     },
     async createSession(token, pid) {
       await q('REPLACE INTO sessions (token, pid, created_at) VALUES (?, ?, ?)', [token, pid, Date.now()]);
     },
+    async deleteSession(token) { await q('DELETE FROM sessions WHERE token = ?', [token]); },
     async saveGame(game) {
       await q(`INSERT INTO games (id, status, state, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
                ON DUPLICATE KEY UPDATE status = VALUES(status), state = VALUES(state), updated_at = VALUES(updated_at)`,
@@ -192,6 +215,12 @@ async function makeMysql() {
                  (game_id, player_token, placement, win, damage, sunk, lost, gold, finished_at)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [...r, now]);
       }
+    },
+    async getPlayer(pid) {
+      try { const [rows] = await pool.query('SELECT nick, email, provider, avatar FROM players WHERE token = ?', [pid]);
+        const r = rows[0];
+        return r ? { nick: r.nick, email: r.email ?? null, provider: r.provider ?? null, avatar: r.avatar ?? null } : null;
+      } catch (e) { console.error('db:', e.message); return null; }
     },
     async getPlayerEmail(pid) {
       try { const [rows] = await pool.query('SELECT email FROM players WHERE token = ?', [pid]);

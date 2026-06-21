@@ -451,6 +451,10 @@ export function forceFinish(game) {
   }
 }
 
+// В лидерборд (ranked) идут только онлайн-баттлы: игры с ботами и «на одном устройстве»
+// не засчитываются — нельзя нафармить статистику. `listed` ставится лишь онлайн-играм.
+export const isRanked = game => !!(game?.config?.listed);
+
 // Смена цвета в лобби (валидируем: из палитры и не занят другим игроком).
 export function setColor(game, playerId, color) {
   if (game.status !== 'lobby') return { ok: false, error: 'Цвет можно менять только в лобби' };

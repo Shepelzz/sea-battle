@@ -43,7 +43,11 @@ function showMode(mode) {
   $('#editorBot').classList.toggle('hidden', mode !== 'bot');
 }
 document.querySelectorAll('.mode-btn[data-mode]').forEach(b =>
-  b.addEventListener('click', () => showMode(b.dataset.mode)));
+  b.addEventListener('click', () => {
+    // онлайн требует аккаунт — сначала вход, потом редактор; одиночка/хотсит открываются сразу
+    if (b.dataset.mode === 'online') requireLogin(() => showMode('online'));
+    else showMode(b.dataset.mode);
+  }));
 document.querySelectorAll('[data-back]').forEach(b =>
   b.addEventListener('click', () => showMode(null)));
 
@@ -74,10 +78,10 @@ function renderLobbies(list) {
 }
 socket.on('lobbyList', renderLobbies);
 
-$('#browseLobbiesBtn').addEventListener('click', () => {
+$('#browseLobbiesBtn').addEventListener('click', () => requireLogin(() => {
   $('#lobbiesOverlay').classList.remove('hidden');
   socket.emit('lobbies:subscribe', list => renderLobbies(list || []));
-});
+}));
 $('#lobbiesClose').addEventListener('click', () => {
   $('#lobbiesOverlay').classList.add('hidden');
   socket.emit('lobbies:unsubscribe');
@@ -124,7 +128,101 @@ $('#hotseatBtn').addEventListener('click', async () => {
   }
 });
 
-// Конфиг сервера: палитра цветов + (опц.) Google-вход.
+// ====== Авторизация: бейдж входа + модал. Онлайн/лобби требуют аккаунт ======
+// Личность хранится в httpOnly-cookie (ставит сервер) — в JS её нет; состояние знаем из /api/auth/me.
+let GOOGLE_ID = null, googleReady = false, me = { loggedIn: false }, pendingAction = null;
+
+function renderBadge() {
+  const box = $('#authBadge');
+  if (!GOOGLE_ID) { box.classList.add('hidden'); return; }   // вход не настроен на сервере — бейдж не нужен
+  box.classList.remove('hidden');
+  if (me.loggedIn) {
+    const ava = me.avatar
+      ? `<span class="ava"><img src="${escapeHtml(me.avatar)}" alt="" referrerpolicy="no-referrer"></span>`
+      : '<span class="ava">👤</span>';
+    box.innerHTML = `${ava}<span class="who" title="${escapeHtml(me.email || '')}">${escapeHtml(me.nick || 'игрок')}</span><button class="small" id="logoutBtn" type="button">Выйти</button>`;
+    $('#logoutBtn').addEventListener('click', doLogout);
+  } else {
+    box.innerHTML = '<button class="small primary" id="badgeLogin" type="button">🔑 Войти</button>';
+    $('#badgeLogin').addEventListener('click', () => openLogin(null));
+  }
+}
+
+async function loadMe() {
+  try { me = await (await fetch('/api/auth/me')).json(); } catch { me = { loggedIn: false }; }
+  if (me.loggedIn && me.nick) {
+    // вошёл → ник аккаунта главнее всего, что осталось в localStorage от прошлых сессий
+    localStorage.setItem('sb_nick', me.nick);
+    $('#nick').value = me.nick;
+    $('#botNick').value = me.nick;
+  }
+  renderBadge();
+}
+
+function initGoogle() {
+  if (googleReady || !GOOGLE_ID) return;
+  const s = document.createElement('script');
+  s.src = 'https://accounts.google.com/gsi/client';
+  s.onload = () => {
+    googleReady = true;
+    google.accounts.id.initialize({ client_id: GOOGLE_ID, callback: onGoogleCredential });
+    if (!$('#loginOverlay').classList.contains('hidden')) renderLoginBtn();
+  };
+  document.head.appendChild(s);
+}
+function renderLoginBtn() {
+  if (!googleReady) { initGoogle(); return; }   // скрипт ещё грузится — отрисуем по onload
+  const box = $('#loginBtnBox'); box.innerHTML = '';
+  google.accounts.id.renderButton(box, { theme: 'outline', size: 'large', text: 'signin_with' });
+}
+function openLogin(action) {
+  pendingAction = action || null;
+  $('#loginError').textContent = '';
+  $('#loginOverlay').classList.remove('hidden');
+  renderLoginBtn();
+}
+function closeLogin() { $('#loginOverlay').classList.add('hidden'); pendingAction = null; }
+
+async function onGoogleCredential(resp) {
+  // Шлём только ЯВНО введённый ник (не из localStorage — там мог остаться ник прошлого аккаунта).
+  const nick = ($('#nick').value || '').trim();
+  try {
+    const r = await fetch('/api/auth/google', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ credential: resp.credential, nick })
+    });
+    const data = await r.json();
+    if (!r.ok) { $('#loginError').textContent = data.error || 'Не удалось войти'; return; }
+    me = { loggedIn: true, nick: data.nick, email: data.email, avatar: data.avatar };
+    // аккаунт — источник правды: применяем его сохранённый ник везде
+    localStorage.setItem('sb_nick', data.nick);
+    $('#nick').value = data.nick;
+    $('#botNick').value = data.nick;
+    renderBadge();
+    const act = pendingAction;
+    closeLogin();
+    if (act) act();   // продолжить то, ради чего входили (онлайн/лобби)
+  } catch { $('#loginError').textContent = 'Сеть недоступна'; }
+}
+
+async function doLogout() {
+  try { await fetch('/api/auth/logout', { method: 'POST' }); } catch { /* всё равно сбросим локально */ }
+  try { if (googleReady) google.accounts.id.disableAutoSelect(); } catch { /* GSI не загружен */ }
+  localStorage.removeItem('sb_nick');   // чтобы следующий вход не унаследовал ник прошлого аккаунта
+  me = { loggedIn: false };
+  location.reload();
+}
+
+// онлайн/лобби требуют аккаунт; без Google (локалка) или уже вошёл — просто продолжаем
+function requireLogin(action) {
+  if (!GOOGLE_ID || me.loggedIn) return action();
+  openLogin(action);
+}
+
+$('#loginClose').addEventListener('click', closeLogin);
+$('#loginOverlay').addEventListener('click', e => { if (e.target.id === 'loginOverlay') closeLogin(); });
+
+// Конфиг сервера: палитра цветов + игровые режимы + (опц.) Google-вход.
 (async () => {
   try {
     const cfg = await (await fetch('/api/config')).json();
@@ -144,44 +242,12 @@ $('#hotseatBtn').addEventListener('click', async () => {
       const upd = () => { if (desc) desc.textContent = (modes.find(m => m.key === sel.value) || {}).desc || ''; };
       sel.addEventListener('change', upd); upd();
     });
-
-    if (!cfg.googleClientId) return;
-    $('#authBox').classList.remove('hidden');
-    if (localStorage.getItem('sb_session')) {
-      $('#authStatus').textContent = '✔ Вошёл через Google — придут письма, если тебя будут торопить';
-      $('#logoutBtn').classList.remove('hidden');
-      return;
-    }
-    const s = document.createElement('script');
-    s.src = 'https://accounts.google.com/gsi/client';
-    s.onload = () => {
-      google.accounts.id.initialize({
-        client_id: cfg.googleClientId,
-        callback: async resp => {
-          const r = await fetch('/api/auth/google', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ credential: resp.credential, nick: $('#nick').value.trim() })
-          });
-          const data = await r.json();
-          if (!r.ok) { $('#createError').textContent = data.error; return; }
-          localStorage.setItem('sb_session', data.session);
-          localStorage.setItem('sb_nick', data.nick);
-          $('#nick').value = data.nick;
-          $('#googleBtn').innerHTML = '';
-          $('#authStatus').textContent = `✔ ${data.email}`;
-          $('#logoutBtn').classList.remove('hidden');
-        }
-      });
-      google.accounts.id.renderButton($('#googleBtn'), { theme: 'outline', size: 'medium', text: 'signin_with' });
-    };
-    document.head.appendChild(s);
-  } catch { /* без Google тоже работаем */ }
+    // авторизация
+    GOOGLE_ID = cfg.googleClientId || null;
+    if (GOOGLE_ID) initGoogle();
+    await loadMe();
+  } catch { renderBadge(); /* без сервера-конфига всё равно показываем что есть */ }
 })();
-
-$('#logoutBtn').addEventListener('click', () => {
-  localStorage.removeItem('sb_session');
-  location.reload();
-});
 
 $('#createBtn').addEventListener('click', async () => {
   const nick = $('#nick').value.trim();
@@ -194,7 +260,6 @@ $('#createBtn').addEventListener('click', async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         token: getToken(),
-        session: localStorage.getItem('sb_session') || undefined,
         nick,
         color: onlineColor,
         maxPlayers: +$('#maxPlayers').value,
@@ -205,6 +270,8 @@ $('#createBtn').addEventListener('click', async () => {
       })
     });
     const data = await res.json();
+    // редкий случай: cookie протухла между открытием редактора и созданием — попросим войти и повторим
+    if (res.status === 401 && data.needAuth) { $('#createBtn').disabled = false; return openLogin(() => $('#createBtn').click()); }
     if (!res.ok) throw new Error(data.error || 'Ошибка сервера');
     location.href = '/game/' + data.gameId;
   } catch (e) {
@@ -226,7 +293,6 @@ $('#botBtn').addEventListener('click', async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         token: getToken(),
-        session: localStorage.getItem('sb_session') || undefined,
         mode: 'bot',
         nick,
         bots: +$('#botCount').value,

@@ -23,25 +23,36 @@ let finishShown = false;
 let lastEventSeq = -1;     // защита от повторного проигрывания анимаций
 
 // --- identity ---
+// Гостевой токен (для одиночки/хотсита). Аккаунт-сессия — в httpOnly-cookie (ставит сервер).
 function getToken() {
   let t = localStorage.getItem('sb_token');
   if (!t) { t = crypto.randomUUID(); localStorage.setItem('sb_token', t); }
   return t;
 }
 
+let GOOGLE_ID = null, googleReady = false, me = { loggedIn: false };
+let authRetried = false;   // одноразовый ре-коннект сокета после входа (старое рукопожатие было без cookie)
+let bootDone = false, socketUp = false;   // авто-join только когда известны и сокет, и конфиг+аккаунт
+let CHEATS_ON = false;   // тестовый режим (читы); приходит из /api/config — иначе «/» не открывает консоль
+
 const socket = io();
 
 function join(nick) {
-  socket.emit('join', {
-    gameId, token: getToken(),
-    session: localStorage.getItem('sb_session') || undefined,
-    nick
-  }, res => {
+  socket.emit('join', { gameId, token: getToken(), nick }, res => {
     if (!res.ok) {
-      $('#nickOverlay').classList.remove('hidden');
-      $('#nickError').textContent = res.error;
+      // Вошли, но это соединение установлено ДО входа — его рукопожатие без cookie сессии.
+      // Переподключаемся один раз: новое рукопожатие понесёт cookie, и сервер увидит аккаунт.
+      if (res.needAuth && me.loggedIn && !authRetried) {
+        authRetried = true;
+        if (socket.connected) socket.disconnect();
+        socket.connect();                       // обработчик 'connect' сам повторит join
+        return;
+      }
+      showJoin(!!res.needAuth);
+      if (!res.needAuth) $('#nickError').textContent = res.error || '';
       return;
     }
+    authRetried = false;
     myId = res.playerId;
     spectator = res.spectator;
     hotseatOwner = !!res.hotseatOwner;
@@ -49,49 +60,90 @@ function join(nick) {
   });
 }
 
-socket.on('connect', () => {
+// окно входа в баттл; needAuth=true → онлайн-игра требует аккаунт
+function showJoin(needAuth) {
+  $('#nickOverlay').classList.remove('hidden');
+  const showGoogle = !!GOOGLE_ID && !me.loggedIn;
+  $('#googleAuthBox').classList.toggle('hidden', !showGoogle);
+  // Жёстко прячем ручной ввод только когда вход нужен и мы ещё НЕ вошли — иначе не оставляем пустое окно.
+  const lockToAuth = needAuth && !me.loggedIn;
+  $('#nickInput').classList.toggle('hidden', lockToAuth);
+  $('#nickBtn').classList.toggle('hidden', lockToAuth);
+  $('#joinHint').textContent = !needAuth ? ''
+    : (me.loggedIn
+        ? 'Не удалось подтвердить сессию. Обнови страницу (⌘R / Ctrl+R) — должно пустить.'
+        : 'Это онлайн-баттл — войди через Google, чтобы присоединиться. Статистика привяжется к аккаунту.');
+  if (showGoogle) renderGoogleBtn();
+}
+
+socket.on('connect', () => { socketUp = true; tryAutoJoin(); });
+// Авто-вход в игру — только когда знаем сокет + конфиг + аккаунт (/api/auth/me). Иначе зашли бы под
+// устаревшим ником из localStorage и затёрли бы ник аккаунта на сервере (он апдейтит ник при join).
+function tryAutoJoin() {
+  if (!socketUp || !bootDone) return;
   const nick = localStorage.getItem('sb_nick');
   if (nick) join(nick);
-  else $('#nickOverlay').classList.remove('hidden');
-});
+  else showJoin(false);
+}
 
-let CHEATS_ON = false;   // тестовый режим (читы); приходит из /api/config — иначе «/» не открывает консоль
+function initGoogle() {
+  if (googleReady || !GOOGLE_ID) return;
+  const s = document.createElement('script');
+  s.src = 'https://accounts.google.com/gsi/client';
+  s.onload = () => {
+    googleReady = true;
+    google.accounts.id.initialize({ client_id: GOOGLE_ID, callback: onGoogleCredential });
+    if (!$('#nickOverlay').classList.contains('hidden')) renderGoogleBtn();
+  };
+  document.head.appendChild(s);
+}
+function renderGoogleBtn() {
+  if (!googleReady) { initGoogle(); return; }
+  const box = $('#googleBtn'); if (!box) return;
+  box.innerHTML = '';
+  google.accounts.id.renderButton(box, { theme: 'outline', size: 'large', text: 'signin_with' });
+}
+async function onGoogleCredential(resp) {
+  const nick = ($('#nickInput').value || '').trim();   // только явно введённый, не из localStorage
+  try {
+    const r = await fetch('/api/auth/google', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ credential: resp.credential, nick })
+    });
+    const data = await r.json();
+    if (!r.ok) { $('#nickError').textContent = data.error || 'Не удалось войти'; return; }
+    me = { loggedIn: true, nick: data.nick, email: data.email, avatar: data.avatar };
+    localStorage.setItem('sb_nick', data.nick);
+    // Сокет подключался ДО входа (рукопожатие без cookie). Переподключаемся, чтобы сервер увидел
+    // сессию; обработчик 'connect' сам сделает join — уже с cookie.
+    authRetried = false;
+    if (socket.connected) socket.disconnect();
+    socket.connect();
+  } catch { $('#nickError').textContent = 'Сеть недоступна'; }
+}
 
-// Кнопка Google в окне ника (если сервер настроен и гость ещё не вошёл).
+// Конфиг сервера (читы + Google) и кто я.
 (async () => {
   try {
     const cfg = await (await fetch('/api/config')).json();
-    CHEATS_ON = cfg.cheats === true;            // тестовый режим включается в конфиге сервера
+    CHEATS_ON = cfg.cheats === true;
+    GOOGLE_ID = cfg.googleClientId || null;
     if (state) render();                        // конфиг пришёл асинхронно — обновить (кнопка чата)
-    if (!cfg.googleClientId || localStorage.getItem('sb_session')) return;
-    const s = document.createElement('script');
-    s.src = 'https://accounts.google.com/gsi/client';
-    s.onload = () => {
-      $('#googleAuthBox').classList.remove('hidden');
-      google.accounts.id.initialize({
-        client_id: cfg.googleClientId,
-        callback: async resp => {
-          const r = await fetch('/api/auth/google', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ credential: resp.credential, nick: $('#nickInput').value.trim() })
-          });
-          const data = await r.json();
-          if (!r.ok) { $('#nickError').textContent = data.error; return; }
-          localStorage.setItem('sb_session', data.session);
-          localStorage.setItem('sb_nick', data.nick);
-          join(data.nick);
-        }
-      });
-      google.accounts.id.renderButton($('#googleBtn'), { theme: 'outline', size: 'large', text: 'signin_with' });
-    };
-    document.head.appendChild(s);
+    if (GOOGLE_ID) {
+      initGoogle();
+      try { me = await (await fetch('/api/auth/me')).json(); } catch { /* не вошёл */ }
+      if (me.loggedIn && me.nick) localStorage.setItem('sb_nick', me.nick); // аккаунт — источник правды
+    }
   } catch { /* без Google тоже работаем */ }
+  bootDone = true;
+  tryAutoJoin();   // теперь знаем аккаунт → заходим под его ником (или показываем окно входа)
 })();
 
 $('#nickBtn').addEventListener('click', () => {
   const nick = $('#nickInput').value.trim();
   if (!nick) { $('#nickError').textContent = 'Впиши ник!'; return; }
   localStorage.setItem('sb_nick', nick);
+  authRetried = false;                          // ручная попытка — даём свежий ре-коннект при нужде
   join(nick);
 });
 $('#nickInput').addEventListener('keydown', e => { if (e.key === 'Enter') $('#nickBtn').click(); });
@@ -2323,17 +2375,23 @@ $('#lobbySlots').addEventListener('click', e => {
     if (!res.ok) $('#lobbyError').textContent = res.error;
   });
 });
-// смена своего ника прямо в лобби — перезаходим с тем же токеном, ник обновится у всех
+// смена своего ника прямо в лобби/игре — принимаем по уводу фокуса (blur) или Enter. Сервер обновит
+// у игрока, запишет в БД и разошлёт всем. Шлём только если ник реально изменился (без лишних запросов).
+let lastSentNick = null;
 function saveLobbyNick() {
   const n = $('#lobbyNick').value.trim();
   if (!n) { $('#lobbyError').textContent = 'Ник не может быть пустым'; return; }
+  const cur = state?.players?.find(p => p.id === myId)?.nick;
+  if (n === cur || n === lastSentNick) return;   // ничего не поменялось — сервер не дёргаем
+  lastSentNick = n;
   localStorage.setItem('sb_nick', n);
+  if (me.loggedIn) me.nick = n;                  // синхронизируем локальное состояние аккаунта
   $('#lobbyError').textContent = '';
-  join(n);
-  $('#lobbyNick').blur();
+  socket.emit('setNick', { nick: n }, r => { if (!r.ok) { $('#lobbyError').textContent = r.error; lastSentNick = null; } });
 }
 $('#lobbyNickSave').addEventListener('click', saveLobbyNick);
-$('#lobbyNick').addEventListener('keydown', e => { if (e.key === 'Enter') saveLobbyNick(); });
+$('#lobbyNick').addEventListener('blur', saveLobbyNick);                       // увёл фокус — приняли
+$('#lobbyNick').addEventListener('keydown', e => { if (e.key === 'Enter') $('#lobbyNick').blur(); }); // Enter = снять фокус → blur сохранит
 $('#finishClose').addEventListener('click', () => $('#finishOverlay').classList.add('hidden'));
 
 // таймер хода

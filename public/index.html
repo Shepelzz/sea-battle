@@ -7,6 +7,8 @@
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
+  <!-- бейдж входа: кто залогинен + выход (показывается, если на сервере включён Google-вход) -->
+  <div id="authBadge" class="auth-badge hidden"></div>
   <div class="wrap">
     <h1>⚓ Морской бой <span class="muted" style="font-size:.45em">на листке в клетку</span></h1>
     <p class="muted">Тот самый улучшенный морской бой с задней парты: листок, линейка, карандаш — острова, флот и добыча. Теперь по интернету.</p>
@@ -36,11 +38,6 @@
         <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap">
           <input type="text" id="nick" maxlength="20" placeholder="Капитан..." style="flex:1; min-width:150px">
           <div class="swatches" id="onlineColors"></div>
-        </div>
-        <div id="authBox" class="hidden" style="margin-top:12px; display:flex; align-items:center; gap:12px; flex-wrap:wrap">
-          <div id="googleBtn"></div>
-          <span id="authStatus" class="muted"></span>
-          <button class="small hidden" id="logoutBtn" type="button">Выйти</button>
         </div>
         <div style="display:flex; gap:24px; flex-wrap:wrap">
           <div style="flex:1; min-width:140px">
@@ -146,6 +143,19 @@
         </table>
       </div>
       <p class="muted" style="margin-top:8px">Очки: победа — 3, второе место — 1.</p>
+    </div>
+  </div>
+
+  <!-- попап входа через Google (онлайн/лобби требуют аккаунт) -->
+  <div class="overlay hidden" id="loginOverlay">
+    <div class="note taped" style="max-width:360px">
+      <div style="display:flex; align-items:center; gap:10px">
+        <h2 style="margin:0; flex:1">🔑 Вход</h2>
+        <button class="small" id="loginClose">✖</button>
+      </div>
+      <p class="muted" style="margin:6px 0 14px">Войди через Google, чтобы играть онлайн — так статистика привязывается к твоему аккаунту, а не к устройству. В одиночные игры и «на одном устройстве» можно и без входа.</p>
+      <div id="loginBtnBox"></div>
+      <p class="error" id="loginError"></p>
     </div>
   </div>
 
