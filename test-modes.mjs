@@ -61,8 +61,8 @@ check('классика: у игрока START_GOLD', game('classic').players[0]
   const g = game('develop', 2);
   g.ships = []; g.map.lootIslands = []; g.map.fishZones = [];
   const b1 = g.map.bases[1];
-  const mine = put(g, 0, 'brig', 900, 700, 110);          // рядом с центром, в зоне keepout от базы p1
-  const foe = put(g, 1, 'brig', 940, 720, 110);           // в радиусе огня моего брига
+  const mine = put(g, 0, 'fregat', 900, 700, 170);        // фрегат: у него мортира (направление неважно для теста гейтов)
+  const foe = put(g, 1, 'brig', 940, 720, 110);           // в радиусе мортиры фрегата
   const pir = addPirate(g, 945, 690);
   g.turn.idx = 0; g.turn.round = 1;                        // МИР
 

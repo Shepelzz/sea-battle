@@ -54,16 +54,13 @@ socket.on('connect', () => {
   else $('#nickOverlay').classList.remove('hidden');
 });
 
-let BROADSIDE_ON = true; // приходит из /api/config; если залп выключен — прячем кнопку/вики/тутор
 let CHEATS_ON = false;   // тестовый режим (читы); приходит из /api/config — иначе «/» не открывает консоль
 
 // Кнопка Google в окне ника (если сервер настроен и гость ещё не вошёл).
 (async () => {
   try {
     const cfg = await (await fetch('/api/config')).json();
-    BROADSIDE_ON = cfg.broadside !== false;     // флаг залпа — до любых ранних выходов
     CHEATS_ON = cfg.cheats === true;            // тестовый режим включается в конфиге сервера
-    applyBroadsideFlag();
     if (state) render();                        // конфиг пришёл асинхронно — обновить (кнопка чата)
     if (!cfg.googleClientId || localStorage.getItem('sb_session')) return;
     const s = document.createElement('script');
@@ -110,6 +107,7 @@ socket.on('state', s => {
     lastEventSeq = s.eventSeq;
   }
   render();
+  if (selectedShipId) updateActionButtons(); // синхронизировать кнопки выбранного корабля с новым состоянием (борта залпа)
   maybeMovesToast(prev, s); // «осталось N ходов» после моего суб-хода (режим ход-тремя-судами)
   updatePeaceBanner(prev, s); // баннер мирного времени (режим «Развитие»)
   if (anyBurning()) ensureAnimLoop(); // низкое HP базы → запустить анимацию огня/дыма
@@ -175,7 +173,12 @@ function animTick(now) {
     if (p >= 1) continue; // приплыл — позиция из состояния, след дорисовывается
     const k = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2; // ease-in-out
     const pt = bezPt(e, k);
-    animPos.set(e.shipId, { x: pt.x, y: pt.y, ang: bezAng(e, k) });
+    // ориентация по касательной к кривой, но в конце плавно доворачиваем точно на КУРС ХОДА
+    // (= ship.heading на сервере, на нём же строятся борта залпа) — без рывка в момент прибытия
+    let ang = bezAng(e, k);
+    const settle = k < 0.7 ? 0 : (k - 0.7) / 0.3;
+    if (settle) ang += angNorm(Math.atan2(e.ty - e.fy, e.tx - e.fx) - ang) * settle;
+    animPos.set(e.shipId, { x: pt.x, y: pt.y, ang });
   }
   effects = effects.filter(e => now < e.start + e.dur);
   if (fogFade.length) fogFade = fogFade.filter(f => now - f.born < f.hold + f.fade); // отсев догоревших затуханий тумана
@@ -184,6 +187,9 @@ function animTick(now) {
   if (effects.length || anyBurning() || fogFade.length) requestAnimationFrame(animTick);
   else { rafOn = false; animPos.clear(); render(); } // анимация кончилась — финальный полный рендер (DOM тоже)
 }
+
+// геометрия залпа в анимации: разнос стволов вдоль борта и вынос наружу к фальшборту (мировые ед.)
+const BS_SPACING = 12, BS_BEAM = 9;
 
 function playEvents(events) {
   // туман войны: события вне зоны видимости не анимируем и не озвучиваем (иначе видно бой в тумане)
@@ -207,7 +213,7 @@ function playEvents(events) {
       const lead = Math.min(d * 0.45, FX.sail.lead);
       const cx = ev.fx + Math.cos(prevAng) * lead;
       const cy = ev.fy + Math.sin(prevAng) * lead;
-      headings.set(ev.shipId, Math.atan2(ev.ty - cy, ev.tx - cx)); // курс на финише (трекаем всегда)
+      headings.set(ev.shipId, straight); // курс на финише = НАПРАВЛЕНИЕ ХОДА (как ship.heading на сервере — чтоб борта залпа совпадали); трекаем всегда
       if (hidden(ev.fx, ev.fy) && hidden(ev.tx, ev.ty)) continue;
       if (!String(ev.shipId).startsWith('p')) Sound.playAt('move', delay); // пираты — без плеска
       addEffect({
@@ -234,33 +240,65 @@ function playEvents(events) {
       addEffect({ kind: 'boom', x: ev.tx, y: ev.ty, big: false, dur: FX.boom.durSmall, delay: impact });
       if (ev.dmg) addEffect({ kind: 'dmg', x: ev.tx, y: ev.ty, amount: ev.dmg, dur: 1300, delay: impact });
       delay += FX.shell.dur + 140;
-    } else if (ev.type === 'broadside' && ev.auto) {
-      if (hidden(ev.fx, ev.fy)) continue;
-      // авианосец: очередь трассеров по ВСЕМ целям, волнами (звук автомата на каждую волну)
-      const waves = ev.volley || 5, gap = 85, TR = 150;
-      for (let w = 0; w < waves; w++) {
-        const wd = delay + w * gap;
-        Sound.playAt('autoshot', wd);
-        for (const h of ev.hits) {
-          addEffect({ kind: 'tracer', fx: ev.fx, fy: ev.fy, tx: h.tx, ty: h.ty, dur: TR, delay: wd });
-          addEffect({ kind: 'spark', x: h.tx, y: h.ty, dur: 220, delay: wd + TR - 8 });
+    } else if (ev.type === 'volley') {
+      // 💥 БОРТОВОЙ ЗАЛП: стволы борта бьют ОЧЕРЕДЬЮ со случайными паузами (звук настоящего залпа);
+      // быстрые ПРЯМЫЕ трассеры от каждого ствола к целям + вспышки и пороховые дымки у стволов.
+      if (hidden(ev.fx, ev.fy) && ev.hits.every(h => hidden(h.tx, h.ty))) continue;
+      const N = Math.max(1, ev.cannons || 1);
+      const TR = 130;                               // полёт трассера, мс
+      // позиции стволов: вдоль борта, вынесены наружу к фальшборту (в сторону огня ev.sideDir)
+      const muzzles = [];
+      if (ev.full) {                                // чит-авианосец: круговой залп — стволы кольцом
+        for (let i = 0; i < N; i++) {
+          const a = (i / N) * Math.PI * 2;
+          muzzles.push({ x: ev.fx + Math.cos(a) * BS_BEAM, y: ev.fy + Math.sin(a) * BS_BEAM, dir: a });
+        }
+      } else {
+        const ox = Math.cos(ev.sideDir), oy = Math.sin(ev.sideDir);                          // наружу
+        const ax = Math.cos(ev.sideDir - Math.PI / 2), ay = Math.sin(ev.sideDir - Math.PI / 2); // вдоль корпуса
+        for (let i = 0; i < N; i++) {
+          const off = (i - (N - 1) / 2) * BS_SPACING;
+          muzzles.push({ x: ev.fx + ax * off + ox * BS_BEAM, y: ev.fy + ay * off + oy * BS_BEAM, dir: ev.sideDir });
         }
       }
-      for (const h of ev.hits) // суммарный урон по цели — один раз
-        addEffect({ kind: 'dmg', x: h.tx, y: h.ty, amount: h.dmg, dur: 1100, delay: delay + TR });
-      delay += waves * gap + 220;
-    } else if (ev.type === 'broadside') {
-      if (hidden(ev.fx, ev.fy)) continue;
-      // залп: один звук, все ядра летят разом, взрывы и красные цифры вместе
-      Sound.playAt('shot', delay);
-      const impact = delay + FX.shell.dur - 20;
-      Sound.playAt('hit', impact);
+      // распределяем стволы по целям (больше урон цели → больше стволов в неё)
+      const totalDmg = ev.hits.reduce((s, h) => s + h.dmg, 0) || 1;
+      const shots = [];
+      let gi = 0;
       for (const h of ev.hits) {
-        addEffect({ kind: 'shell', fx: ev.fx, fy: ev.fy, tx: h.tx, ty: h.ty, dur: FX.shell.dur, delay });
+        const cnt = Math.max(1, Math.min(N, Math.round(N * h.dmg / totalDmg)));
+        const tgtDir = Math.atan2(h.ty - ev.fy, h.tx - ev.fx);
+        for (let j = 0; j < cnt; j++) {
+          const m = ev.full // круговой залп: ствол, смотрящий ближе к цели; обычный борт — стволы по кругу
+            ? muzzles.reduce((b, mu) => Math.abs(angNorm(mu.dir - tgtDir)) < Math.abs(angNorm(b.dir - tgtDir)) ? mu : b, muzzles[0])
+            : muzzles[gi % N];
+          shots.push({ h, m }); gi++;
+        }
+      }
+      // ОЧЕРЕДЬ: каждый ствол стреляет чуть позже предыдущего (случайная пауза) — артиллерийский раскат
+      let t = delay;
+      const impactAt = new Map();                   // первый прилёт по каждой цели → один бум/«−N»
+      for (let k = 0; k < shots.length; k++) {
+        const { h, m } = shots[k];
+        if (k > 0) t += 35 + Math.random() * 55;     // небольшая случайная задержка между стволами, мс
+        Sound.playAt('shot', t);
+        addEffect({ kind: 'tracer', fx: m.x, fy: m.y, tx: h.tx, ty: h.ty, dur: TR, delay: t });
+        addEffect({
+          kind: 'muzzle', x: m.x, y: m.y, dir: m.dir, dur: 640, delay: t,
+          puffs: Array.from({ length: 2 }, () => ({
+            a: (Math.random() - 0.5) * 0.55, spd: 20 + Math.random() * 16,
+            r0: 3 + Math.random() * 2, r1: 11 + Math.random() * 6, t0: Math.random() * 0.12
+          }))
+        });
+        const impact = t + TR - 6;
+        if (!impactAt.has(h) || impact < impactAt.get(h)) impactAt.set(h, impact);
+      }
+      for (const [h, impact] of impactAt) {          // по каждой цели — один прилёт (бум + звук + «−N»)
+        Sound.playAt('hit', impact);
         addEffect({ kind: 'boom', x: h.tx, y: h.ty, big: false, dur: FX.boom.durSmall, delay: impact });
         addEffect({ kind: 'dmg', x: h.tx, y: h.ty, amount: h.dmg, dur: 1300, delay: impact });
       }
-      delay += FX.shell.dur + 220;
+      delay = t + TR + 220;                          // конец очереди + полёт последнего + хвост
     } else if (ev.type === 'repair') {
       // ремонт: жёлтый «луч» от ремонтника к цели + всплывающее зелёное «+N»
       if (hidden(ev.fx, ev.fy) && hidden(ev.tx, ev.ty)) continue;
@@ -475,6 +513,31 @@ function drawEffects(under = false) {
       ctx.fillStyle = '#2e9e4f';
       ctx.strokeText(`+${e.amount}`, dx, dy);
       ctx.fillText(`+${e.amount}`, dx, dy);
+      ctx.globalAlpha = 1;
+    } else if (e.kind === 'muzzle') {
+      // дымок у ствола: яркая дульная вспышка → серое пороховое облачко, дрейфует наружу и тает
+      const k = view.scale, ox = Math.cos(e.dir), oy = Math.sin(e.dir);
+      if (p < 0.22) { // вспышка у дула (первая пятая часть жизни)
+        const fp = p / 0.22, fr = (6 + 7 * fp) * k;
+        const fxs = sx(e.x + ox * 3), fys = sy(e.y + oy * 3);
+        const g = ctx.createRadialGradient(fxs, fys, 0, fxs, fys, fr);
+        g.addColorStop(0, `rgba(255,247,216,${1 - fp})`);
+        g.addColorStop(0.5, `rgba(255,200,80,${0.8 * (1 - fp)})`);
+        g.addColorStop(1, 'rgba(255,150,40,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.arc(fxs, fys, fr, 0, Math.PI * 2); ctx.fill();
+      }
+      for (const pf of e.puffs) { // пороховые клубы — растут и дрейфуют наружу
+        const sp = Math.max(0, (p - pf.t0) / (1 - pf.t0));
+        if (sp <= 0) continue;
+        const da = e.dir + pf.a;
+        const cx = sx(e.x + Math.cos(da) * pf.spd * sp);
+        const cy = sy(e.y + Math.sin(da) * pf.spd * sp);
+        const r = (pf.r0 + (pf.r1 - pf.r0) * sp) * k;
+        ctx.globalAlpha = (sp < 0.2 ? sp / 0.2 : (1 - sp)) * 0.5;
+        ctx.fillStyle = '#cfd3d9';
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+      }
       ctx.globalAlpha = 1;
     }
   }
@@ -1094,8 +1157,10 @@ function render(canvasOnly) {
     if (st.repairer) {
       // ремонтник: жёлтый радиус ремонта (чуть меньше хода), в режиме «Чинить» и при выборе
       if (mode === 'repair' || mode === 'idle') dashedCircle(sel.x, sel.y, st.fireRange, 'rgba(244,194,10,.85)', 1.6);
+    } else if (mode === 'broadside' && canBroadside(sel)) {
+      drawBroadsideSectors(sel);                 // 💥 сектора-трапеции бортов (наводимый — красный)
     } else if (mode === 'attack' || mode === 'idle') {
-      dashedCircle(sel.x, sel.y, st.fireRange, 'rgba(192,57,43,.75)', 1.6);
+      dashedCircle(sel.x, sel.y, st.fireRange, 'rgba(192,57,43,.75)', 1.6); // радиус мортиры/подсказка
     }
   }
 
@@ -1158,6 +1223,9 @@ function render(canvasOnly) {
         dashedCircle(b.x, b.y, b.radius + 10, '#c0392b', 2);
     });
   }
+
+  // цели бортового залпа — вражеские суда в наводимом секторе (красные кольца)
+  if (sel && mode === 'broadside') drawBroadsideTargets(sel);
 
   // цели в режиме ремонта — свои ПОДБИТЫЕ корабли в радиусе (жёлтым)
   if (sel && mode === 'repair') {
@@ -1226,11 +1294,15 @@ function render(canvasOnly) {
   updateMoveHint();
 }
 
-// мелкая ненавязчивая подпись под панелью действий (тач, режим «Плыть»)
+// мелкая ненавязчивая подпись под панелью действий (тач, режимы «Плыть» / «Залп»)
 function updateMoveHint() {
   const el = $('#moveHint');
   if (!el) return;
-  el.classList.toggle('hidden', !(IS_COARSE && mode === 'move' && selectedShipId));
+  const showMove = IS_COARSE && mode === 'move' && selectedShipId;
+  const showBroad = IS_COARSE && mode === 'broadside' && selectedShipId;
+  if (showBroad) el.textContent = 'проведи от корабля в сторону борта';
+  else if (showMove) el.textContent = 'потяни корабль, чтобы выбрать курс';
+  el.classList.toggle('hidden', !(showMove || showBroad));
 }
 
 // демо: «палец тянет корабль» — цикл, пока игрок не сходит хоть раз
@@ -1609,6 +1681,16 @@ canvas.addEventListener('pointerdown', e => {
   pointers.set(e.pointerId, evPos(e));
   if (pointers.size === 1) {
     const p = evPos(e);
+    // 💥 ЗАЛП на тач: палец на выбранном корабле → тянем прицел борта (сектор/кольца следуют за пальцем);
+    // отпустил — залп в ту сторону. Аналог drag-aim хода, но без дистанции (важна только сторона).
+    if (e.pointerType === 'touch' && state && isMyTurn() && mode === 'broadside') {
+      const bsel = selectedShipId && state.ships.find(s => s.id === selectedShipId);
+      if (bsel && canBroadside(bsel) && firedSides(bsel.id).length < 2 &&
+          dist(p.x, p.y, sx(bsel.x), sy(bsel.y)) <= AIM_GRAB_PX) {
+        aim = { sel: bsel, broadside: true, armed: false, startX: p.x, startY: p.y };
+        return;
+      }
+    }
     // ТАЧ-ПРИЦЕЛ: палец лёг на свой корабль → тянем луч с крестиком, а не панораму.
     // В режиме «Плыть» по выбранному кораблю целимся сразу; иначе по любому своему кораблю
     // «взводим» — тап просто выберет, а перетаскивание авто-активирует «Плыть». Мышь — как раньше.
@@ -1662,6 +1744,15 @@ canvas.addEventListener('pointermove', e => {
   if (pointers.has(e.pointerId)) pointers.set(e.pointerId, p);
 
   if (aim && pointers.size === 1) { // тянем тач-прицел
+    if (aim.broadside) {            // 💥 наведение борта: hoverPt едет за пальцем, сектор/кольца следуют
+      if (!aim.armed) {
+        if (Math.hypot(p.x - aim.startX, p.y - aim.startY) <= 12) return; // ещё не потянул
+        aim.armed = true;
+      }
+      hoverPt = toMap(p.x, p.y);
+      render();
+      return;
+    }
     if (!aim.armed) {
       if (Math.hypot(p.x - aim.startX, p.y - aim.startY) <= 12) return; // ещё не потянул
       aim.armed = true; selectedShipId = aim.sel.id; mode = 'move'; moveDemo = null; // авто-«Плыть»
@@ -1701,7 +1792,7 @@ canvas.addEventListener('pointermove', e => {
       s.owner === myIdx() && shipActed(s.id) && dist(p.x, p.y, sx(s.x), sy(s.y)) <= 28);
     if (overActed) showShipNote(sx(overActed.x), sy(overActed.y) - 16, '⚓ Уже ходил');
     else hideShipNote();
-    if (mode === 'move') render();
+    if (mode === 'move' || mode === 'broadside') render(); // обновляем «линейку» хода / прицел залпа за курсором
   }
 });
 
@@ -1709,10 +1800,16 @@ function endPointer(e) {
   // завершение тач-прицела: отпустил палец — корабль плывёт к крестику
   if (aim && e.type === 'pointerup') {
     const a = aim;
+    const finger = hoverPt;        // последняя точка наведения пальцем (для залпа)
     aim = null; hoverPt = null;
     pointers.delete(e.pointerId);
     if (pointers.size === 0) { drag = null; pinchDist = 0; }
-    if (!a.armed) { handleTap({ x: a.startX, y: a.startY }, true); return; } // не потянул → выбор корабля
+    if (!a.armed) { handleTap({ x: a.startX, y: a.startY }, true); return; } // не потянул → выбор/подсказка
+    if (a.broadside) {             // 💥 залп бортом в ту сторону, куда тянули
+      if (finger) sendAction({ type: 'broadside', shipId: a.sel.id, tx: Math.round(finger.x), ty: Math.round(finger.y) });
+      else render();
+      return;
+    }
     if (a.clamped) { errToast('🚫 Слишком далеко — точка вне круга хода'); return; } // вне радиуса — без хода
     if (a.dest && dist(a.sel.x, a.sel.y, a.dest.x, a.dest.y) > 4) {
       sendAction({ type: 'move', shipId: a.sel.id, x: Math.round(a.dest.x), y: Math.round(a.dest.y) });
@@ -1760,6 +1857,17 @@ function handleTap(pos, isTouch) {
     return;
   }
 
+  if (mode === 'broadside' && selectedShipId) {
+    // залп в сторону точки прицела (сервер сам определит борт и сектор)
+    const bsel = state.ships.find(s => s.id === selectedShipId);
+    if (bsel && dist(pt.x, pt.y, bsel.x, bsel.y) < 24) { // тык в сам корабль — сторона не ясна
+      if (isTouch) errToast('Проведи от корабля в сторону борта'); else errToast('Укажи сторону — кликни в стороне от корабля');
+      return;
+    }
+    sendAction({ type: 'broadside', shipId: selectedShipId, tx: pt.x, ty: pt.y });
+    return;
+  }
+
   if (mode === 'attack' && selectedShipId) {
     if (clickedShip && clickedShip.owner !== myIdx()) {
       sendAction({ type: 'attack', shipId: selectedShipId, targetType: 'ship', targetId: clickedShip.id });
@@ -1796,14 +1904,7 @@ function handleTap(pos, isTouch) {
     $('#shipActions').classList.remove('hidden');
     positionActionBar(clickedShip); // панель — на противоположной кораблю половине экрана
     $('#shipActionsTitle').textContent = ST(clickedShip.type).icon + ' ' + ST(clickedShip.type).name;
-    // ремонтник вместо «Стрелять» показывает «Чинить»
-    const repairer = !!ST(clickedShip.type).repairer;
-    $('#btnFire').classList.toggle('hidden', repairer);
-    $('#btnRepair').classList.toggle('hidden', !repairer);
-    // «Собрать» — если корабль дотягивается до клада (рыбалка теперь капает сама)
-    $('#btnCollectHere').classList.toggle('hidden', !canShipCollect(clickedShip));
-    // «Залп» — тяжёлый корабль и в радиусе 2+ вражеских кораблей
-    $('#btnBroadside').classList.toggle('hidden', !canBroadside(clickedShip));
+    updateActionButtons();
     render();
   } else {
     deselect();
@@ -1825,23 +1926,72 @@ function canShipCollect(ship) {
     dist(ship.x, ship.y, i.x, i.y) <= i.radius + (state.lootReach || 55));
 }
 
-// Залп выключен в конфиге — прячем его карточку в вики (тутор-шаг фильтруется при сборке шагов).
-function applyBroadsideFlag() {
-  if (BROADSIDE_ON) return;
-  document.getElementById('wikiBroadside')?.classList.add('hidden');
+// у корабля есть бортовые пушки (залп)
+function canBroadside(ship) { return !!(state.broadside?.cannons?.[ship.type]); }
+// мортира — у фрегата/линкора (+ чит-авианосец)
+function canMortar(ship) { return (state.broadside?.mortarShips || []).includes(ship.type) || !!ST(ship.type).cheat; }
+const broadsideHalfArc = () => state.broadside?.halfArc || 0.8; // ~46°: борт средней ширины
+// какие борта корабль уже отстрелял в этом ходу
+const firedSides = id => (state.turn?.broadsideSides || {})[id] || [];
+
+// Кнопки выбранного корабля: видимость по способностям + блокировка по экономике хода.
+// Начал залп (один борт) → ход/мортира/сбор серые, но залп активен для 2-го борта. Оба борта/ход/мортира → корабль отстрелялся.
+function updateActionButtons() {
+  const sel = selectedShipId && state?.ships.find(s => s.id === selectedShipId);
+  if (!sel || sel.owner !== myIdx()) return;
+  if (shipActed(sel.id)) { deselect(); return; } // полностью отстрелялся — снять выбор
+  const st = ST(sel.type);
+  const fired = firedSides(sel.id), committed = fired.length > 0;
+  $('#btnFire').classList.toggle('hidden', !canMortar(sel));     // 🎯 Мортира — фрегат/линкор
+  $('#btnRepair').classList.toggle('hidden', !st.repairer);      // 🛟 Чинить
+  $('#btnBroadside').classList.toggle('hidden', !canBroadside(sel)); // 💥 Залп
+  $('#btnCollectHere').classList.toggle('hidden', !canShipCollect(sel));
+  $('#btnMove').disabled = committed;
+  $('#btnFire').disabled = committed;
+  $('#btnRepair').disabled = committed;
+  $('#btnCollectHere').disabled = committed;
+  $('#btnBroadside').disabled = fired.length >= 2;               // оба борта отстреляны
 }
 
-function canBroadside(ship) {
-  const st = ST(ship.type);
-  if (!st.broadside) return false;
-  const cheat = !!st.cheat;                    // авианосец бьёт залпом, даже если он выключен в конфиге
-  if (!BROADSIDE_ON && !cheat) return false;
-  const me = myIdx();
-  const inRange = state.ships.filter(t =>
-    t.owner !== me && !(t.owner >= 0 && !state.players[t.owner]?.alive) &&
-    (cheat || t.owner === -1 || !ST(t.type).fishing) &&  // авианосец валит и баркасы
-    dist(ship.x, ship.y, t.x, t.y) <= st.fireRange);
-  return inRange.length >= (cheat ? 1 : 2);     // авианосцу хватит одной цели
+// ─── Прицел бортового залпа ───
+const angNorm = a => Math.atan2(Math.sin(a), Math.cos(a));
+function broadsideDirs(sel) {
+  const h = currentHeading(sel);
+  return { port: angNorm(h - Math.PI / 2), starboard: angNorm(h + Math.PI / 2) };
+}
+// куда целится мышь (hoverPt) → ближний борт (или null, если нет наведения)
+function broadsideAimedSide(sel) {
+  if (!hoverPt) return null;
+  const a = Math.atan2(hoverPt.y - sel.y, hoverPt.x - sel.x);
+  const d = broadsideDirs(sel);
+  return Math.abs(angNorm(a - d.port)) <= Math.abs(angNorm(a - d.starboard)) ? 'port' : 'starboard';
+}
+// сектор-трапеция борта (заливка) — под кораблями
+function drawBroadsideSectors(sel) {
+  const dirs = broadsideDirs(sel), r = ST(sel.type).fireRange * view.scale, ha = broadsideHalfArc();
+  const fired = firedSides(sel.id), aimed = broadsideAimedSide(sel);
+  const X = sx(sel.x), Y = sy(sel.y);
+  for (const name of ['port', 'starboard']) {
+    if (fired.includes(name)) continue;            // этот борт уже отстрелял
+    const dir = dirs[name], isAim = aimed === name;
+    ctx.beginPath(); ctx.moveTo(X, Y); ctx.arc(X, Y, r, dir - ha, dir + ha); ctx.closePath();
+    ctx.fillStyle = isAim ? 'rgba(192,57,43,0.20)' : 'rgba(110,116,124,0.13)'; ctx.fill();
+    ctx.strokeStyle = isAim ? 'rgba(192,57,43,0.85)' : 'rgba(110,116,124,0.55)';
+    ctx.lineWidth = 1.6; ctx.setLineDash([4, 3]); ctx.stroke(); ctx.setLineDash([]);
+  }
+}
+// красные кольца на вражеских судах в наводимом секторе — поверх кораблей
+function drawBroadsideTargets(sel) {
+  const aimed = broadsideAimedSide(sel);
+  if (!aimed) return;
+  const dir = broadsideDirs(sel)[aimed], r = ST(sel.type).fireRange, ha = broadsideHalfArc();
+  for (const s of state.ships) {
+    if (s.owner === sel.owner) continue;
+    if (s.owner >= 0 && state.players[s.owner] && !state.players[s.owner].alive) continue;
+    if (dist(sel.x, sel.y, s.x, s.y) > r) continue;
+    if (Math.abs(angNorm(Math.atan2(s.y - sel.y, s.x - sel.x) - dir)) > ha) continue;
+    dashedCircle(s.x, s.y, 22, '#c0392b', 2);
+  }
 }
 
 $('#btnMove').addEventListener('click', () => {
@@ -1849,9 +1999,9 @@ $('#btnMove').addEventListener('click', () => {
   startMoveDemo();   // на сенсоре до первого хода — показать демо-жест (потом не докучаем)
   render();
 });
-$('#btnFire').addEventListener('click', () => { mode = 'attack'; Sound.play('click'); render(); });
+$('#btnFire').addEventListener('click', () => { mode = 'attack'; Sound.play('click'); render(); });   // 🎯 Мортира
 $('#btnRepair').addEventListener('click', () => { mode = 'repair'; Sound.play('click'); render(); });
-$('#btnBroadside').addEventListener('click', () => { if (selectedShipId) sendAction({ type: 'broadside', shipId: selectedShipId }); });
+$('#btnBroadside').addEventListener('click', () => { mode = 'broadside'; Sound.play('click'); render(); }); // 💥 Залп — режим наведения
 $('#btnCancel').addEventListener('click', deselect);
 
 // звук и сворачивание панели
@@ -1866,14 +2016,16 @@ function openInfo() {
   if (state?.shipTypes) {
     $('#infoFleet').innerHTML = Object.entries(state.shipTypes)
       .filter(([, st]) => !st.npc && !st.cheat)
-      .map(([, st]) => {
+      .map(([type, st]) => {
+        const cannons = state.broadside?.cannons?.[type];
+        const isMortar = (state.broadside?.mortarShips || []).includes(type);
         const extra = [
+          isMortar ? `🎯 мортира ${st.dmg}` : '',
+          st.portBonus ? `🏰 мортира по порту ×${st.portBonus}` : '',
           st.fishing ? `🐟 +${st.fishing}` : '',
-          st.healFrac ? `🛟 +${Math.round(st.healFrac * 100)}% HP` : '',
-          st.portBonus ? `🏰 ×${st.portBonus}` : '',
-          (st.broadside && BROADSIDE_ON) ? '💥 залп' : ''
+          st.healFrac ? `🛟 +${Math.round(st.healFrac * 100)}% HP` : ''
         ].filter(Boolean).join(' · ');
-        const power = st.dmg ? `⚔️${st.dmg}` : '🛟 ремонт';
+        const power = st.repairer ? '🛟 ремонт' : (cannons ? `💥 залп ×${cannons}` : `⚔️${st.dmg}`);
         return `<div class="info-fleet-row">
           <span class="nm">${st.icon} ${st.name}</span>
           <span class="st">${st.price}з · ❤️${st.hp} · ${power} · 🎯${(st.fireRange / 40).toFixed(1)} · 🧭${(st.move / 40).toFixed(1)}${extra ? ' · ' + extra : ''}</span>
@@ -2233,7 +2385,7 @@ const Tutorial = (() => {
     const me = state.players[state.players.findIndex(p => p.id === myId)];
     const myBase = state.map.bases[myIdx()] || state.map.bases[0];
     const myShip = state.ships.find(s => s.owner === myIdx());
-    const heavyShip = state.ships.find(s => s.owner === myIdx() && ST(s.type).broadside) || myShip;
+    const heavyShip = state.ships.find(s => s.owner === myIdx() && canBroadside(s)) || myShip;
     const enemyBase = state.map.bases.find((b, i) => i !== myIdx());
     const loot = state.map.lootIslands.find(i => !i.looted);
     const fish = state.map.fishZones[0];
@@ -2247,10 +2399,10 @@ const Tutorial = (() => {
           ? 'Ходите <b>по очереди</b>. За ход — до <b>трёх действий</b>: двигай и стреляй <b>разными</b> кораблями (одним — раз за ход), собирай добычу, покупай в верфи. Готов раньше — жми <b>«✅ Завершить ход»</b>.'
           : 'Ходите <b>по очереди</b>. За ход — только <b>одно</b> действие: поплыть, выстрелить, собрать добычу или сходить в верфь.',
         target: { sel: '#turnBanner' } },
-      { text: 'Нажми на свой корабль → выбери <b>«Плыть»</b> (в пределах круга дальности) или <b>«Стрелять»</b> по врагу в радиусе огня.',
-        target: myShip ? { world: { x: myShip.x, y: myShip.y, r: 26 } } : null },
-      ...(BROADSIDE_ON ? [{ text: 'Фрегат и линкор умеют <b>💥 Залп</b>: бьют по <b>всем вражеским боевым кораблям</b> в радиусе разом (на 20% слабее). Незаменимо против стаи. Рыбацкие баркасы залп не трогает.',
-        target: heavyShip ? { world: { x: heavyShip.x, y: heavyShip.y, r: 26 } } : null }] : []),
+      { text: 'Нажми на свой корабль → <b>«Плыть»</b> (в пределах круга) или <b>«💥 Залп»</b>. Главная атака — <b>бортовой залп</b>: бьёт только В БОРТ (повернись бортом к врагу!), наводишь как ход. Чем ближе цель к борту — тем больнее.',
+        target: heavyShip ? { world: { x: heavyShip.x, y: heavyShip.y, r: 26 } } : null },
+      { text: 'За борт стреляешь раз в ход, но можно дать залп <b>и левым, и правым</b> бортом (это одно действие). А <b>фрегат и линкор</b> вдобавок имеют <b>🎯 Мортиру</b> — прицельный выстрел по одной цели, в т.ч. по <b>порту</b> (осада).',
+        target: heavyShip ? { world: { x: heavyShip.x, y: heavyShip.y, r: 26 } } : null },
       { text: 'В <b>Верфи</b> покупаешь корабли за золото 💰: шустрые шхуны и бриги, мощные фрегаты, рыбацкие баркасы — и <b>линкор</b>, который бьёт по портам сильнее всех 🏰.',
         target: { sel: '#btnShop' } },
       loot

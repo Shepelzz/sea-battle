@@ -3,7 +3,8 @@
 // ни одной цифры. Если правишь баланс намеренно — обнови ожидания здесь же.
 import {
   SHIP_TYPES, START_FLEET, START_GOLD, PORT_HP, PORT_RETURN_DMG, PORT_INCOME,
-  PORT_DMG_TO_SHIPS, SHIP_COLLISION_DIST, LOOT_REACH, BROADSIDE_MULT,
+  PORT_DMG_TO_SHIPS, SHIP_COLLISION_DIST, LOOT_REACH,
+  BROADSIDE_CANNONS, BROADSIDE_CANNON_DMG, BROADSIDE_PORT_MULT, MORTAR_SHIPS,
   FISH_ZONE_CAP, FISH_ZONE_CAP_BIG, FISH_BIG_RADIUS, fishZoneCap, FISH_INCOME,
   PIRATE, PIRATE_DESPAWN_CHANCE, PIRATE_SPAWN_CHANCE, PIRATE_MOVE_CHANCE,
   PIRATE_BOSS_CHANCE, PIRATE_BOSS_HP, PIRATE_REVENGE_SHOT, PIRATE_FLEE_CHANCE, PIRATE_CALM_CHANCE
@@ -21,10 +22,10 @@ const FLEET = {
   barkas:  { name: 'Рыбацкий баркас', price: 60,  hp: 30,  dmg: 5,  fireRange: 70,  move: 180, fishing: 5, broadside: undefined, portBonus: undefined },
   shkhuna: { name: 'Шхуна',           price: 110, hp: 60,  dmg: 15, fireRange: 110, move: 170, fishing: 0, broadside: undefined, portBonus: undefined },
   brig:    { name: 'Бриг',            price: 220, hp: 110, dmg: 28, fireRange: 140, move: 135, fishing: 0, broadside: undefined, portBonus: undefined },
-  fregat:  { name: 'Фрегат',          price: 380, hp: 170, dmg: 42, fireRange: 165, move: 110, fishing: 0, broadside: true,      portBonus: undefined },
-  linkor:  { name: 'Линкор',          price: 500, hp: 280, dmg: 65, fireRange: 190, move: 90,  fishing: 0, broadside: true,      portBonus: 1.5 },
+  fregat:  { name: 'Фрегат',          price: 380, hp: 170, dmg: 42, fireRange: 165, move: 110, fishing: 0, broadside: undefined, portBonus: undefined },
+  linkor:  { name: 'Линкор',          price: 500, hp: 280, dmg: 65, fireRange: 190, move: 90,  fishing: 0, broadside: undefined, portBonus: 1.5 },
   repair:  { name: 'Ремонтник',       price: 280, hp: 130, dmg: 0,  fireRange: 115, move: 135, fishing: 0, healFrac: 0.15, repairer: true, broadside: undefined, portBonus: undefined },
-  carrier: { name: 'Авианосец',       price: 0,   hp: 1400,dmg: 65, fireRange: 320, move: 280, fishing: 0, volley: 5, cheat: true, broadside: true } // чит-корабль (тестовый режим)
+  carrier: { name: 'Авианосец',       price: 0,   hp: 1400,dmg: 65, fireRange: 320, move: 280, fishing: 0, volley: 5, cheat: true } // чит-корабль (тестовый режим)
 };
 eq('набор классов', Object.keys(SHIP_TYPES).sort(), Object.keys(FLEET).sort());
 for (const [type, want] of Object.entries(FLEET)) {
@@ -33,7 +34,10 @@ for (const [type, want] of Object.entries(FLEET)) {
 }
 
 // === Бой / экономика / порт ===
-eq('BROADSIDE_MULT', BROADSIDE_MULT, 0.8);
+eq('BROADSIDE_CANNONS', BROADSIDE_CANNONS, { shkhuna: 2, brig: 3, fregat: 4, linkor: 4, carrier: 6 });
+eq('BROADSIDE_CANNON_DMG', BROADSIDE_CANNON_DMG, 14);
+eq('BROADSIDE_PORT_MULT', BROADSIDE_PORT_MULT, 0.12);
+eq('MORTAR_SHIPS', MORTAR_SHIPS, ['fregat', 'linkor']);
 eq('FISH_INCOME', FISH_INCOME, 5);
 eq('barkas.fishing === FISH_INCOME', SHIP_TYPES.barkas.fishing, FISH_INCOME);
 eq('FISH_ZONE_CAP', FISH_ZONE_CAP, 4);

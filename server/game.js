@@ -4,7 +4,8 @@ import {
   SHIP_TYPES, START_FLEET, START_GOLD, PORT_HP, PORT_RETURN_DMG, PORT_INCOME,
   PORT_RETURN_LINKOR_MULT, PORT_NO_SHIP_INCOME_MULT,
   SHIP_COLLISION_DIST, LOOT_REACH, WRECK_LOOT_FRAC, TRIBUTE_FRAC,
-  BROADSIDE_MULT, BROADSIDE_ENABLED, FISH_ZONE_CAP, movesBudget, SHIP_ACTIONS, CHEATS_ENABLED,
+  BROADSIDE_CANNONS, BROADSIDE_CANNON_DMG, BROADSIDE_HALF_ARC, BROADSIDE_FALLOFF_MIN, BROADSIDE_PORT_MULT, MORTAR_SHIPS,
+  FISH_ZONE_CAP, movesBudget, SHIP_ACTIONS, CHEATS_ENABLED,
   modeStartGold, modeOf, isPeace, modePeaceRounds,
   MAP_EDGE_MARGIN, ISLAND_BLOCK_GAP, SPAWN_FAN_N, SPAWN_FAN_RINGS, SPAWN_FAN_R0, SPAWN_FAN_RING_STEP,
   PIRATE, PIRATE_MAX, PIRATE_ENGAGE_MULT, PIRATE_MIN_LIFETIME, PIRATE_STEP_MIN,
@@ -327,6 +328,7 @@ function advanceTurn(game) {
   game.turn.nudged = false;
   game.turn.moves = 0;        // счётчик ходов кораблями этого хода (режим «ход тремя судами»)
   game.turn.actedShips = [];  // какие корабли уже сходили в этом ходу
+  game.turn.broadsideSides = {}; // какими бортами уже дан залп в этом ходу (по кораблям)
   // Порт ВСЕГДА приносит немного золота в начале хода — БЕЗ каких-либо ограничений по числу ходов.
   // (Раньше доход срезался после players*80 ходов «для сходимости» — убрано: экономику не лимитируем,
   // иначе в долгой партии золото переставало капать и в верфи становилось нечего купить.)
@@ -572,11 +574,13 @@ export function applyAction(game, playerId, action) {
     case 'move': {
       const ship = game.ships.find(s => s.id === action.shipId);
       if (!ship || ship.owner !== pIdx) return { ok: false, error: 'Это не ваш корабль' };
+      if (game.turn.broadsideSides?.[ship.id]?.length) return { ok: false, error: 'Корабль уже даёт залп — добей вторым бортом или жди' };
       const x = Math.round(action.x), y = Math.round(action.y);
       const range = SHIP_TYPES[ship.type].move;
       if (dist(ship.x, ship.y, x, y) > range + 0.5) return { ok: false, error: 'Слишком далеко: линейка не дотягивается' };
       const blocked = shipPlacementBlocked(game, x, y, ship.id);
       if (blocked) return { ok: false, error: blocked };
+      if (dist(ship.x, ship.y, x, y) > 1) ship.heading = Math.atan2(y - ship.y, x - ship.x); // курс — для определения бортов залпа
       // мирное время («Развитие»): нельзя подходить к чужой базе ближе keepout
       if (isPeace(game)) {
         const keep = modeOf(game).peaceBaseKeepout || 0;
@@ -595,7 +599,9 @@ export function applyAction(game, playerId, action) {
       const ship = game.ships.find(s => s.id === action.shipId);
       if (!ship || ship.owner !== pIdx) return { ok: false, error: 'Это не ваш корабль' };
       const st = SHIP_TYPES[ship.type];
-      if (st.repairer || !st.dmg) return { ok: false, error: 'Этот корабль не умеет стрелять — он чинит' };
+      // 🎯 МОРТИРА (прицельный одиночный выстрел) — только у фрегата/линкора (+ чит-авианосец)
+      if (!MORTAR_SHIPS.includes(ship.type) && !st.cheat) return { ok: false, error: 'Мортира только у фрегата и линкора' };
+      if (game.turn.broadsideSides?.[ship.id]?.length) return { ok: false, error: 'Корабль уже даёт залп — добей вторым бортом или жди' };
       const volley = st.volley || 1; // авианосец (чит) бьёт залпом из нескольких снарядов подряд
 
       if (action.targetType === 'ship') {
@@ -681,39 +687,78 @@ export function applyAction(game, playerId, action) {
     }
 
     case 'broadside': {
+      // 💥 БОРТОВОЙ ЗАЛП: сектор-трапеция в борт; по КАЖДОЙ цели dmg = пушка×пушек×falloff×focus.
       const ship = game.ships.find(s => s.id === action.shipId);
       if (!ship || ship.owner !== pIdx) return { ok: false, error: 'Это не ваш корабль' };
       const st = SHIP_TYPES[ship.type];
-      if (!st.broadside) return { ok: false, error: 'Этот корабль не умеет залп' };
-      if (isPeace(game)) return { ok: false, error: '🕊 Мирное время: залп нельзя' };
-      // залп может быть глобально выключен — но чит-корабль (авианосец) бьёт им ВСЕГДА
-      if (!BROADSIDE_ENABLED && !st.cheat) return { ok: false, error: 'Бортовой залп сейчас отключён' };
-      // вражеские цели в радиусе. Обычный залп не трогает рыбацкие баркасы; авианосец (cheat) — валит ВСЕХ.
-      const targets = game.ships.filter(t =>
-        t.owner !== pIdx &&
-        !(t.owner >= 0 && !game.players[t.owner]?.alive) &&
-        (st.cheat || t.owner === -1 || !SHIP_TYPES[t.type].fishing) &&
-        dist(ship.x, ship.y, t.x, t.y) <= st.fireRange + 0.5);
-      const minTargets = st.cheat ? 1 : 2; // авианосцу достаточно одной цели в радиусе
-      if (targets.length < minTargets)
-        return { ok: false, error: st.cheat ? 'Нет целей в радиусе' : 'Залп — когда в радиусе 2+ вражеских БОЕВЫХ корабля' };
-      // авианосец бьёт залпом полной мощью (volley×dmg, без штрафа); обычный залп — ×BROADSIDE_MULT
-      const dmg = Math.round(st.dmg * (st.volley || 1) * (st.cheat ? 1 : BROADSIDE_MULT));
-      const hits = [];
-      const toSink = [];
-      for (const t of targets) {
-        t.hp -= dmg;
-        player.stats.damageDealt += dmg;
-        hits.push({ tx: t.x, ty: t.y, dmg });
-        if (t.hp <= 0) toSink.push(t);
-        else if (t.owner === -1) t.angryAt = pIdx;
+      const cannons = BROADSIDE_CANNONS[ship.type] || 0;
+      if (!cannons) return { ok: false, error: 'Этот корабль не даёт бортовой залп' };
+      const cx = game.map.w / 2, cy = game.map.h / 2;
+      const norm = a => Math.atan2(Math.sin(a), Math.cos(a));
+      const heading = (typeof ship.heading === 'number') ? ship.heading : Math.atan2(cy - ship.y, cx - ship.x);
+      // прицел игрока → выбор борта (port/starboard); весь борт бьёт по ВСЕМ врагам с этой стороны в радиусе
+      const aimAng = Math.atan2((action.ty ?? cy) - ship.y, (action.tx ?? cx) - ship.x);
+      const portDir = norm(heading - Math.PI / 2), starDir = norm(heading + Math.PI / 2);
+      const side = Math.abs(norm(aimAng - portDir)) <= Math.abs(norm(aimAng - starDir)) ? 'port' : 'starboard';
+      const sideDir = side === 'port' ? portDir : starDir;
+      const sides = ((game.turn.broadsideSides ||= {})[ship.id] ||= []);
+      if (sides.includes(side)) return { ok: false, error: (side === 'port' ? 'Левый' : 'Правый') + ' борт уже стрелял в этом ходу' };
+      const range = st.fireRange, full = !!st.cheat; // чит-авианосец — круговой залп (без сектора)
+      const peace = isPeace(game);
+      // цели-корабли с этого борта в радиусе — все, урон только по дистанции (ближе = больнее)
+      const shipHits = [];
+      for (const t of game.ships) {
+        if (t.id === ship.id || t.owner === pIdx) continue;
+        if (t.owner >= 0 && !game.players[t.owner]?.alive) continue;
+        if (t.owner >= 0 && peace) continue; // мир: игроков не трогаем (пиратов — можно)
+        const d = dist(ship.x, ship.y, t.x, t.y);
+        if (d > range) continue;
+        const off = norm(Math.atan2(t.y - ship.y, t.x - ship.x) - sideDir);
+        if (!full && Math.abs(off) > BROADSIDE_HALF_ARC) continue; // не с этого борта (нос/корма)
+        const falloff = 1 - (1 - BROADSIDE_FALLOFF_MIN) * (d / range);
+        shipHits.push({ t, dmg: Math.max(1, Math.round(BROADSIDE_CANNON_DMG * cannons * falloff)) });
       }
+      // вражеский ПОРТ в секторе — символический урон (осада — мортирой), но порт огрызается как обычно
+      let portHit = null;
+      if (!peace) for (let i = 0; i < game.players.length; i++) {
+        if (i === pIdx || !game.players[i].alive) continue;
+        const base = game.map.bases[i], d = dist(ship.x, ship.y, base.x, base.y);
+        if (d > range + base.radius * 0.5) continue;
+        const off = norm(Math.atan2(base.y - ship.y, base.x - ship.x) - sideDir);
+        if (!full && Math.abs(off) > BROADSIDE_HALF_ARC) continue;
+        const falloff = 1 - (1 - BROADSIDE_FALLOFF_MIN) * (Math.min(d, range) / range);
+        portHit = { i, base, dmg: Math.max(1, Math.round(BROADSIDE_CANNON_DMG * cannons * falloff * BROADSIDE_PORT_MULT)) };
+        break;
+      }
+      if (!shipHits.length && !portHit) return { ok: false, error: 'С этого борта нет целей в радиусе' };
+      // ПРИМЕНЯЕМ
+      sides.push(side);
+      ship.heading = heading;
       player.stats.shotsFired++;
-      pushEvent(game, { type: 'broadside', fx: ship.x, fy: ship.y, hits, auto: !!st.cheat, volley: st.volley || 1 });
-      for (const t of toSink) sinkShip(game, t, player); // взрывы — после полёта залпа
+      const evHits = [], toSink = [];
+      for (const h of shipHits) {
+        h.t.hp -= h.dmg; player.stats.damageDealt += h.dmg;
+        evHits.push({ tx: h.t.x, ty: h.t.y, dmg: h.dmg });
+        if (h.t.hp <= 0) toSink.push(h.t); else if (h.t.owner === -1) h.t.angryAt = pIdx;
+      }
+      let counterFrom = null;
+      if (portHit) {
+        const victim = game.players[portHit.i];
+        victim.portHp -= portHit.dmg; player.stats.damageDealt += portHit.dmg;
+        evHits.push({ tx: portHit.base.x, ty: portHit.base.y, dmg: portHit.dmg });
+        if (victim.portHp <= 0) { victim.portHp = 0; eliminatePlayer(game, portHit.i, player); }
+        else counterFrom = portHit.base;
+      }
+      pushEvent(game, { type: 'volley', fx: ship.x, fy: ship.y, sideDir, cannons, full, hits: evHits });
+      for (const t of toSink) sinkShip(game, t, player);
+      if (counterFrom) { // порт устоял — огрызается по стрелявшему (как у мортиры)
+        const retDmg = Math.round(PORT_RETURN_DMG * (ship.type === 'linkor' ? PORT_RETURN_LINKOR_MULT : 1));
+        ship.hp -= retDmg;
+        pushEvent(game, { type: 'shot', fx: counterFrom.x, fy: counterFrom.y, tx: ship.x, ty: ship.y, dmg: retDmg });
+        if (ship.hp <= 0) sinkShip(game, ship, game.players[portHit.i]);
+      }
       logEvent(game,
-        `💥 ${player.nick}: ${st.name} даёт залп по ${targets.length} целям` +
-        (toSink.length ? ` — потоплено ${toSink.length}!` : '') + ` (−${dmg} каждой)`,
+        `💥 ${player.nick}: ${st.name} — бортовой залп (${side === 'port' ? 'левый' : 'правый'} борт) по ${shipHits.length} цел.` + (toSink.length ? ` — потоплено ${toSink.length}!` : ''),
         `💥 ${player.nick} даёт бортовой залп`, 'battle');
       break;
     }
@@ -734,13 +779,22 @@ export function applyAction(game, playerId, action) {
   // ход конкретным кораблём вдобавок помечает его сходившим (нельзя дважды за ход).
   // Ход завершается, когда исчерпан бюджет, явно нажата «Завершить»/«Пропустить»,
   // либо включён классический режим (там любое действие = конец хода).
+  // БОРТОВОЙ ЗАЛП: первый борт = одно действие (слот); ВТОРОЙ борт того же корабля — бесплатный добор
+  // (слот не ест), и пока второй борт не сделан/не завершён вручную — ход НЕ завершается автоматически.
+  let pendingSecondSide = false;
   if (action.type !== 'skip' && action.type !== 'endTurn') {
-    game.turn.moves = (game.turn.moves || 0) + 1;
-    if (SHIP_ACTION_SET.has(action.type)) (game.turn.actedShips ??= []).push(action.shipId);
+    if (action.type === 'broadside') {
+      const fired = game.turn.broadsideSides?.[action.shipId] || [];
+      if (fired.length <= 1) game.turn.moves = (game.turn.moves || 0) + 1; // 1-й борт тратит слот, 2-й — бесплатно
+      if (fired.length >= 2) (game.turn.actedShips ??= []).push(action.shipId); // оба борта — корабль отстрелялся
+      else pendingSecondSide = true; // один борт сделан — второй ещё доступен в этом ходу
+    } else {
+      game.turn.moves = (game.turn.moves || 0) + 1;
+      if (SHIP_ACTION_SET.has(action.type)) (game.turn.actedShips ??= []).push(action.shipId);
+    }
   }
   const endsTurn = action.type === 'skip' || action.type === 'endTurn'
-    || !game.config.multiMove
-    || game.turn.moves >= movesBudget(game.config);
+    || (!pendingSecondSide && (!game.config.multiMove || game.turn.moves >= movesBudget(game.config)));
   if (game.status === 'active' && endsTurn) advanceTurn(game);
   return { ok: true };
 }
@@ -838,6 +892,8 @@ export function publicState(game, viewerPid) {
     // режим партии + мирный период (для баннера и подсказок клиента)
     mode: game.config.mode || 'classic',
     peace: { active: isPeace(game), round: game.turn?.round || 1, until: modePeaceRounds(game) },
+    // параметры боя для клиента (сектор залпа, пушки по классам, у кого мортира)
+    broadside: { halfArc: BROADSIDE_HALF_ARC, cannons: BROADSIDE_CANNONS, mortarShips: MORTAR_SHIPS },
     shipTypes
   };
 }

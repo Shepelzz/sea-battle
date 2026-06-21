@@ -18,7 +18,7 @@ import {
 } from './game.js';
 import { chooseBotAction, BOT_NAMES } from './bot.js';
 import { applyCheat } from './cheats.js';
-import { BROADSIDE_ENABLED, CHEATS_ENABLED, GAME_MODES, enabledModes, DEFAULT_MODE } from './config.js';
+import { CHEATS_ENABLED, GAME_MODES, enabledModes, DEFAULT_MODE } from './config.js';
 // валидируем игровой режим из запроса (classic/deathmatch/develop) — только из включённых
 const pickMode = m => enabledModes().includes(m) ? m : DEFAULT_MODE;
 
@@ -182,7 +182,7 @@ function maybeAutoFinish(game) {
 // --- REST ---
 
 app.get('/api/config', (_req, res) => res.json({
-  googleClientId: GOOGLE_CLIENT_ID, palette: PALETTE, broadside: BROADSIDE_ENABLED, cheats: CHEATS_ENABLED,
+  googleClientId: GOOGLE_CLIENT_ID, palette: PALETTE, cheats: CHEATS_ENABLED,
   // доступные игровые режимы (для селектора при создании игры)
   modes: enabledModes().map(k => ({ key: k, name: GAME_MODES[k].name, desc: GAME_MODES[k].desc }))
 }));

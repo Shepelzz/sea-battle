@@ -129,10 +129,11 @@ function freshGame() {
 
   const g2 = freshGame();
   const base2 = g2.map.bases[1];
-  g2.ships.push({ id: 'brg', owner: 0, type: 'brig', x: base2.x + base2.radius + 20, y: base2.y, hp: 110 });
-  applyAction(g2, 'A', { type: 'attack', shipId: 'brg', targetType: 'port', targetId: 1 });
-  const brLost = 110 - g2.ships.find(s => s.id === 'brg').hp;
-  check('сдача бригу — обычная', brLost === PORT_RETURN_DMG, `(−${brLost}, ждали −${PORT_RETURN_DMG})`);
+  // не-линкор с мортирой = фрегат (бриг мортиру больше не умеет); отдача обычная ×1
+  g2.ships.push({ id: 'frg', owner: 0, type: 'fregat', x: base2.x + base2.radius + 20, y: base2.y, hp: 170 });
+  applyAction(g2, 'A', { type: 'attack', shipId: 'frg', targetType: 'port', targetId: 1 });
+  const brLost = 170 - g2.ships.find(s => s.id === 'frg').hp;
+  check('сдача фрегату — обычная', brLost === PORT_RETURN_DMG, `(−${brLost}, ждали −${PORT_RETURN_DMG})`);
 }
 
 // === Доход порта НЕ ограничен НИКАК: капает на любом ходу, и людям, и ботам ===

@@ -2,7 +2,7 @@
 // тут проверяем их применение и поведение чит-корабля (волей из 5 снарядов).
 import { createGame, addPlayer, startGame, applyAction, publicState } from './server/game.js';
 import { applyCheat } from './server/cheats.js';
-import { SHIP_TYPES, BROADSIDE_ENABLED, CHEATS_ENABLED } from './server/config.js';
+import { SHIP_TYPES, CHEATS_ENABLED } from './server/config.js';
 
 let ok = 0, fail = 0;
 const check = (n, c, extra = '') => { c ? (ok++) : (fail++, console.error('✗', n, extra)); };
@@ -113,48 +113,37 @@ if (CHEATS_ENABLED) {
   eq('damageDealt += 325', g.players[0].stats.damageDealt, 325);
 }
 
-// === Обычный корабль по-прежнему стреляет одиночным (регрессия volley=1) ===
+// === Бриг теперь НЕ умеет мортиру (только бортовой залп) ===
 {
   const g = setup();
   const me = put(g, 0, 'brig', 760, 600);
-  const foe = put(g, 1, 'linkor', 850, 600); // в радиусе брига (140), живучий
-  const before = foe.hp;
-  applyAction(g, 'A', { type: 'attack', shipId: me.id, targetType: 'ship', targetId: foe.id });
-  eq('бриг бьёт одиночным (−28)', before - foe.hp, SHIP_TYPES.brig.dmg);
-  eq('обычная атака = 1 выстрел', g.events.filter(e => e.type === 'shot').length, 1);
+  const foe = put(g, 1, 'linkor', 850, 600);
+  const r = applyAction(g, 'A', { type: 'attack', shipId: me.id, targetType: 'ship', targetId: foe.id });
+  check('бриг не может мортиру (только фрегат/линкор)', r.ok === false, JSON.stringify(r));
+  check('HP цели не изменилось', foe.hp === SHIP_TYPES.linkor.hp);
 }
 
-// === Залп авианосца: бьёт ВСЕХ в радиусе, даже когда BROADSIDE_ENABLED выключен ===
+// === Залп авианосца (чит): КРУГОВОЙ — бьёт всех врагов в радиусе (без сектора) ===
 {
-  eq('залп глобально выключен (проверяем обход для авианосца)', BROADSIDE_ENABLED, false);
   const g = setup();
   const me = put(g, 0, 'carrier', 760, 600);
-  put(g, 1, 'shkhuna', 820, 600);      // в радиусе (320)
-  put(g, 1, 'brig', 980, 660);         // в радиусе
+  const a = put(g, 1, 'shkhuna', 820, 600);     // в радиусе (320), восток
+  const b = put(g, 1, 'brig', 760, 760, 110);   // в радиусе, ЮГ (круговой достаёт другую сторону)
   const far = put(g, 1, 'shkhuna', 1500, 1150); // вне радиуса
-  const r = applyAction(g, 'A', { type: 'broadside', shipId: me.id });
-  check('залп авианосца проходит при выключенном конфиге', r.ok, JSON.stringify(r));
-  const ev = g.events.find(e => e.type === 'broadside');
-  check('событие broadside помечено auto', ev && ev.auto === true, JSON.stringify(ev));
-  eq('залп ударил по 2 целям в радиусе', ev.hits.length, 2);
-  eq('урон по цели = 5×65 = 325 (полная мощь, без штрафа)', ev.hits[0].dmg, 325);
+  const r = applyAction(g, 'A', { type: 'broadside', shipId: me.id, tx: 820, ty: 600 });
+  check('залп авианосца проходит', r.ok, JSON.stringify(r));
+  const ev = g.events.find(e => e.type === 'volley');
+  check('событие volley, full=true (круговой)', ev && ev.full === true, JSON.stringify(ev));
+  check('круговой залп задел обе цели в радиусе', a.hp < SHIP_TYPES.shkhuna.hp && b.hp < 110, `(a ${a.hp}, b ${b.hp})`);
   eq('дальняя цель не задета', far.hp, SHIP_TYPES.shkhuna.hp);
 }
-// === Авианосцу достаточно ОДНОЙ цели (обычному залпу нужно 2+) ===
+// === Авианосец валит и рыбацкие баркасы ===
 {
   const g = setup();
   const me = put(g, 0, 'carrier', 760, 600);
-  put(g, 1, 'linkor', 900, 600, 280);
-  const r = applyAction(g, 'A', { type: 'broadside', shipId: me.id });
-  check('залп авианосца по одной цели — ок', r.ok, JSON.stringify(r));
-}
-// === Авианосец валит и рыбацкие баркасы (обычный залп их не трогает) ===
-{
-  const g = setup();
-  const me = put(g, 0, 'carrier', 760, 600);
-  put(g, 1, 'barkas', 820, 600);
-  const r = applyAction(g, 'A', { type: 'broadside', shipId: me.id });
-  check('залп авианосца задевает баркас', r.ok, JSON.stringify(r));
+  const bk = put(g, 1, 'barkas', 820, 600);
+  const r = applyAction(g, 'A', { type: 'broadside', shipId: me.id, tx: 820, ty: 600 });
+  check('залп авианосца задевает баркас', r.ok && bk.hp < SHIP_TYPES.barkas.hp, JSON.stringify(r));
 }
 
 // === publicState отдаёт carrier клиенту ТОЛЬКО в тестовом режиме (иначе ни следа) ===
