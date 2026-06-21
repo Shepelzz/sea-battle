@@ -1,7 +1,7 @@
 // Бот: на своём ходу собирает все осмысленные действия, оценивает и берёт лучшее.
 // Уровни: easy (Юнга) — шумные оценки и случайные ходы, mid (Боцман) — лучший ход,
 // hard (Адмирал) — лучший ход + фокус раненых, удушение экономики, ранняя агрессия.
-import { SHIP_TYPES, PIRATE, LOOT_REACH, PORT_RETURN_DMG, BROADSIDE_CANNONS, BROADSIDE_CANNON_DMG, BROADSIDE_HALF_ARC, BROADSIDE_FALLOFF_MIN, MORTAR_SHIPS, modeOf, isPeace } from './config.js';
+import { SHIP_TYPES, PIRATE, LOOT_REACH, PORT_RETURN_DMG, BROADSIDE_CANNONS, BROADSIDE_HALF_ARC, BROADSIDE_FALLOFF_MIN, BROADSIDE_SIDE_MIN, MORTAR_SHIPS, MORTAR_SHIP_MULT, modeOf, isPeace } from './config.js';
 import { shipPlacementBlocked } from './game.js';
 
 const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
@@ -108,8 +108,9 @@ export function chooseBotAction(game, pIdx, level = 'mid') {
         if (t.owner >= 0 && !game.players[t.owner]?.alive) continue;
         if (dist(ship.x, ship.y, t.x, t.y) > st.fireRange) continue;
         const tdef = t.owner === -1 ? PIRATE : SHIP_TYPES[t.type];
-        const kills = t.hp <= st.dmg;
-        let score = st.dmg * 0.8;
+        const hit = st.dmg * MORTAR_SHIP_MULT; // мортира по судам бьёт вполовину
+        const kills = t.hp <= hit;
+        let score = hit * 0.8;
         if (kills) score += 30 + (t.owner === -1 ? t.bounty * 0.3 : SHIP_TYPES[t.type].price * 0.2);
         if (t.owner === -1 && !kills && level !== 'easy') score -= 15;
         if (level !== 'easy' && t.owner >= 0 && SHIP_TYPES[t.type].dmg > 0 && dist(t.x, t.y, myBase.x, myBase.y) < threatR) score += 35;
@@ -130,7 +131,7 @@ export function chooseBotAction(game, pIdx, level = 'mid') {
 
     // БОРТОВОЙ ЗАЛП — ближайший враг в секторе ЕЩЁ НЕ стрелявшего борта (целимся прямо в него; сервер посчитает урон)
     if (cannons && !peace) {
-      let tgt = null, tgtSide = null, bestD = Infinity;
+      let tgt = null, tgtSide = null, bestD = Infinity, bestOff = 0;
       for (const t of game.ships) {
         if (t.owner === pIdx) continue;
         if (t.owner >= 0 && !game.players[t.owner]?.alive) continue;
@@ -139,12 +140,14 @@ export function chooseBotAction(game, pIdx, level = 'mid') {
         const ang = Math.atan2(t.y - ship.y, t.x - ship.x);
         const offP = Math.abs(norm(ang - portDir)), offS = Math.abs(norm(ang - starDir));
         const side = offP <= offS ? 'port' : 'starboard';
-        if (Math.min(offP, offS) > BROADSIDE_HALF_ARC || firedSides.includes(side)) continue;
-        tgt = t; tgtSide = side; bestD = d;
+        const off = Math.min(offP, offS);
+        if (off > BROADSIDE_HALF_ARC || firedSides.includes(side)) continue;
+        tgt = t; tgtSide = side; bestD = d; bestOff = off;
       }
       if (tgt) {
         const falloff = 1 - (1 - BROADSIDE_FALLOFF_MIN) * (bestD / st.fireRange);
-        let score = cannons * BROADSIDE_CANNON_DMG * falloff * 0.8;
+        const angle = 1 - (1 - BROADSIDE_SIDE_MIN) * Math.min(1, bestOff / BROADSIDE_HALF_ARC);
+        let score = st.dmg * angle * falloff * 0.8; // как и сервер: урон судна × положение × дистанция
         if (tgt.owner >= 0 && dist(tgt.x, tgt.y, myBase.x, myBase.y) < threatR) score += 35; // оборона базы
         cands.push({ score, action: { type: 'broadside', shipId: ship.id, tx: tgt.x, ty: tgt.y } });
       }
@@ -206,7 +209,6 @@ export function chooseBotAction(game, pIdx, level = 'mid') {
     if (acted.has(ship.id) || game.turn.broadsideSides?.[ship.id]?.length) continue; // сходил/начал залп — ходить уже нельзя
     const st = SHIP_TYPES[ship.type];
     const cannons = BROADSIDE_CANNONS[ship.type] || 0; // есть ли бортовой залп (для захода бортом)
-    const canMortarShip = MORTAR_SHIPS.includes(ship.type); // фрегат/линкор бьют в нос мортирой — им заход бортом не нужен
 
     // идёт ли этот корабль на штурм порта жертвы (тогда раненым не отступаем — добиваем)
     const vBase = victim && game.map.bases[victim.i];
@@ -282,10 +284,10 @@ export function chooseBotAction(game, pIdx, level = 'mid') {
     if (foe && !peace) {
       const eng = aggressive ? (level === 'hard' ? 18 : 14) : 7;
       const fd = dist(ship.x, ship.y, foe.x, foe.y);
-      if (cannons && !canMortarShip && fd <= st.fireRange) {
-        // враг уже в радиусе — ЗАХОД БОРТОМ по СПИРАЛИ: идём по диагонали (≈65° от линии на врага),
-        // чтобы он встал на борт И мы при этом сближались к упору, где залп бьёт сильнее (а не танцевали на краю).
-        // Следующим ходом борт наведён → залп (залп без pack перебьёт этот манёвр, когда уже наведён).
+      if (cannons && fd <= st.fireRange) {
+        // враг уже в радиусе — ЗАХОД БОРТОМ по СПИРАЛИ: идём по диагонали (≈65° от линии на врага), чтобы он встал
+        // на борт И мы при этом сближались к упору, где залп бьёт сильнее. Делают ВСЕ боевые (залп — сильнейшая атака
+        // по судам теперь и у фрегата/линкора; мортиру они приберегают для порта). Следующим ходом борт наведён → залп.
         const dir = Math.atan2(foe.y - ship.y, foe.x - ship.x);
         for (const s of [1, -1]) {
           const a = dir + s * (Math.PI / 2) * 0.72;

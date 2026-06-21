@@ -108,9 +108,9 @@ if (CHEATS_ENABLED) {
   const before = foe.hp;
   const r = applyAction(g, 'A', { type: 'attack', shipId: me.id, targetType: 'ship', targetId: foe.id });
   check('атака авианосца ок', r.ok, JSON.stringify(r));
-  eq('урон по цели = 5×65', before - foe.hp, 325);
+  eq('урон по цели = 5×33 (мортира по судам ×0.5)', before - foe.hp, 165);
   eq('ровно 5 событий-выстрелов', g.events.filter(e => e.type === 'shot').length, 5);
-  eq('damageDealt += 325', g.players[0].stats.damageDealt, 325);
+  eq('damageDealt += 165', g.players[0].stats.damageDealt, 165);
 }
 
 // === Бриг теперь НЕ умеет мортиру (только бортовой залп) ===

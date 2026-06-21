@@ -12,8 +12,9 @@ let selectedShipId = null;
 let mode = 'idle';         // idle | move | attack
 let hoverPt = null;        // позиция курсора в координатах карты
 let aim = null;            // тач-прицел хода: {sel, finger:{x,y}, dest:{x,y}, clamped}
-const AIM_RATIO = 0.5;     // крестик ставим на «середине» пути от корабля до пальца
+const AIM_RATIO = 2 / 3;   // крестик на 2/3 пути от корабля до пальца (меньше тянуть пальцем на телефоне)
 const AIM_GRAB_PX = 42;    // радиус зоны захвата корабля для drag-aim (экранные px)
+const AIM_CANCEL_DIST = 32; // палец вернулся ~на корабль (мировые ед.) → ход/залп отменяется
 let moveDemo = null;       // обучающая анимация жеста (тач, до первого хода игрока): {t0}
 const IS_COARSE = !!(window.matchMedia && matchMedia('(pointer: coarse)').matches); // сенсорный экран?
 const hasMovedOnce = () => localStorage.getItem('sb_moved') === '1';
@@ -1257,16 +1258,21 @@ function render(canvasOnly) {
       _headingOverride: Math.atan2(hoverPt.y - sel.y, hoverPt.x - sel.x)
     }, false);
     ctx.globalAlpha = 1;
-    // подпись расстояния в клетках
+    // подпись: расстояние в клетках, либо «отмена», если палец вернулся на корабль
     const mx = (sx(sel.x) + sx(hoverPt.x)) / 2, my = (sy(sel.y) + sy(hoverPt.y)) / 2;
     ctx.font = 'bold 14px Neucha, cursive';
-    ctx.fillStyle = ok ? '#2b3a55' : '#c0392b';
     ctx.textAlign = 'center';
-    ctx.fillText(`${(d / 40).toFixed(1)} кл.`, mx, my - 8);
+    if (aim && aim.cancel) {
+      ctx.fillStyle = '#9aa0a8';
+      ctx.fillText('↩ отмена', sx(sel.x), sy(sel.y) - 24);
+    } else {
+      ctx.fillStyle = ok ? '#2b3a55' : '#c0392b';
+      ctx.fillText(`${(d / 40).toFixed(1)} кл.`, mx, my - 8);
+    }
 
     // тач-прицел: крестик-цель + маркер пальца с тонкой линией (палец не закрывает цель)
     if (aim && aim.dest) {
-      drawCrosshair(sx(hoverPt.x), sy(hoverPt.y), aim.clamped ? '#c0392b' : '#2b3a55');
+      drawCrosshair(sx(hoverPt.x), sy(hoverPt.y), aim.cancel ? '#9aa0a8' : aim.clamped ? '#c0392b' : '#2b3a55');
       if (aim.finger) {
         ctx.beginPath();
         ctx.setLineDash([2, 4]);
@@ -1727,6 +1733,7 @@ function updateAim(screenPt) {
   const dx = f.x - sel.x, dy = f.y - sel.y;
   const fd = Math.hypot(dx, dy);
   const range = ST(sel.type).move;
+  aim.cancel = fd < AIM_CANCEL_DIST;   // вернул палец почти на корабль → ход отменим (передумал)
   if (fd < 1) { aim.dest = { x: sel.x, y: sel.y }; aim.clamped = false; }
   else {
     const len = fd * AIM_RATIO;    // крестик на «середине» пути до пальца
@@ -1750,6 +1757,7 @@ canvas.addEventListener('pointermove', e => {
         aim.armed = true;
       }
       hoverPt = toMap(p.x, p.y);
+      aim.cancel = dist(hoverPt.x, hoverPt.y, aim.sel.x, aim.sel.y) < AIM_CANCEL_DIST; // палец вернулся на корабль → отмена
       render();
       return;
     }
@@ -1805,6 +1813,7 @@ function endPointer(e) {
     pointers.delete(e.pointerId);
     if (pointers.size === 0) { drag = null; pinchDist = 0; }
     if (!a.armed) { handleTap({ x: a.startX, y: a.startY }, true); return; } // не потянул → выбор/подсказка
+    if (a.cancel) { render(); return; } // вернул палец на корабль — передумал, ни хода, ни залпа
     if (a.broadside) {             // 💥 залп бортом в ту сторону, куда тянули
       if (finger) sendAction({ type: 'broadside', shipId: a.sel.id, tx: Math.round(finger.x), ty: Math.round(finger.y) });
       else render();
@@ -2019,13 +2028,13 @@ function openInfo() {
       .map(([type, st]) => {
         const cannons = state.broadside?.cannons?.[type];
         const isMortar = (state.broadside?.mortarShips || []).includes(type);
+        const mm = state.broadside?.mortarShipMult ?? 0.5;
         const extra = [
-          isMortar ? `🎯 мортира ${st.dmg}` : '',
-          st.portBonus ? `🏰 мортира по порту ×${st.portBonus}` : '',
+          isMortar ? `🎯 мортира ${Math.round(st.dmg * mm)}, порт ${Math.round(st.dmg * (st.portBonus || 1))}` : '',
           st.fishing ? `🐟 +${st.fishing}` : '',
           st.healFrac ? `🛟 +${Math.round(st.healFrac * 100)}% HP` : ''
         ].filter(Boolean).join(' · ');
-        const power = st.repairer ? '🛟 ремонт' : (cannons ? `💥 залп ×${cannons}` : `⚔️${st.dmg}`);
+        const power = st.repairer ? '🛟 ремонт' : (cannons ? `💥 залп до ${st.dmg}` : `⚔️${st.dmg}`);
         return `<div class="info-fleet-row">
           <span class="nm">${st.icon} ${st.name}</span>
           <span class="st">${st.price}з · ❤️${st.hp} · ${power} · 🎯${(st.fireRange / 40).toFixed(1)} · 🧭${(st.move / 40).toFixed(1)}${extra ? ' · ' + extra : ''}</span>

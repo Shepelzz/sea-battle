@@ -1,7 +1,7 @@
 // Новая боевая механика: БОРТОВОЙ ЗАЛП (ВЕСЬ борт по ВСЕМ врагам с этой стороны в радиусе, урон только по дистанции,
 // оба борта = 1 действие) и МОРТИРА (бывший одиночный выстрел, только фрегат/линкор). Прямые вызовы game.js.
 import { createGame, addPlayer, startGame, applyAction } from './server/game.js';
-import { SHIP_TYPES, BROADSIDE_CANNONS, MORTAR_SHIPS } from './server/ships.js';
+import { SHIP_TYPES, BROADSIDE_CANNONS, MORTAR_SHIPS, MORTAR_SHIP_MULT, BROADSIDE_HALF_ARC, BROADSIDE_SIDE_MIN } from './server/ships.js';
 
 let ok = 0, fail = 0;
 const check = (n, c, extra = '') => { c ? (ok++, console.log('✓', n, extra)) : (fail++, console.error('✗', n, extra)); };
@@ -82,10 +82,23 @@ const mortar = (g, ship, targetId, targetType = 'ship') => applyAction(g, 'A', {
   check('MORTAR_SHIPS = фрегат/линкор', JSON.stringify(MORTAR_SHIPS) === JSON.stringify(['fregat', 'linkor']));
   check('шхуна НЕ может мортиру', mortar(g, sh, foe.id).ok === false);
   const r = mortar(g, fr, foe.id);
-  check('фрегат МОЖЕТ мортиру (по кораблю)', r.ok && foe.hp === 110 - SHIP_TYPES.fregat.dmg, `(${foe.hp})`);
+  check('фрегат МОЖЕТ мортиру (по кораблю = ПОЛОВИНА урона судна)', r.ok && foe.hp === 110 - Math.round(SHIP_TYPES.fregat.dmg * MORTAR_SHIP_MULT), `(${foe.hp}, ждали ${110 - Math.round(SHIP_TYPES.fregat.dmg * MORTAR_SHIP_MULT)})`);
 }
 
-// === Экономика хода: оба борта = ОДНО действие корабля (2-й борт бесплатный) ===
+// === Залп: урон зависит от ПОЛОЖЕНИЯ — макс на перпендикуляре борта, меньше к краям сектора ===
+{
+  const g = game();
+  const me = put(g, 0, 'linkor', 500, 500, { heading: 0 });   // нос восток → перпендикуляр левого борта = север (−y)
+  const abeam = put(g, 1, 'brig', 500, 420, { hp: 300 });      // строго на перпендикуляре, дист 80
+  const ea = -Math.PI / 2 + (BROADSIDE_HALF_ARC - 0.06);       // почти у края левого борта, тот же радиус
+  const edge = put(g, 1, 'brig', Math.round(500 + Math.cos(ea) * 80), Math.round(500 + Math.sin(ea) * 80), { hp: 300 });
+  broadside(g, me, 500, 400);                                  // левый борт
+  const dAbeam = 300 - abeam.hp, dEdge = 300 - edge.hp;
+  check('на перпендикуляре урон ≈ полный урон судна (с вычетом дистанции)', dAbeam >= Math.round(SHIP_TYPES.linkor.dmg * 0.7), `(перп −${dAbeam})`);
+  check('у края борта урон заметно меньше (доля SIDE_MIN)', dEdge > 0 && dEdge < dAbeam * 0.85, `(перп −${dAbeam}, край −${dEdge})`);
+}
+
+// === Экономика хода: КАЖДЫЙ борт залпа = отдельное действие (слот) ===
 {
   const g = game(true);
   const me = put(g, 0, 'brig', 500, 500, { heading: 0 });
@@ -97,8 +110,23 @@ const mortar = (g, ship, targetId, targetType = 'ship') => applyAction(g, 'A', {
   check('тем же бортом повторно — нельзя', broadside(g, me, 500, 400).ok === false);
   check('ходить после начатого залпа — нельзя', applyAction(g, 'A', { type: 'move', shipId: me.id, x: 545, y: 500 }).ok === false);
   check('правый борт — ок', broadside(g, me, 500, 600).ok);
-  check('2-й борт БЕСПЛАТНЫЙ (moves всё ещё 1)', g.turn.moves === 1, `(${g.turn.moves})`);
+  check('2-й борт ТОЖЕ тратит слот (moves=2)', g.turn.moves === 2, `(${g.turn.moves})`);
   check('после обоих бортов — отстрелялся', (g.turn.actedShips || []).includes(me.id));
+}
+
+// === Залп честно завершает ход: 3 действия (ремонт + залп + залп) = бюджет исчерпан, ход уходит ===
+{
+  const g = game(true);                                   // multiMove, бюджет 3
+  const rep = put(g, 0, 'repair', 500, 500, { heading: 0 });
+  put(g, 0, 'brig', 540, 500, { hp: 40 });                // подбитый союзник в радиусе ремонта (id найдём ниже)
+  const fr = put(g, 0, 'fregat', 800, 500, { heading: 0 });
+  put(g, 1, 'brig', 800, 420, { hp: 200 });               // северный борт фрегата
+  put(g, 1, 'brig', 800, 580, { hp: 200 });               // южный борт фрегата
+  const hurt = g.ships.find(s => s.owner === 0 && s.type === 'brig');
+  check('1) ремонт — ок', applyAction(g, 'A', { type: 'repair', shipId: rep.id, targetId: hurt.id }).ok);
+  check('2) залп север — ок', broadside(g, fr, 800, 380).ok);
+  check('3) залп юг — ок', broadside(g, fr, 800, 620).ok);
+  check('бюджет исчерпан (moves=3) и ход УШЁЛ к следующему игроку', g.turn.moves === 0 || g.turn.idx !== 0, `(moves=${g.turn.moves}, idx=${g.turn.idx})`);
 }
 
 // === Порт: залп — символический урон + отдача; мортира — осадный урон ===
