@@ -34,7 +34,7 @@ for (const [type, want] of Object.entries(FLEET)) {
 }
 
 // === Бой / экономика / порт ===
-eq('BROADSIDE_CANNONS', BROADSIDE_CANNONS, { shkhuna: 2, brig: 3, fregat: 4, linkor: 4, carrier: 6 });
+eq('BROADSIDE_CANNONS', BROADSIDE_CANNONS, { shkhuna: 2, brig: 2, fregat: 3, linkor: 4, carrier: 6 });
 eq('BROADSIDE_SIDE_MIN', BROADSIDE_SIDE_MIN, 0.6);
 eq('BROADSIDE_PORT_MULT', BROADSIDE_PORT_MULT, 0.12);
 eq('MORTAR_SHIPS', MORTAR_SHIPS, ['fregat', 'linkor']);
