@@ -1,7 +1,7 @@
 // Симулятор для анализа геймплея: гоняет бои бот-против-бота,
 // собирает статистику и печатает сводку по балансу.
 import { createGame, addPlayer, startGame, applyAction } from './server/game.js';
-import { chooseBotAction } from './server/bot.js';
+import { chooseBotAction, duelFleetPlan } from './server/bot.js';
 import { SHIP_TYPES } from './server/ships.js';
 
 const TURN_CAP = 1500; // защита от вечной партии (в advance-ходах)
@@ -15,6 +15,11 @@ function simulate(nPlayers, level, mode = 'classic') {
     game.players[i].botLevel = level;
   }
   startGame(game, 'b0');
+  // дуэль: фаза закупки флота — оба бота скупаются (на всё золото), затем начинается бой
+  if (game.phase === 'buy') {
+    for (let i = 0; i < nPlayers; i++)
+      applyAction(game, game.players[i].id, { type: 'buyFleet', ships: duelFleetPlan(game, i, level) });
+  }
 
   const m = {
     turns: 0, stalemate: false, winner: null,
@@ -127,4 +132,7 @@ run('ДЕЗМАТЧ дуэль mid', 200, 2, 'mid', 'deathmatch');
 run('ДЕЗМАТЧ дуэль hard', 150, 2, 'hard', 'deathmatch');
 run('РАЗВИТИЕ дуэль mid', 200, 2, 'mid', 'develop');
 run('РАЗВИТИЕ трое mid', 120, 3, 'mid', 'develop');
+run('РЕЖИМ ДУЭЛЬ mid', 200, 2, 'mid', 'duel');
+run('РЕЖИМ ДУЭЛЬ hard', 150, 2, 'hard', 'duel');
+run('РЕЖИМ ДУЭЛЬ easy', 120, 2, 'easy', 'duel');
 console.log('\n✅ готово');

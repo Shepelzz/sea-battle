@@ -20,9 +20,9 @@ import {
   SESSION_COOKIE, pidOf, googlePid, cleanNick, resolveAccountNick, parseCookies,
   buildSetCookie, buildClearCookie, createSessionStore, newSessionToken
 } from './auth.js';
-import { chooseBotAction, BOT_NAMES } from './bot.js';
+import { chooseBotAction, BOT_NAMES, duelFleetPlan } from './bot.js';
 import { applyCheat } from './cheats.js';
-import { CHEATS_ENABLED, GAME_MODES, enabledModes, DEFAULT_MODE } from './config.js';
+import { CHEATS_ENABLED, GAME_MODES, enabledModes, DEFAULT_MODE, isDuel } from './config.js';
 // валидируем игровой режим из запроса (classic/deathmatch/develop) — только из включённых
 const pickMode = m => enabledModes().includes(m) ? m : DEFAULT_MODE;
 
@@ -101,10 +101,21 @@ async function broadcastState(game) {
 }
 
 function persistAndBroadcast(game) {
+  maybeBotBuy(game);   // дуэль: боты собирают флот в фазе закупки (до рассылки состояния)
   db.saveGame(game);
   broadcastState(game);
   maybeBotTurn(game);
   broadcastLobbies(); // слоты/статус лобби могли измениться
+}
+
+// Дуэль, фаза закупки: каждый бот сразу собирает флот (умно, на всё золото). Когда все готовы —
+// applyAction(buyFleet) сам переключит игру в фазу боя.
+function maybeBotBuy(game) {
+  if (game?.phase !== 'buy') return;
+  for (let i = 0; i < game.players.length; i++) {
+    const p = game.players[i];
+    if (p.isBot && !p.ready) applyAction(game, p.id, { type: 'buyFleet', ships: duelFleetPlan(game, i, p.botLevel || 'mid') });
+  }
 }
 
 // --- браузер открытых лобби ---
@@ -256,14 +267,16 @@ app.post('/api/games', (req, res) => {
   // против компьютера: человек + 1-3 бота, старт сразу
   if (mode === 'bot') {
     const level = ['easy', 'mid', 'hard'].includes(req.body.level) ? req.body.level : 'mid';
-    const botCount = Math.min(3, Math.max(1, +req.body.bots || 1));
+    const gmode = pickMode(req.body.gameMode);
+    const duel = !!GAME_MODES[gmode]?.duel;
+    const botCount = duel ? 1 : Math.min(3, Math.max(1, +req.body.bots || 1)); // дуэль — ровно 1 бот (1на1)
     const nm = cleanNick(nick);
     if (!nm) return res.status(400).json({ error: 'Нужен ник' });
     const game = createGame(id, { maxPlayers: 1 + botCount, turnTimer: 0 });
     game.config.botGame = true;
     game.config.fog = req.body.fog !== false; // туман войны (по умолчанию вкл), визуал для игрока
     game.config.multiMove = req.body.multiMove !== false; // ход тремя судами (по умолчанию вкл)
-    game.config.mode = pickMode(req.body.gameMode);       // режим (до addPlayer — влияет на старт. золото)
+    game.config.mode = gmode;                             // режим (до addPlayer — влияет на старт. золото)
     db.upsertPlayer(pid, nm);
     addPlayer(game, pid, nm, color);                      // цвет игрока — по выбору
     for (let i = 0; i < botCount; i++) {
@@ -273,6 +286,7 @@ app.post('/api/games', (req, res) => {
       bp.botLevel = level;
     }
     startGame(game, pid);
+    maybeBotBuy(game);   // дуэль: бот сразу собирает свой флот (фаза закупки)
     games.set(id, game);
     db.saveGame(game);
     return res.json({ gameId: id });
@@ -283,11 +297,13 @@ app.post('/api/games', (req, res) => {
     return res.status(401).json({ error: 'Войдите через Google, чтобы играть онлайн', needAuth: true });
   const nm = cleanNick(nick);
   if (!nm) return res.status(400).json({ error: 'Нужны ник и токен' });
-  const game = createGame(id, { maxPlayers: +maxPlayers, turnTimer: +turnTimer });
+  const gmode = pickMode(req.body.gameMode);
+  const maxP = GAME_MODES[gmode]?.duel ? 2 : +maxPlayers; // дуэль — строго 1 на 1
+  const game = createGame(id, { maxPlayers: maxP, turnTimer: +turnTimer });
   game.config.listed = true; // онлайн-игра попадает в браузер лобби (и засчитывается в лидерборд)
   game.config.fog = req.body.fog !== false; // туман войны (по умолчанию вкл)
   game.config.multiMove = req.body.multiMove !== false; // ход тремя судами (по умолчанию вкл)
-  game.config.mode = pickMode(req.body.gameMode);       // режим (до addPlayer — влияет на старт. золото)
+  game.config.mode = gmode;                             // режим (до addPlayer — влияет на старт. золото)
   db.upsertPlayer(pid, nm);
   addPlayer(game, pid, nm, color);
   games.set(id, game);
@@ -384,6 +400,7 @@ io.on('connection', socket => {
     const game = joinedGameId && getGame(joinedGameId);
     if (!game) return ack?.({ ok: false, error: 'Нет игры' });
     if (game.status !== 'lobby') return ack?.({ ok: false, error: 'Игра уже идёт' });
+    if (isDuel(game)) return ack?.({ ok: false, error: 'Дуэль — это 1 на 1 с живым игроком. Для игры с ботом выбери «Против компьютера».' });
     if (game.players[0]?.id !== myPid) return ack?.({ ok: false, error: 'Ботов добавляет только создатель' });
     const lvl = ['easy', 'mid', 'hard'].includes(level) ? level : 'mid';
     const botCount = game.players.filter(p => p.isBot).length;

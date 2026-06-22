@@ -1,7 +1,7 @@
 // Бот: на своём ходу собирает все осмысленные действия, оценивает и берёт лучшее.
 // Уровни: easy (Юнга) — шумные оценки и случайные ходы, mid (Боцман) — лучший ход,
 // hard (Адмирал) — лучший ход + фокус раненых, удушение экономики, ранняя агрессия.
-import { SHIP_TYPES, PIRATE, LOOT_REACH, PORT_RETURN_DMG, BROADSIDE_CANNONS, BROADSIDE_HALF_ARC, MORTAR_SHIPS, MORTAR_SHIP_MULT, modeOf, isPeace } from './config.js';
+import { SHIP_TYPES, PIRATE, LOOT_REACH, PORT_RETURN_DMG, BROADSIDE_CANNONS, BROADSIDE_HALF_ARC, MORTAR_SHIPS, MORTAR_SHIP_MULT, modeOf, isPeace, isDuel, cheapestShipPrice } from './config.js';
 import { shipPlacementBlocked } from './game.js';
 
 const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
@@ -38,6 +38,7 @@ const nearest = (from, list, getXY) => {
 };
 
 export function chooseBotAction(game, pIdx, level = 'mid') {
+  if (isDuel(game)) return chooseDuelBotAction(game, pIdx, level); // дуэль — своя тактика (без баз/экономики/лута)
   const me = game.players[pIdx];
   const myShips = game.ships.filter(s => s.owner === pIdx);
   // режим «ход тремя судами»: корабль, уже сходивший в этом ходу, в этом ходу больше не действует.
@@ -315,6 +316,172 @@ export function chooseBotAction(game, pIdx, level = 'mid') {
   if (level === 'easy') {
     if (Math.random() < 0.3) return cands[Math.floor(Math.random() * cands.length)].action;
     for (const c of cands) c.score *= 0.7 + Math.random() * 0.6; // шумные оценки
+  }
+  cands.sort((a, b) => b.score - a.score);
+  return cands[0].action;
+}
+
+// ══════════════════════ ДУЭЛЬ ══════════════════════
+// Закупка флота (фаза 'buy'): умный микс под бюджет, не один тип. Ядро — тяжёлые (линкор/фрегат:
+// мортира + сильный борт), 1 ремонтник (кроме Юнги), добивка шхунами до полного расхода (остаток <
+// цены шхуны). Возвращает список ключей кораблей для action buyFleet.
+export function duelFleetPlan(game, pIdx, level = 'mid') {
+  let budget = game.players[pIdx].gold;
+  const P = t => SHIP_TYPES[t].price;
+  const fleet = [];
+  const buy = t => { if (budget >= P(t)) { fleet.push(t); budget -= P(t); return true; } return false; };
+  if (level !== 'easy') buy('repair');                       // один ремонтник в поддержку
+  // ядро: чередуем тяжёлые. hard — линкоры+фрегаты, иначе фрегаты+бриги (дешевле, манёвреннее).
+  const heavy = level === 'hard' ? ['linkor', 'fregat', 'brig'] : ['fregat', 'brig', 'shkhuna'];
+  let i = 0, guard = 0;
+  while (budget >= P('brig') && guard++ < 60) { if (!buy(heavy[i % heavy.length])) break; i++; }
+  // добиваем до полного расхода (правило «скупись на всё»): шхуны, пока хватает
+  guard = 0;
+  while (budget >= cheapestShipPrice(true) && guard++ < 200) {
+    if (!buy('shkhuna') && !buy('brig')) break;
+  }
+  if (!fleet.length) buy('shkhuna'); // подстраховка (на случай крошечного бюджета)
+  return fleet;
+}
+
+// Бой в дуэли: цель — уничтожить флот соперника (баз/экономики/лута нет). Фокус по самым «выгодным»
+// вражеским судам (раненые + опасные), бортовой манёвр, ремонт раненых, отвод подбитых ценных кораблей,
+// докупка за пиратское золото. Агрессия высокая — осады, которую можно «забыть», тут нет (≠ капкан классики).
+function chooseDuelBotAction(game, pIdx, level) {
+  const me = game.players[pIdx];
+  const acted = new Set(game.turn?.actedShips || []);
+  const myShips = game.ships.filter(s => s.owner === pIdx);
+  const foeShips = game.ships.filter(s => s.owner >= 0 && s.owner !== pIdx && game.players[s.owner]?.alive);
+  const pirates = game.ships.filter(s => s.owner === -1);
+  const cands = [{ score: 1, action: { type: 'skip' } }];
+  const cx = game.map.w / 2, cy = game.map.h / 2, norm = a => Math.atan2(Math.sin(a), Math.cos(a));
+  const maxHp = t => t.maxHp || (t.owner === -1 ? PIRATE.hp : SHIP_TYPES[t.type].hp);
+  const vuln = t => Math.max(0, maxHp(t) - t.hp);          // насколько ранен (добить выгодно)
+  const worth = t => t.owner >= 0 ? SHIP_TYPES[t.type].dmg * 0.5 : (t.bounty || 0) * 0.04; // ценность цели
+
+  // --- стрельба: мортира + бортовой залп по врагам/пиратам ---
+  for (const ship of myShips) {
+    if (acted.has(ship.id)) continue;
+    const st = SHIP_TYPES[ship.type];
+    const cannons = BROADSIDE_CANNONS[ship.type] || 0;
+    const canMortar = MORTAR_SHIPS.includes(ship.type);
+    if (!cannons && !canMortar) continue;
+    const firedSides = game.turn.broadsideSides?.[ship.id] || [];
+    const heading = (typeof ship.heading === 'number') ? ship.heading : Math.atan2(cy - ship.y, cx - ship.x);
+    const portDir = norm(heading - Math.PI / 2), starDir = norm(heading + Math.PI / 2);
+
+    if (canMortar && !firedSides.length) {
+      for (const t of [...foeShips, ...pirates]) {
+        if (dist(ship.x, ship.y, t.x, t.y) > st.fireRange) continue;
+        const hit = st.dmg * MORTAR_SHIP_MULT, kills = t.hp <= hit;
+        // Мортира по судам бьёт ВПОЛОВИНУ — это ДОБИВАНИЕ/фолбэк. Полный бортовой залп выгоднее (полный
+        // урон, по всем целям с борта), поэтому не-добивающая мортира — низкий приоритет: пусть бот лучше
+        // развернётся бортом и даст залп. Добивание (kills) — высокий приоритет (снять корабль с доски).
+        let score = kills
+          ? 46 + worth(t) + (t.owner === -1 ? (t.bounty || 0) * 0.25 : SHIP_TYPES[t.type].price * 0.22)
+          : hit * 0.35 + vuln(t) * 0.1;
+        if (t.owner === -1 && !kills) score -= 10;
+        cands.push({ score, action: { type: 'attack', shipId: ship.id, targetType: 'ship', targetId: t.id } });
+      }
+    }
+    if (cannons) {
+      let tgt = null, side = null, bestD = Infinity, bestOff = 0;
+      for (const t of [...foeShips, ...pirates]) {
+        const d = dist(ship.x, ship.y, t.x, t.y);
+        if (d > st.fireRange || d >= bestD) continue;
+        const ang = Math.atan2(t.y - ship.y, t.x - ship.x);
+        const offP = Math.abs(norm(ang - portDir)), offS = Math.abs(norm(ang - starDir));
+        const sd = offP <= offS ? 'port' : 'starboard', off = Math.min(offP, offS);
+        if (off > BROADSIDE_HALF_ARC || firedSides.includes(sd)) continue;
+        tgt = t; side = sd; bestD = d; bestOff = off;
+      }
+      if (tgt) {
+        const aq = Math.max(0, 1 - bestOff / BROADSIDE_HALF_ARC);
+        const dq = Math.max(0, 1 - bestD / st.fireRange);
+        // Цель уже в секторе борта — ДАЁМ ЗАЛП (база +40), а не доводим угол до идеала: иначе боты
+        // «танцуют» бортами и не сходятся (стейлмейты). Манёвр — только когда стрелять НЕ по кому.
+        const score = 40 + st.dmg * aq * dq * 2.2 + vuln(tgt) * 0.12;
+        cands.push({ score, action: { type: 'broadside', shipId: ship.id, tx: tgt.x, ty: tgt.y } });
+      }
+    }
+  }
+
+  // --- ремонт: ремонтник латает самого раненого союзника в радиусе ---
+  for (const ship of myShips) {
+    if (acted.has(ship.id)) continue;
+    const st = SHIP_TYPES[ship.type];
+    if (!st.repairer || (ship.repairCharges ?? 0) <= 0) continue;
+    let best = null, bestV = 0;
+    for (const t of myShips) {
+      if (t.id === ship.id) continue;
+      const v = vuln(t);
+      if (v > bestV && dist(ship.x, ship.y, t.x, t.y) <= st.fireRange) { bestV = v; best = t; }
+    }
+    if (best) cands.push({ score: 18 + bestV * 0.2, action: { type: 'repair', shipId: ship.id, targetId: best.id } });
+  }
+
+  // --- докупка за пиратское золото (середина боя) ---
+  if (level !== 'easy' && me.gold >= SHIP_TYPES.fregat.price) {
+    cands.push({ score: 21, action: { type: 'buy', ships: [me.gold >= SHIP_TYPES.linkor.price ? 'linkor' : 'fregat'] } });
+  }
+
+  // --- движение ---
+  const addMove = (ship, tx, ty, score) => {
+    const pos = findStep(game, ship, tx, ty);
+    if (pos) cands.push({ score, action: { type: 'move', shipId: ship.id, x: pos.x, y: pos.y } });
+  };
+  for (const ship of myShips) {
+    if (acted.has(ship.id) || game.turn.broadsideSides?.[ship.id]?.length) continue;
+    const st = SHIP_TYPES[ship.type];
+    const cannons = BROADSIDE_CANNONS[ship.type] || 0;
+
+    // ремонтник идёт со стаей (к ближайшему боевому союзнику), чтобы быть в радиусе ремонта,
+    // но к раненым — охотнее (их и латать). Сам в свалку не лезет (выстрелов у него нет).
+    if (st.repairer) {
+      const allies = myShips.filter(s => s.id !== ship.id && SHIP_TYPES[s.type].dmg > 0);
+      const hurt = allies.filter(s => s.hp < SHIP_TYPES[s.type].hp * 0.85);
+      const ally = nearest(ship, hurt.length ? hurt : allies, s => [s.x, s.y]);
+      if (ally) addMove(ship, ally.x, ally.y, hurt.length ? 26 : 23); // идём с флотом (вровень со сближением)
+      continue;
+    }
+    // подбитый ценный корабль отходит от ближайшего врага (сохранить флот, дать ремонт)
+    if (level !== 'easy' && ship.hp < st.hp * 0.3 && st.price >= 220) {
+      const threat = nearest(ship, foeShips, f => [f.x, f.y]);
+      if (threat && dist(threat.x, threat.y, ship.x, ship.y) < SHIP_TYPES[threat.type].fireRange + 80) {
+        const ang = Math.atan2(ship.y - threat.y, ship.x - threat.x);
+        addMove(ship, ship.x + Math.cos(ang) * st.move, ship.y + Math.sin(ang) * st.move, 30);
+        continue;
+      }
+    }
+    // лучшая жертва: опаснее + раненее + ближе. Нет врагов рядом — добиваем пирата (золото на докупку).
+    let target = null, bestSc = -Infinity;
+    for (const t of foeShips) {
+      const sc = worth(t) + vuln(t) * 0.3 - dist(ship.x, ship.y, t.x, t.y) * 0.02;
+      if (sc > bestSc) { bestSc = sc; target = t; }
+    }
+    if (!target && pirates.length) target = nearest(ship, pirates, p => [p.x, p.y]);
+    if (target) {
+      const fd = dist(ship.x, ship.y, target.x, target.y);
+      if (cannons && fd <= st.fireRange + st.move) {
+        // ЗАХОД БОРТОМ: разворачиваемся, чтобы враг встал на ТРАВЕРЗ (≈90°) — тогда залп бьёт в полную силу.
+        // Начинаем манёвр ещё на подходе (в пределах хода до радиуса), чтобы прийти бортом, а не носом.
+        // Приоритет ВЫШЕ не-добивающей мортиры (борт выгоднее); тяжёлым важнее встать бортом (линкор ~46).
+        const dir = Math.atan2(target.y - ship.y, target.x - ship.x);
+        const turnScore = 24 + st.dmg * 0.1; // выше не-добивающей мортиры, но ниже залпа по цели в секторе
+        for (const s of [1, -1]) {
+          const a = dir + s * (Math.PI / 2) * 0.78;
+          addMove(ship, ship.x + Math.cos(a) * st.move * 0.9, ship.y + Math.sin(a) * st.move * 0.9, turnScore);
+        }
+      } else {
+        // далеко — сближаемся. У отставших чуть выше приоритет, чтобы флот шёл КУЧЕЙ, а не по одному на убой.
+        addMove(ship, target.x, target.y, 22 + Math.min(8, fd * 0.006));
+      }
+    }
+  }
+
+  if (level === 'easy') {
+    if (Math.random() < 0.3) return cands[Math.floor(Math.random() * cands.length)].action;
+    for (const c of cands) c.score *= 0.7 + Math.random() * 0.6;
   }
   cands.sort((a, b) => b.score - a.score);
   return cands[0].action;

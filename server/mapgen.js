@@ -35,6 +35,7 @@ const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
 
 export function generateMap(seed, playerCount, opts = {}) {
   const rnd = mulberry32(seed);
+  if (opts.duel) return duelMap(opts.mapScale || 0.7);   // дуэль: маленькая карта, без баз и островов
   const W = MAP_W, H = MAP_H, M = BASE_CORNER_MARGIN;
 
   // Углы для баз. 2 игрока — по диагонали, 3-4 — по углам.
@@ -98,6 +99,39 @@ export function generateMap(seed, playerCount, opts = {}) {
   }
 
   return { w: W, h: H, bases, lootIslands, fishZones };
+}
+
+// Дуэль: маленькая карта (масштаб от обычной), без островов/рыбозон. «Базы» = невидимые
+// якоря-стороны: слева (idx 0) и справа (idx 1), по центру по вертикали — только точка отсчёта
+// для спавна флота и идентичности стороны (порта/форта/дохода у них нет, noPort).
+function duelMap(scale) {
+  const W = Math.round(MAP_W * scale), H = Math.round(MAP_H * scale), edge = 90;
+  const bases = [
+    { playerIdx: 0, x: edge,     y: Math.round(H / 2), radius: 0, noPort: true, shape: [] },
+    { playerIdx: 1, x: W - edge, y: Math.round(H / 2), radius: 0, noPort: true, shape: [] },
+  ];
+  return { w: W, h: H, bases, lootIslands: [], fishZones: [], duel: true };
+}
+
+// Дуэль: раскладка купленного флота вертикальными рядами у своей стороны (слева idx0 / справа idx1).
+// Колонка центрируется по вертикали; при переполнении уходит вглубь карты следующей колонкой.
+export function duelFleetSpots(map, sideIdx, count) {
+  const rowStep = 42, colStep = 48, margin = 70;
+  const perCol = Math.max(1, Math.floor((map.h - margin * 2) / rowStep));
+  const left = sideIdx === 0;
+  const x0 = left ? 80 : map.w - 80;
+  const pts = [];
+  for (let i = 0; i < count; i++) {
+    const col = Math.floor(i / perCol);
+    const row = i % perCol;
+    const colCount = Math.min(perCol, count - col * perCol);
+    const colTop = (map.h - (colCount - 1) * rowStep) / 2; // центрируем колонку по высоте
+    pts.push({
+      x: Math.round(x0 + (left ? 1 : -1) * col * colStep),
+      y: Math.round(colTop + row * rowStep),
+    });
+  }
+  return pts;
 }
 
 // Точки расстановки стартового флота вокруг базы (в сторону центра карты).

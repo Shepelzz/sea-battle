@@ -237,13 +237,21 @@ $('#loginOverlay').addEventListener('click', e => { if (e.target.id === 'loginOv
     // селекторы игрового режима (из включённых на сервере) + показ описания выбранного
     const modes = Array.isArray(cfg.modes) && cfg.modes.length ? cfg.modes : [{ key: 'classic', name: 'Классический', desc: '' }];
     document.querySelectorAll('.mode-dd').forEach(host => {
+      // дуэль — только онлайн и против бота (строго 1на1); «на одном устройстве» её не предлагаем
+      const ms = host.id === 'hotseatMode' ? modes.filter(m => m.key !== 'duel') : modes;
       const desc = host.parentElement.querySelector('.mode-desc');
-      const applyDesc = key => { if (desc) desc.textContent = (modes.find(m => m.key === key) || {}).desc || ''; };
-      const draw = () => renderModeDropdown(host, modes, host.dataset.mode, key => {
-        host.dataset.mode = key; applyDesc(key); draw();   // выбран режим — обновить кнопку и описание
+      // селектор количества участников: в дуэли строго 1на1 — прячем (онлайн: игроки, бот: противники)
+      const countBox = host.id === 'onlineMode' ? $('#maxPlayersBox')
+        : host.id === 'botMode' ? $('#botCountBox') : null;
+      const apply = key => {
+        if (desc) desc.textContent = (ms.find(m => m.key === key) || {}).desc || '';
+        if (countBox) countBox.classList.toggle('hidden', key === 'duel');
+      };
+      const draw = () => renderModeDropdown(host, ms, host.dataset.mode, key => {
+        host.dataset.mode = key; apply(key); draw();   // выбран режим — обновить кнопку, описание, селектор кол-ва
       });
-      host.dataset.mode = modes[0].key;   // по умолчанию — первый режим (классический)
-      draw(); applyDesc(host.dataset.mode);
+      host.dataset.mode = ms[0].key;   // по умолчанию — первый режим (классический)
+      draw(); apply(host.dataset.mode);
     });
     // авторизация
     GOOGLE_ID = cfg.googleClientId || null;

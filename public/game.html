@@ -126,7 +126,12 @@
         <span class="gold-chip" id="shopGold"></span>
         <button class="small" id="shopClose">✖</button>
       </div>
-      <p class="muted" style="margin:6px 0 10px">Новые корабли появятся у твоего порта. Покупка нескольких — одно действие за ход.</p>
+      <div class="duel-rules hidden" id="duelRules">
+        <b>⚔️ Дуэль 1 на 1.</b> Скупись на <b>ВСЁ</b> золото — пока можно купить хоть один корабль, в бой не выйдешь.
+        Карта маленькая, без баз и островов: твой флот встанет в ряд на твоей стороне. Дохода за ход нет — золото только за пиратов
+        (за них можно докупиться в бою). Побеждает тот, кто <b>разнесёт весь флот соперника</b>. Готов — жми «⚔️ В бой!».
+      </div>
+      <p class="muted" id="shopDesc" style="margin:6px 0 10px">Новые корабли появятся у твоего порта. Покупка нескольких — одно действие за ход.</p>
       <div class="shop-grid" id="shopList"></div>
       <div class="shop-footer">
         <span id="shopTotal" class="muted"></span>

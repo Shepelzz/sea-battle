@@ -52,14 +52,22 @@ export const GAME_MODES = {
                 enabled: true, startGold: 3500, botAggro: true },
   develop:    { name: 'Развитие',     desc: 'Мирные первые раунды: качай экономику и оборону, потом война. У каждой базы своя рыбозона.',
                 enabled: true, peaceRounds: 10, peaceBaseKeepout: 610, baseFishZone: true, allFishZonesBig: true },
+  duel:       { name: 'Дуэль',        desc: '1 на 1 (или против бота). Маленькая карта, без баз и островов: на старте скупись на весь флот и развали флот соперника. Дохода за ход нет — золото только за пиратов.',
+                enabled: true, duel: true, startGold: 4000, maxPlayers: 2, mapScale: 0.7 },
 };
 export const DEFAULT_MODE = 'classic';
 // доступные в выборе режимы (ключи), отфильтрованные по enabled
 export const enabledModes = () => Object.keys(GAME_MODES).filter(k => GAME_MODES[k].enabled);
 // настройки текущего режима партии
 export const modeOf = (game) => GAME_MODES[game?.config?.mode] || GAME_MODES[DEFAULT_MODE];
-// стартовое золото с учётом режима (классика/развитие → START_GOLD; дезматч → свой startGold)
+// стартовое золото с учётом режима (классика/развитие → START_GOLD; дезматч/дуэль → свой startGold)
 export const modeStartGold = (game) => modeOf(game).startGold ?? START_GOLD;
+// режим «Дуэль»: 1на1 без баз/островов, стартовая закупка флота, победа по уничтожению флота
+export const isDuel = (game) => !!modeOf(game).duel;
+// цена самого дешёвого покупаемого корабля (для правила «скупись на всё»: остаток < этой суммы).
+// В дуэли рыбацкий баркас не продаётся (рыбалки нет и воевать он не умеет) → самый дешёвый = шхуна.
+export const cheapestShipPrice = (duel = false) =>
+  Math.min(...Object.values(SHIP_TYPES).filter(s => !s.cheat && s.price > 0 && (!duel || !s.fishing)).map(s => s.price));
 // длина мирного периода в РАУНДАХ (0 — мира нет)
 export const modePeaceRounds = (game) => modeOf(game).peaceRounds || 0;
 // идёт ли сейчас мирное время (раунд ≤ peaceRounds)

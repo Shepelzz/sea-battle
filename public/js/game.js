@@ -919,6 +919,7 @@ function drawFort(X, Y, R, accent, pal, withFlag) {
 }
 
 function drawBase(b, i, { alive, hpFrac, dim }) {
+  if (b.noPort) return; // дуэль: баз и фортов нет — b лишь невидимый якорь спавна флота
   const p = state.players[i];
   ctx.globalAlpha = dim ? 0.4 : 1;
   // ОСТРОВ-основание (бледнее камня форта, чтобы форт читался поверх) — форт ПОМЕНЬШЕ, остров виден по краям
@@ -2195,7 +2196,8 @@ $('#leaveLobbyBtn').addEventListener('click', () => {
 $('#btnBuy').addEventListener('click', () => {
   const ships = Object.entries(basket).flatMap(([t, n]) => Array(n).fill(t));
   if (!ships.length) { toast('Корзина пуста — добавь корабли «+»'); return; }
-  sendAction({ type: 'buy', ships });
+  // дуэль, фаза закупки — это стартовый сбор флота (buyFleet), иначе обычная докупка (buy)
+  sendAction({ type: state.phase === 'buy' ? 'buyFleet' : 'buy', ships });
 });
 
 // ============ САЙДБАР ============
@@ -2208,6 +2210,7 @@ function renderSidebar() {
   const showMoves = multiMoveOn() && state.status === 'active' && (isMyTurn() || state.config?.hotseat);
   const movesTag = showMoves ? ` ⚓${movesLeft()}/${movesPerTurn()}` : '';
   if (state.status === 'lobby') banner.textContent = '⏳ Сбор флота…';
+  else if (state.phase === 'buy') banner.textContent = me?.ready ? '⏳ Ждём, пока соперник соберёт флот…' : '🛒 Собери флот — на всё золото!';
   else if (state.status === 'finished') banner.textContent = '🏁 Баттл окончен';
   else if (state.config?.hotseat) banner.textContent = `✏️ Ходит: ${current?.nick} (№${state.turn.number})${movesTag}`;
   else if (isMyTurn()) banner.textContent = `🔥 Твой ход!${movesTag}`;
@@ -2270,9 +2273,12 @@ function renderSidebar() {
 function renderShop() {
   const me = state.players[myIdx()];
   if (!me) return;
+  // в фазе стартовой закупки дуэли — показываем правила вместо обычной подписи
+  $('#duelRules')?.classList.toggle('hidden', state.phase !== 'buy');
+  $('#shopDesc')?.classList.toggle('hidden', state.phase === 'buy');
   const total = Object.entries(basket).reduce((s, [t, n]) => s + ST(t).price * n, 0);
   $('#shopGold').textContent = `💰 ${me.gold}`;
-  $('#shopList').innerHTML = Object.entries(state.shipTypes).filter(([, st]) => !st.npc && !st.cheat).map(([t, st]) => {
+  $('#shopList').innerHTML = Object.entries(state.shipTypes).filter(([, st]) => !st.npc && !st.cheat && (!state.duel || !st.fishing)).map(([t, st]) => {
     const cantAddMore = total + st.price > me.gold;
     return `
     <div class="ship-card ${cantAddMore && !basket[t] ? 'unaffordable' : ''}" title="${st.desc}">
@@ -2294,10 +2300,21 @@ function renderShop() {
       </div>
     </div>`;
   }).join('');
-  $('#shopTotal').textContent = total ? `Итого: ${total} из ${me.gold} зол.` : 'Выбери корабли кнопкой «+»';
-  $('#shopTotal').style.color = total > me.gold ? '#c0392b' : '';
-  $('#btnBuy').disabled = !total || total > me.gold || !isMyTurn();
-  $('#btnBuy').textContent = total ? `Купить за ${total} зол.` : 'Купить';
+  if (state.phase === 'buy') {            // ДУЭЛЬ: стартовая закупка — «скупись на всё», кнопка «В бой!»
+    const remaining = me.gold - total;
+    const fullSpent = total > 0 && total <= me.gold && remaining < state.minShipPrice;
+    $('#shopTotal').textContent = total
+      ? (fullSpent ? `Флот на ${total} зол. — в бой!` : `Осталось ${remaining} зол. — скупись на всё (мин. корабль ${state.minShipPrice})`)
+      : `Собери флот на все ${me.gold} зол.`;
+    $('#shopTotal').style.color = total > me.gold ? '#c0392b' : '';
+    $('#btnBuy').disabled = !fullSpent;
+    $('#btnBuy').textContent = '⚔️ В бой!';
+  } else {
+    $('#shopTotal').textContent = total ? `Итого: ${total} из ${me.gold} зол.` : 'Выбери корабли кнопкой «+»';
+    $('#shopTotal').style.color = total > me.gold ? '#c0392b' : '';
+    $('#btnBuy').disabled = !total || total > me.gold || !isMyTurn();
+    $('#btnBuy').textContent = total ? `Купить за ${total} зол.` : 'Купить';
+  }
   document.querySelectorAll('[data-shop]').forEach(b => b.addEventListener('click', () => {
     const t = b.dataset.shop;
     basket[t] = Math.max(0, (basket[t] || 0) + (+b.dataset.d));
@@ -2308,6 +2325,19 @@ function renderShop() {
 
 // ============ ОВЕРЛЕИ ============
 function renderOverlays() {
+  // ДУЭЛЬ: стартовая закупка флота — авто-открытая верфь (закрыть нельзя, пока не собрал), затем бой
+  const buyPhase = state.status === 'active' && state.phase === 'buy';
+  const meBuy = state.players[myIdx()];
+  const buying = buyPhase && meBuy && !meBuy.ready && myIdx() >= 0 && !spectator;
+  $('#shopClose').classList.toggle('hidden', buying);
+  if (buying) {
+    if ($('#shopOverlay').classList.contains('hidden')) basket = {};
+    $('#shopOverlay').classList.remove('hidden');
+    renderShop();
+  } else if (buyPhase) {
+    $('#shopOverlay').classList.add('hidden'); // флот собран — ждём соперника (баннер в сайдбаре)
+  }
+
   // лобби
   const inLobby = state.status === 'lobby';
   $('#lobbyOverlay').classList.toggle('hidden', !inLobby || $('#nickOverlay').classList.contains('hidden') === false);
@@ -2341,7 +2371,7 @@ function renderOverlays() {
     const botCount = state.players.filter(p => p.isBot).length;
     const botLimit = Math.floor(cfg.maxPlayers / 2);
     const canAddBot = isCreator && botCount < botLimit && state.players.length < cfg.maxPlayers;
-    $('#lobbyBots').classList.toggle('hidden', !isCreator);
+    $('#lobbyBots').classList.toggle('hidden', !isCreator || state.duel); // в дуэли ботов не добавляют (1 на 1)
     $('#addBotBtn').disabled = !canAddBot;
     $('#botHint').textContent = `боты: ${botCount}/${botLimit}` + (botCount >= botLimit ? ' (лимит)' : '');
     const humans = state.players.filter(p => !p.isBot).length;

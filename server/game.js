@@ -1,12 +1,12 @@
 // Игровая логика: создание игры, лобби, валидация и применение ходов.
-import { generateMap, spawnPoints } from './mapgen.js';
+import { generateMap, spawnPoints, duelFleetSpots } from './mapgen.js';
 import {
   SHIP_TYPES, START_FLEET, START_GOLD, PORT_HP, PORT_RETURN_DMG, PORT_INCOME,
   PORT_RETURN_LINKOR_MULT, PORT_NO_SHIP_INCOME_MULT,
   SHIP_COLLISION_DIST, LOOT_REACH, WRECK_LOOT_FRAC, TRIBUTE_FRAC,
   BROADSIDE_CANNONS, BROADSIDE_HALF_ARC, BROADSIDE_FALLOFF_MIN, BROADSIDE_SIDE_MIN, BROADSIDE_PORT_MULT, MORTAR_SHIPS, MORTAR_SHIP_MULT,
   FISH_ZONE_CAP, movesBudget, SHIP_ACTIONS, CHEATS_ENABLED, REPAIR_CHARGES, REPAIR_DOCK_REACH,
-  modeStartGold, modeOf, isPeace, modePeaceRounds,
+  modeStartGold, modeOf, isPeace, modePeaceRounds, isDuel, cheapestShipPrice,
   MAP_EDGE_MARGIN, ISLAND_BLOCK_GAP, SPAWN_FAN_N, SPAWN_FAN_RINGS, SPAWN_FAN_R0, SPAWN_FAN_RING_STEP,
   PIRATE, PIRATE_MAX, PIRATE_ENGAGE_MULT, PIRATE_MIN_LIFETIME, PIRATE_STEP_MIN,
   PIRATE_DESPAWN_CHANCE, PIRATE_MOVE_CHANCE, PIRATE_BOSS_CHANCE, PIRATE_BOSS_HP,
@@ -108,8 +108,21 @@ export function startGame(game, playerId) {
   if (game.players[0]?.id !== playerId) return { ok: false, error: 'Начать игру может только создатель' };
   if (game.players.length < 2) return { ok: false, error: 'Нужно минимум 2 игрока' };
 
-  // в «Развитии» — у каждой базы своя большая рыбозона и все зоны на 5 слотов (опции режима)
   const md = modeOf(game);
+  // ── Дуэль: маленькая карта без баз/островов, стартового флота нет — игроки скупаются
+  // в фазе 'buy' (на всё золото), затем начинается бой. Золото (startGold) уже выдано в addPlayer. ──
+  if (md.duel) {
+    game.map = generateMap(game.config.seed, game.players.length, { duel: true, mapScale: md.mapScale });
+    game.players.forEach(p => { p.ready = false; });
+    for (let i = 0; i < 2; i++) spawnPirate(game, true, false, i);
+    game.status = 'active';
+    game.phase = 'buy';
+    game.turn = { idx: 0, number: 0, round: 1, deadline: null, nudged: false, moves: 0, actedShips: [] };
+    pushLog(game, '🛒 Дуэль: соберите флот в верфи — на всё золото! — затем в бой', 'battle');
+    return { ok: true };
+  }
+
+  // в «Развитии» — у каждой базы своя большая рыбозона и все зоны на 5 слотов (опции режима)
   game.map = generateMap(game.config.seed, game.players.length, { baseFishZone: !!md.baseFishZone, allFishZonesBig: !!md.allFishZonesBig });
   game.players.forEach((p, idx) => {
     const base = game.map.bases[idx];
@@ -333,7 +346,7 @@ function advanceTurn(game) {
   // (Раньше доход срезался после players*80 ходов «для сходимости» — убрано: экономику не лимитируем,
   // иначе в долгой партии золото переставало капать и в верфи становилось нечего купить.)
   const np = game.players[next];
-  if (np?.alive) {
+  if (np?.alive && !isDuel(game)) {   // в дуэли дохода за ход НЕТ (золото — только за пиратов)
     // порт без единого корабля приносит на 50% больше золота — игроку, потерявшему флот, легче встать на ноги.
     const hasShips = game.ships.some(s => s.owner === next);
     np.gold += hasShips ? PORT_INCOME : Math.round(PORT_INCOME * PORT_NO_SHIP_INCOME_MULT);
@@ -361,7 +374,7 @@ function advanceTurn(game) {
 export function shipPlacementBlocked(game, x, y, ignoreShipId) {
   const m = game.map;
   if (x < MAP_EDGE_MARGIN || y < MAP_EDGE_MARGIN || x > m.w - MAP_EDGE_MARGIN || y > m.h - MAP_EDGE_MARGIN) return 'За краем карты';
-  for (const b of m.bases) if (dist(x, y, b.x, b.y) < b.radius + ISLAND_BLOCK_GAP) return 'Нельзя встать на остров';
+  for (const b of m.bases) if (!b.noPort && dist(x, y, b.x, b.y) < b.radius + ISLAND_BLOCK_GAP) return 'Нельзя встать на остров';
   for (const o of m.lootIslands) if (dist(x, y, o.x, o.y) < o.radius + ISLAND_BLOCK_GAP) return 'Нельзя встать на остров';
   for (const s of game.ships) {
     if (s.id !== ignoreShipId && dist(x, y, s.x, s.y) < SHIP_COLLISION_DIST) return 'Слишком близко к другому кораблю';
@@ -388,7 +401,13 @@ function sinkShip(game, ship, killer) {
   }
   const owner = game.players[ship.owner];
   owner.stats.shipsLost++;
-  if (killer) {
+  if (killer && isDuel(game)) {
+    // Дуэль: за потопление ВРАЖЕСКОГО судна золото НЕ даём (иначе экономика раздувается; золото — только за пиратов).
+    killer.stats.shipsSunk++;
+    logEvent(game,
+      `💥 ${SHIP_TYPES[ship.type].name} игрока ${owner.nick} потоплен! (${killer.nick})`,
+      `💥 ${killer.nick} потопил корабль игрока ${owner.nick}`, 'battle');
+  } else if (killer) {
     const plunder = Math.round(SHIP_TYPES[ship.type].price * WRECK_LOOT_FRAC);
     killer.gold += plunder;
     killer.stats.shipsSunk++;
@@ -402,6 +421,10 @@ function sinkShip(game, ship, killer) {
       `💥 ${SHIP_TYPES[ship.type].name} игрока ${owner.nick} потоплен пиратами!`,
       `💥 Пираты потопили корабль игрока ${owner.nick}`, 'battle');
   }
+  // Дуэль: флот игрока полностью уничтожен → он выбывает (баз нет; последний с флотом побеждает).
+  if (isDuel(game) && owner.alive && !game.ships.some(s => s.owner === ship.owner)) {
+    eliminatePlayer(game, ship.owner, killer || null);
+  }
 }
 
 // killer = null означает добровольную сдачу.
@@ -409,19 +432,24 @@ function eliminatePlayer(game, victimIdx, killer) {
   const victim = game.players[victimIdx];
   victim.alive = false;
   victim.placement = game.players.filter(p => p.alive).length + 1;
+  const duel = isDuel(game);
   if (killer) {
     const tribute = Math.floor(victim.gold * TRIBUTE_FRAC);
     victim.gold -= tribute;
     killer.gold += tribute;
     killer.stats.goldCollected += tribute;
     const base = game.map.bases[victimIdx];
-    pushEvent(game, { type: 'explosion', x: base.x, y: base.y, big: true });
-    pushEvent(game, { type: 'gold', x: base.x, y: base.y, amount: tribute });
+    if (base && !base.noPort) { // в дуэли порта/форта нет — взрыв уже сыгран на последнем корабле
+      pushEvent(game, { type: 'explosion', x: base.x, y: base.y, big: true });
+      pushEvent(game, { type: 'gold', x: base.x, y: base.y, amount: tribute });
+    }
     logEvent(game,
-      `🏴‍☠️ Порт игрока ${victim.nick} разрушен! ${killer.nick} забирает ${tribute} золота. ${victim.nick} выбывает`,
-      `🏴‍☠️ ${killer.nick} разбил базу игрока ${victim.nick} — ${victim.nick} выбывает`, 'battle');
+      duel ? `🏴‍☠️ Флот игрока ${victim.nick} разбит! ${killer.nick} забирает остатки казны (${tribute}) и побеждает`
+           : `🏴‍☠️ Порт игрока ${victim.nick} разрушен! ${killer.nick} забирает ${tribute} золота. ${victim.nick} выбывает`,
+      duel ? `🏴‍☠️ ${killer.nick} разбил флот игрока ${victim.nick}`
+           : `🏴‍☠️ ${killer.nick} разбил базу игрока ${victim.nick} — ${victim.nick} выбывает`, 'battle');
   } else {
-    pushLog(game, `🏳️ ${victim.nick} спускает флаг и покидает баттл`, 'battle');
+    pushLog(game, `🏳️ ${victim.nick} ${duel ? 'теряет весь флот и' : 'спускает флаг и'} покидает баттл`, 'battle');
   }
   // Флот побеждённого уходит на дно вместе с портом.
   game.ships = game.ships.filter(s => s.owner !== victimIdx);
@@ -507,13 +535,52 @@ export function nudge(game, playerId) {
   return { ok: true, targetIdx };
 }
 
-// Применение хода. action.type: buy | collect | move | attack | skip
+// Дуэль, стартовая закупка флота: правило «скупись на всё» (после покупки остаток < цены самого
+// дешёвого корабля, иначе reject), спавн купленного флота в ряд на своей стороне, флаг ready.
+// Когда оба игрока готовы — переключаем в фазу боя 'battle' и стартуем ходы.
+function duelBuyFleet(game, pIdx, action) {
+  const player = game.players[pIdx];
+  if (player.ready) return { ok: false, error: 'Флот уже собран — ждём соперника' };
+  const list = Array.isArray(action.ships) ? action.ships : [];
+  if (!list.length) return { ok: false, error: 'Собери флот: добавь корабли в верфи' };
+  if (list.some(t => !SHIP_TYPES[t] || SHIP_TYPES[t].cheat || SHIP_TYPES[t].fishing || !(SHIP_TYPES[t].price > 0)))
+    return { ok: false, error: 'Недопустимый корабль для дуэли' };
+  const cost = list.reduce((sum, t) => sum + SHIP_TYPES[t].price, 0);
+  if (cost > player.gold) return { ok: false, error: 'Не хватает золота' };
+  if (player.gold - cost >= cheapestShipPrice(true))
+    return { ok: false, error: 'Скупись на всё золото — ещё можно купить корабль' };
+  const spots = duelFleetSpots(game.map, pIdx, list.length);
+  list.forEach((type, i) => {
+    game.ships.push({
+      id: 's' + (shipSeq++) + '_' + Math.random().toString(36).slice(2, 6),
+      owner: pIdx, type, x: spots[i].x, y: spots[i].y, hp: SHIP_TYPES[type].hp,
+      ...(SHIP_TYPES[type].repairer ? { repairCharges: REPAIR_CHARGES } : {})
+    });
+  });
+  player.gold -= cost;
+  player.ready = true;
+  pushLog(game, `⚓ ${player.nick} собрал флот (${list.length} суд., −${cost} зол.) — готов к бою`, 'battle');
+  if (game.players.every(p => p.ready)) {  // оба готовы → бой
+    game.phase = 'battle';
+    game.turn = { idx: 0, number: 1, round: 1, deadline: turnDeadline(game), nudged: false, moves: 0, actedShips: [], broadsideSides: {} };
+    pushLog(game, `⚔️ Флоты собраны — бой! Первым ходит ${game.players[0].nick}`, 'battle');
+  }
+  return { ok: true, bought: list.length };
+}
+
+// Применение хода. action.type: buy | collect | move | attack | skip | buyFleet (дуэль)
 export function applyAction(game, playerId, action) {
   if (game.status !== 'active') return { ok: false, error: 'Игра не активна' };
   let pIdx = game.players.findIndex(p => p.id === playerId);
   // хотсит: владелец устройства ходит за того, чья очередь
   if (pIdx === -1 && game.config.hotseat && playerId === game.hotseatOwner) pIdx = game.turn.idx;
   if (pIdx === -1) return { ok: false, error: 'Вы не участник игры' };
+  // Дуэль, фаза закупки: оба игрока скупаются ОДНОВРЕМЕННО (вне очереди ходов), затем начинается бой.
+  if (game.phase === 'buy') {
+    if (action.type !== 'buyFleet') return { ok: false, error: 'Идёт закупка — собери флот в верфи' };
+    return duelBuyFleet(game, pIdx, action);
+  }
+  if (action.type === 'buyFleet') return { ok: false, error: 'Закупка флота уже завершена' };
   if (pIdx !== game.turn.idx) return { ok: false, error: 'Сейчас не ваш ход' };
   const player = game.players[pIdx];
   // режим «ход тремя судами»: одним кораблём за ход ходить можно только раз
@@ -633,6 +700,7 @@ export function applyAction(game, playerId, action) {
         if (target.hp <= 0) sinkShip(game, target, player);
         else if (target.owner === -1) target.angryAt = pIdx; // пираты запоминают обидчика
       } else if (action.targetType === 'port') {
+        if (isDuel(game)) return { ok: false, error: 'В дуэли баз нет — бей по кораблям' };
         const targetIdx = action.targetId;
         const victim = game.players[targetIdx];
         if (!victim || targetIdx === pIdx || !victim.alive) return { ok: false, error: 'Неверная цель' };
@@ -746,7 +814,7 @@ export function applyAction(game, playerId, action) {
       }
       // вражеский ПОРТ в секторе — символический урон (осада — мортирой), но порт огрызается как обычно
       let portHit = null;
-      if (!peace) for (let i = 0; i < game.players.length; i++) {
+      if (!peace && !isDuel(game)) for (let i = 0; i < game.players.length; i++) {
         if (i === pIdx || !game.players[i].alive) continue;
         const base = game.map.bases[i], d = dist(ship.x, ship.y, base.x, base.y);
         if (d > range + base.radius * 0.5) continue;
@@ -901,6 +969,7 @@ export function publicState(game, viewerPid) {
       id: p.id, nick: p.nick, color: p.color,
       gold: (reveal || p.id === viewerPid) ? p.gold : null,
       portHp: p.portHp, alive: p.alive, placement: p.placement,
+      ready: p.ready || false,                 // дуэль: собрал ли флот в фазе закупки
       stats: p.stats, isBot: p.isBot || false
     })),
     ships: game.ships,
@@ -917,6 +986,8 @@ export function publicState(game, viewerPid) {
     palette: PALETTE,
     // режим партии + мирный период (для баннера и подсказок клиента)
     mode: game.config.mode || 'classic',
+    // дуэль: фаза ('buy' закупка | 'battle' бой) + цена самого дешёвого корабля (для правила «скупись на всё»)
+    duel: isDuel(game), phase: game.phase || null, minShipPrice: cheapestShipPrice(isDuel(game)),
     peace: { active: isPeace(game), round: game.turn?.round || 1, until: modePeaceRounds(game) },
     // параметры боя для клиента (сектор залпа, пушки по классам, у кого мортира)
     broadside: { halfArc: BROADSIDE_HALF_ARC, cannons: BROADSIDE_CANNONS, mortarShips: MORTAR_SHIPS, mortarShipMult: MORTAR_SHIP_MULT },
