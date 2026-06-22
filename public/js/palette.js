@@ -33,7 +33,46 @@ function renderColorDropdown(host, palette, selected, onPick, taken) {
   host.append(btn, menu);
 }
 
-// клик мимо — закрыть все открытые списки
+// Выпадающий выбор игрового режима — СВОЙ дропдаун (не нативный <select>): нативный на мобиле
+// всплывает не там (внутри повёрнутой .note), а этот позиционируется CSS под кнопкой.
+// renderModeDropdown(host, modes, selectedKey, onPick): modes = [{key,name,desc}].
+function renderModeDropdown(host, modes, selected, onPick) {
+  host.innerHTML = '';
+  host.classList.add('mode-dd');
+  const cur = modes.find(m => m.key === selected) || modes[0];
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'mode-dd-btn';
+  btn.innerHTML = `<span class="dd-label"></span><span class="dd-caret">▾</span>`;
+  btn.querySelector('.dd-label').textContent = cur ? cur.name : '';
+
+  const menu = document.createElement('div');
+  menu.className = 'mode-dd-menu hidden';
+  for (const m of modes) {
+    const o = document.createElement('button');
+    o.type = 'button';
+    o.className = 'mode-dd-opt' + (m.key === selected ? ' sel' : '');
+    o.textContent = m.name;
+    o.addEventListener('click', e => { e.stopPropagation(); menu.classList.add('hidden'); onPick(m.key); });
+    menu.appendChild(o);
+  }
+
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    document.querySelectorAll('.mode-dd-menu, .color-dd-menu').forEach(x => { if (x !== menu) x.classList.add('hidden'); });
+    const opening = menu.classList.contains('hidden');
+    menu.classList.toggle('hidden');
+    if (opening) {   // если меню не влезает вниз (низ экрана) — открыть его ВВЕРХ
+      menu.classList.remove('up');
+      if (menu.getBoundingClientRect().bottom > window.innerHeight - 8) menu.classList.add('up');
+    }
+  });
+
+  host.append(btn, menu);
+}
+
+// клик мимо — закрыть все открытые списки (и цвет, и режим)
 document.addEventListener('click', () => {
-  document.querySelectorAll('.color-dd-menu').forEach(m => m.classList.add('hidden'));
+  document.querySelectorAll('.color-dd-menu, .mode-dd-menu').forEach(m => m.classList.add('hidden'));
 });

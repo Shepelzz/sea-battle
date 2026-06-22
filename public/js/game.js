@@ -159,6 +159,11 @@ socket.on('state', s => {
     if (lastEventSeq >= 0 && s.events?.length) playEvents(s.events);
     lastEventSeq = s.eventSeq;
   }
+  // первый вход в активную игру — камера на свою базу (а не на пустой центр карты)
+  if (!centeredOnce && state.status === 'active' && state.map?.bases) {
+    centerOnMyBase();
+    centeredOnce = true;
+  }
   render();
   if (selectedShipId) updateActionButtons(); // синхронизировать кнопки выбранного корабля с новым состоянием (борта залпа)
   maybeMovesToast(prev, s); // «осталось N ходов» после моего суб-хода (режим ход-тремя-судами)
@@ -629,6 +634,7 @@ function pushToast(msg, kind, ms = 2600) {
   el.className = 'toast-item ' + kind;
   el.textContent = msg;
   el.dataset.msg = msg;
+  el.addEventListener('click', () => { clearTimeout(el._t); fadeToast(el); }); // тап по сообщению — закрыть принудительно
   box.insertBefore(el, box.firstChild);            // новый — сверху, прежние уходят вниз
   requestAnimationFrame(() => el.classList.add('show'));
   el._t = setTimeout(() => fadeToast(el), ms);
@@ -727,6 +733,7 @@ function escapeHtml(s) {
 let view = { scale: 1, ox: 0, oy: 0 };
 // камера: пользовательский зум (пинч/колесо) и панорама (драг)
 const cam = { z: 1, px: 0, py: 0 };
+let centeredOnce = false;   // при первом входе в активную игру центрируем камеру на своей базе
 
 // на мобиле снизу — свёрнутая панель; карта должна жить НАД ней, а не под.
 function desiredMapBottom() {
@@ -776,6 +783,20 @@ function computeView() {
   view.scale = coverFit() * cam.z;
   view.ox = (w - state.map.w * view.scale) / 2 + cam.px;
   view.oy = (h - state.map.h * view.scale) / 2 + cam.py;
+}
+
+// Центрируем камеру на базе игрока (своей; в хотсите — чей сейчас ход). Чтобы при входе в игру
+// сразу видеть свой флот, а не пустой центр карты — особенно заметно на узких мобильных экранах.
+function centerOnMyBase() {
+  if (!state?.map?.bases) return;
+  let idx = myIdx();
+  if (idx < 0) idx = hotseatOwner ? (state.turn?.idx ?? 0) : -1; // зритель — не центрируем
+  const b = idx >= 0 ? state.map.bases[idx] : null;
+  if (!b) return;
+  const s = coverFit() * cam.z;
+  cam.px = s * (state.map.w / 2 - b.x);   // сдвиг панорамы, чтобы база оказалась в центре вьюпорта
+  cam.py = s * (state.map.h / 2 - b.y);
+  clampCam();                              // не вылезаем за край поля
 }
 
 // зум к точке экрана (курсор/центр пинча остаётся на месте)

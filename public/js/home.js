@@ -115,7 +115,7 @@ $('#hotseatBtn').addEventListener('click', async () => {
     const res = await fetch('/api/games', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: getToken(), mode: 'hotseat', nicks, colors: hotseatColors, multiMove: $('#hotseatMulti').checked, gameMode: $('#hotseatMode').value })
+      body: JSON.stringify({ token: getToken(), mode: 'hotseat', nicks, colors: hotseatColors, multiMove: $('#hotseatMulti').checked, gameMode: $('#hotseatMode').dataset.mode })
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Ошибка сервера');
@@ -236,11 +236,14 @@ $('#loginOverlay').addEventListener('click', e => { if (e.target.id === 'loginOv
     renderHotseatNames();
     // селекторы игрового режима (из включённых на сервере) + показ описания выбранного
     const modes = Array.isArray(cfg.modes) && cfg.modes.length ? cfg.modes : [{ key: 'classic', name: 'Классический', desc: '' }];
-    document.querySelectorAll('.game-mode-sel').forEach(sel => {
-      sel.innerHTML = modes.map(m => `<option value="${m.key}">${m.name}</option>`).join('');
-      const desc = sel.parentElement.querySelector('.mode-desc');
-      const upd = () => { if (desc) desc.textContent = (modes.find(m => m.key === sel.value) || {}).desc || ''; };
-      sel.addEventListener('change', upd); upd();
+    document.querySelectorAll('.mode-dd').forEach(host => {
+      const desc = host.parentElement.querySelector('.mode-desc');
+      const applyDesc = key => { if (desc) desc.textContent = (modes.find(m => m.key === key) || {}).desc || ''; };
+      const draw = () => renderModeDropdown(host, modes, host.dataset.mode, key => {
+        host.dataset.mode = key; applyDesc(key); draw();   // выбран режим — обновить кнопку и описание
+      });
+      host.dataset.mode = modes[0].key;   // по умолчанию — первый режим (классический)
+      draw(); applyDesc(host.dataset.mode);
     });
     // авторизация
     GOOGLE_ID = cfg.googleClientId || null;
@@ -266,7 +269,7 @@ $('#createBtn').addEventListener('click', async () => {
         turnTimer: +$('#turnTimer').value,
         fog: $('#onlineFog').checked,
         multiMove: $('#onlineMulti').checked,
-        gameMode: $('#onlineMode').value
+        gameMode: $('#onlineMode').dataset.mode
       })
     });
     const data = await res.json();
@@ -300,7 +303,7 @@ $('#botBtn').addEventListener('click', async () => {
         color: botColor,
         fog: $('#botFog').checked,
         multiMove: $('#botMulti').checked,
-        gameMode: $('#botMode').value
+        gameMode: $('#botMode').dataset.mode
       })
     });
     const data = await res.json();
