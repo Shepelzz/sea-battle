@@ -79,7 +79,12 @@ check('классика: у игрока START_GOLD', game('classic').players[0]
   check('мир: атака базы отклонена', r3.ok === false && /мирн/i.test(r3.error), JSON.stringify(r3));
 
   g.turn.idx = 0; g.turn.moves = 0; g.turn.actedShips = [];
-  const near = applyAction(g, 'p0', { type: 'move', shipId: mine.id, x: 900, y: 760 }); // в зоне keepout базы p1, без коллизий
+  // ставим фрегат в 480 от чужой базы p1 (вне зоны keepout=427) и шагаем на ~90 внутрь — мир должен запретить
+  const kang = Math.atan2(mine.y - b1.y, mine.x - b1.x);
+  mine.x = Math.round(b1.x + Math.cos(kang) * 480);
+  mine.y = Math.round(b1.y + Math.sin(kang) * 480);
+  const near = applyAction(g, 'p0', { type: 'move', shipId: mine.id,
+    x: Math.round(b1.x + Math.cos(kang) * 390), y: Math.round(b1.y + Math.sin(kang) * 390) }); // 390 < keepout 427 → в зоне
   check('мир: подход к чужой базе отклонён', near.ok === false && /мирн/i.test(near.error), JSON.stringify(near));
 
   // ВОЙНА (раунд 11) — те же действия разрешены

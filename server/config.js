@@ -51,7 +51,7 @@ export const GAME_MODES = {
   deathmatch: { name: 'Дезматч',      desc: 'Много золота на старте — сразу большой флот и мясо. Боты агрессивны.',
                 enabled: true, startGold: 3500, botAggro: true },
   develop:    { name: 'Развитие',     desc: 'Мирные первые раунды: качай экономику и оборону, потом война. У каждой базы своя рыбозона.',
-                enabled: true, peaceRounds: 10, peaceBaseKeepout: 610, baseFishZone: true, allFishZonesBig: true },
+                enabled: true, peaceRounds: 10, peaceBaseKeepout: 427, baseFishZone: true, allFishZonesBig: true },
   duel:       { name: 'Дуэль',        desc: '1 на 1 (или против бота). Маленькая карта, без баз и островов: на старте скупись на весь флот и развали флот соперника. Дохода за ход нет — золото только за пиратов.',
                 enabled: true, duel: true, startGold: 4000, maxPlayers: 2, mapScale: 0.7 },
 };

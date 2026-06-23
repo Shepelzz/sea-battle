@@ -1303,6 +1303,15 @@ function render(canvasOnly) {
     });
   }
 
+  // 🕊 «Развитие», мирное время: пунктирная светло-серая граница вокруг ЧУЖИХ баз —
+  // ближе подходить нельзя. Рисуем только пока идёт мир; как peace.active станет false — исчезнет сама.
+  if (state.peace?.active && state.peace.keepout > 0) {
+    for (let i = 0; i < m.bases.length; i++) {
+      if (i === myIdx() || !state.players[i]?.alive) continue;
+      dashedCircle(m.bases[i].x, m.bases[i].y, state.peace.keepout, 'rgba(158,162,168,.6)', 1.4);
+    }
+  }
+
   // дым/огонь горящих баз — поверх островов и тумана
   drawBaseFires();
 
