@@ -136,6 +136,10 @@ tr:first-child td { font-weight: bold; }
 #panelToggle { display: none; }
 #actionsRow { display: flex; flex-wrap: wrap; gap: 8px; }
 #actionsRow.hidden { display: none; }
+/* нижний ряд: действия слева, «инфобаза» 📖 прижата к правому краю и видна даже когда ходов нет */
+.actions-bar { display: flex; align-items: flex-start; gap: 8px; }
+.actions-bar #actionsRow { flex: 1; }
+.actions-bar #infoBtn { margin-left: auto; flex: none; }
 #panelBody { display: flex; flex-direction: column; gap: 12px; }
 
 aside.panel {

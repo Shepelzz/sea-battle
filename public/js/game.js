@@ -1182,12 +1182,7 @@ function render(canvasOnly) {
   for (let y = gridY0; y <= gridY1; y += 40) {
     ctx.beginPath(); ctx.moveTo(0, sy(y)); ctx.lineTo(cw, sy(y)); ctx.stroke();
   }
-  // граница игрового поля — пунктир, «начерчено по линейке»
-  ctx.strokeStyle = '#6b6f76';
-  ctx.lineWidth = 2.5;
-  ctx.setLineDash([12, 8]);
-  ctx.strokeRect(sx(0), sy(0), m.w * view.scale, m.h * view.scale);
-  ctx.setLineDash([]);
+  // (граница игрового поля убрана — сетка просто продолжается за краями карты)
 
   // рыбные места
   for (const z of m.fishZones) {
@@ -2159,6 +2154,9 @@ $('#panelToggle').addEventListener('click', () => {
   $('#panelToggle').textContent = collapsed ? '☰' : '✕';
   resize(); // карта занимает область над свёрнутой панелью
 });
+// 🏠 на главную из активного баттла — это НЕ форфейт: игра живёт на сервере,
+// вернуться можно через «Мои игры». (disconnect на сервере — no-op, флот не тонет.)
+$('#homeBtn')?.addEventListener('click', () => { location.href = '/'; });
 // на телефоне меню по умолчанию свёрнуто — карта на весь экран над панелью
 if (window.matchMedia('(max-width: 900px)').matches) {
   $('#panel').classList.add('collapsed');
