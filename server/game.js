@@ -38,7 +38,10 @@ const SHIP_ACTION_SET = new Set(SHIP_ACTIONS); // действия, привяз
 let shipSeq = 1;
 
 function newStats() {
-  return { damageDealt: 0, shipsSunk: 0, shipsLost: 0, goldCollected: 0, shotsFired: 0 };
+  // npc* — доля урона/потоплений/добычи, набитая на НПС (пираты + игроки-боты).
+  // Общие статы остаются полными (рекап матча, сим-баланс), а в лидерборд (resultRows) идёт totals − npc.
+  return { damageDealt: 0, shipsSunk: 0, shipsLost: 0, goldCollected: 0, shotsFired: 0,
+           npcDamage: 0, npcSunk: 0, npcGold: 0 };
 }
 
 export function createGame(id, config) {
@@ -383,6 +386,12 @@ export function shipPlacementBlocked(game, x, y, ignoreShipId) {
   return null;
 }
 
+// Бой против NPC (пиратов owner=-1 и игроков-ботов) в ЛИДЕРБОРД не идёт: статы (урон/потопления/
+// добыча-с-убийств) копятся только за противников-людей. Игровое золото-валюта и рыбалка/лут — не статы, их не трогаем.
+function isHumanFoe(game, ownerIdx) {
+  return ownerIdx >= 0 && !game.players[ownerIdx]?.isBot;
+}
+
 function sinkShip(game, ship, killer) {
   game.ships = game.ships.filter(s => s.id !== ship.id);
   // ship-данные нужны клиенту: тонущий корабль рисуется, пока до него летит ядро
@@ -392,8 +401,8 @@ function sinkShip(game, ship, killer) {
   });
   if (ship.owner === -1) {
     killer.gold += ship.bounty;
-    killer.stats.shipsSunk++;
-    killer.stats.goldCollected += ship.bounty;
+    killer.stats.shipsSunk++; killer.stats.goldCollected += ship.bounty;  // общий зачёт (рекап/сим)
+    killer.stats.npcSunk++;   killer.stats.npcGold += ship.bounty;        // …но НПС → из лидерборда вычтется
     pushEvent(game, { type: 'gold', x: ship.x, y: ship.y, amount: ship.bounty });
     logEvent(game,
       `💥 Пиратский корабль потоплен! ${killer.nick} забирает награду ${ship.bounty} золота`,
@@ -402,17 +411,19 @@ function sinkShip(game, ship, killer) {
   }
   const owner = game.players[ship.owner];
   owner.stats.shipsLost++;
+  const npcFoe = !isHumanFoe(game, ship.owner); // бот → потопление/добыча из лидерборда вычитаются
   if (killer && isDuel(game)) {
     // Дуэль: за потопление ВРАЖЕСКОГО судна золото НЕ даём (иначе экономика раздувается; золото — только за пиратов).
     killer.stats.shipsSunk++;
+    if (npcFoe) killer.stats.npcSunk++;
     logEvent(game,
       `💥 ${SHIP_TYPES[ship.type].name} игрока ${owner.nick} потоплен! (${killer.nick})`,
       `💥 ${killer.nick} потопил корабль игрока ${owner.nick}`, 'battle');
   } else if (killer) {
     const plunder = Math.round(SHIP_TYPES[ship.type].price * WRECK_LOOT_FRAC);
-    killer.gold += plunder;
-    killer.stats.shipsSunk++;
-    killer.stats.goldCollected += plunder;
+    killer.gold += plunder;                    // лут-валюту даём всегда
+    killer.stats.shipsSunk++; killer.stats.goldCollected += plunder;
+    if (npcFoe) { killer.stats.npcSunk++; killer.stats.npcGold += plunder; }
     pushEvent(game, { type: 'gold', x: ship.x, y: ship.y, amount: plunder });
     logEvent(game,
       `💥 ${SHIP_TYPES[ship.type].name} игрока ${owner.nick} потоплен! ${killer.nick} лутает ${plunder} золота с обломков`,
@@ -437,8 +448,9 @@ function eliminatePlayer(game, victimIdx, killer) {
   if (killer) {
     const tribute = Math.floor(victim.gold * TRIBUTE_FRAC);
     victim.gold -= tribute;
-    killer.gold += tribute;
+    killer.gold += tribute;                       // дань-валюту забираем,
     killer.stats.goldCollected += tribute;
+    if (victim.isBot) killer.stats.npcGold += tribute; // дань с бота → из лидерборда вычтется
     const base = game.map.bases[victimIdx];
     if (base && !base.noPort) { // в дуэли порта/форта нет — взрыв уже сыгран на последнем корабле
       pushEvent(game, { type: 'explosion', x: base.x, y: base.y, big: true });
@@ -751,6 +763,7 @@ export function applyAction(game, playerId, action) {
         target.hp -= total;
         player.stats.shotsFired++;
         player.stats.damageDealt += total;
+        if (!isHumanFoe(game, target.owner)) player.stats.npcDamage += total; // урон по пирату/боту → из лидерборда вычтется
         for (let i = 0; i < volley; i++) // снаряды — клиент проигрывает их один за другим (auto=скорострельная очередь)
           pushEvent(game, { type: 'shot', fx: ship.x, fy: ship.y, tx: target.x, ty: target.y, dmg: hit, auto: volley > 1 });
         const targetName = target.owner === -1
@@ -776,6 +789,7 @@ export function applyAction(game, playerId, action) {
         victim.portHp -= totalPort;
         player.stats.shotsFired++;
         player.stats.damageDealt += totalPort;
+        if (victim.isBot) player.stats.npcDamage += totalPort; // урон по базе бота → из лидерборда вычтется
         for (let i = 0; i < volley; i++)
           pushEvent(game, { type: 'shot', fx: ship.x, fy: ship.y, tx: base.x, ty: base.y, dmg: portDmg, auto: volley > 1 });
         logEvent(game,
@@ -895,14 +909,18 @@ export function applyAction(game, playerId, action) {
       player.stats.shotsFired++;
       const evHits = [], toSink = [];
       for (const h of shipHits) {
-        h.t.hp -= h.dmg; player.stats.damageDealt += h.dmg;
+        h.t.hp -= h.dmg;
+        player.stats.damageDealt += h.dmg;
+        if (!isHumanFoe(game, h.t.owner)) player.stats.npcDamage += h.dmg; // НПС → из лидерборда вычтется
         evHits.push({ tx: h.t.x, ty: h.t.y, dmg: h.dmg });
         if (h.t.hp <= 0) toSink.push(h.t); else if (h.t.owner === -1) h.t.angryAt = pIdx;
       }
       let counterFrom = null;
       if (portHit) {
         const victim = game.players[portHit.i];
-        victim.portHp -= portHit.dmg; player.stats.damageDealt += portHit.dmg;
+        victim.portHp -= portHit.dmg;
+        player.stats.damageDealt += portHit.dmg;
+        if (victim.isBot) player.stats.npcDamage += portHit.dmg; // база бота → из лидерборда вычтется
         evHits.push({ tx: portHit.base.x, ty: portHit.base.y, dmg: portHit.dmg });
         if (victim.portHp <= 0) { victim.portHp = 0; eliminatePlayer(game, portHit.i, player); }
         else counterFrom = portHit.base;

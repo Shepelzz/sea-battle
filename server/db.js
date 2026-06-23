@@ -53,10 +53,18 @@ const LEADERBOARD_SQL = `
   ORDER BY points DESC, wins DESC, damage DESC
   LIMIT 50`;
 
-const resultRows = game => game.players.filter(p => !p.isBot).map(p => [
-  game.id, p.id, p.placement ?? game.players.length, p.placement === 1 ? 1 : 0,
-  p.stats.damageDealt, p.stats.shipsSunk, p.stats.shipsLost, p.stats.goldCollected
-]);
+// В лидерборд идёт бой ТОЛЬКО против живых людей: из полных статов вычитаем долю по НПС (пираты + боты).
+// (npc*-поля могут отсутствовать у старых сейвов — отсюда `|| 0`.)
+export const resultRows = game => game.players.filter(p => !p.isBot).map(p => {
+  const s = p.stats;
+  return [
+    game.id, p.id, p.placement ?? game.players.length, p.placement === 1 ? 1 : 0,
+    Math.max(0, s.damageDealt - (s.npcDamage || 0)),
+    Math.max(0, s.shipsSunk - (s.npcSunk || 0)),
+    s.shipsLost,
+    Math.max(0, s.goldCollected - (s.npcGold || 0))
+  ];
+});
 
 // =================== SQLite (локально, встроенный node:sqlite) ===================
 async function makeSqlite() {
