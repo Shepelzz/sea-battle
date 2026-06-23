@@ -252,7 +252,7 @@ aside.panel {
 .color-dd { position: relative; display: inline-block; }
 /* кнопка наследует штатный стиль кнопок (бордер 1.8px, рисованный радиус, тень) — только компактнее */
 .color-dd-btn { display: inline-flex; align-items: center; gap: 7px; padding: 6px 10px; }
-.color-dd-btn .dd-dot { width: 20px; height: 20px; border-radius: 50%; border: 1.4px solid var(--ink); }
+.color-dd-btn .dd-dot { width: 20px; height: 20px; flex: none; border-radius: 50%; border: 1.4px solid var(--ink); }
 .color-dd-btn .dd-caret { font-size: 11px; color: var(--ink); line-height: 1; }
 .color-dd-menu {
   position: absolute; right: 0; top: calc(100% + 5px); z-index: 60;
@@ -267,9 +267,18 @@ aside.panel {
   border: 1.6px solid rgba(43, 58, 85, .25); cursor: pointer;
   box-shadow: none;
   transition: transform .1s;
+  position: relative; overflow: hidden;
 }
 .swatch.sel { border-color: var(--ink); box-shadow: 0 0 0 2px #fff inset; }
-.swatch.taken { opacity: .28; cursor: not-allowed; }
+/* занятый цвет: косой крест × (что выбрать нельзя). Прозрачность на всём элементе —
+   и цвет кружка, и крест бледнеют ОДИНАКОВО (крест такой же блёклый, как сам кружок). */
+.swatch.taken { cursor: not-allowed; opacity: .45; }
+.swatch.taken::after {
+  content: ''; position: absolute; inset: 0;
+  background:
+    linear-gradient(45deg, transparent 45%, var(--ink) 45%, var(--ink) 55%, transparent 55%),
+    linear-gradient(135deg, transparent 45%, var(--ink) 45%, var(--ink) 55%, transparent 55%);
+}
 .swatch:not(.taken):not(.sel):hover { transform: scale(1.12); }
 
 /* Нотифы-СТЕК сверху по центру: новый добавляется СВЕРХУ и оттесняет прежние вниз,
@@ -402,7 +411,7 @@ aside.panel {
   font-size: 15px;
 }
 .slot.filled { border-style: solid; color: var(--ink); background: var(--paper); }
-.slot .dot { width: 12px; height: 12px; border-radius: 50%; margin-bottom: 4px; border: 1px solid var(--ink); }
+.slot .dot { width: 12px; height: 12px; flex: none; border-radius: 50%; margin-bottom: 4px; border: 1px solid var(--ink); }
 .slot .slot-x { margin-top: 5px; padding: 0 7px; font-size: 13px; line-height: 1.5; border-width: 1.4px; box-shadow: none; }
 
 .medal { font-size: 1.3em; }

@@ -121,6 +121,7 @@ for (const endType of ['skip', 'endTurn']) {
   // подложим лут-остров и поставим к нему свой корабль
   g.map.lootIslands = [{ x: 800, y: 600, radius: 30, loot: 150, shape: [[0, 0]], looted: false }];
   put(g, 0, 'shkhuna', 800, 600);
+  put(g, 0, 'shkhuna', 600, 600);   // второй корабль (вне досягаемости клада): чтобы ход не закрылся авто-логикой
   const r = applyAction(g, 'A', { type: 'collect' });
   check('многоход: сбор ок', r.ok, JSON.stringify(r));
   eq('многоход: сбор тратит слот (moves=1)', g.turn.moves, 1);
@@ -133,6 +134,7 @@ for (const endType of ['skip', 'endTurn']) {
   const g = setup(true);
   g.map.lootIslands = [{ x: 800, y: 600, radius: 30, loot: 150, shape: [[0, 0]], looted: false }];
   const s = put(g, 0, 'shkhuna', 800, 700);                 // не у острова
+  put(g, 0, 'shkhuna', 600, 600);                           // второй корабль: чтобы ход не закрылся авто-логикой после первого хода
   applyAction(g, 'A', { type: 'move', shipId: s.id, x: 800, y: 660 }); // подошёл к острову (60 ед. ≤ reach 85)
   eq('подошедший корабль помечен сходившим', g.turn.actedShips.includes(s.id), true);
   const r = applyAction(g, 'A', { type: 'collect' });        // тем же кораблём собрать — нельзя
@@ -151,6 +153,45 @@ for (const endType of ['skip', 'endTurn']) {
   eq('собравший корабль помечен сходившим', g.turn.actedShips.includes(s.id), true);
   const rm = applyAction(g, 'A', { type: 'move', shipId: s.id, x: 600, y: 600 });
   check('после сбора этим кораблём ходить нельзя', !rm.ok && /уже ходил/i.test(rm.error || ''), JSON.stringify(rm));
+}
+
+// === Многоход: АВТО-завершение хода, когда больше нечем ходить (под конец партии судов мало) ===
+{ // один корабль, нет золота → после его единственного действия ход закрывается сам, без «Завершить»
+  const g = setup(true);
+  const s1 = put(g, 0, 'shkhuna', 700, 600);
+  put(g, 1, 'shkhuna', 1200, 600);
+  const r = applyAction(g, 'A', { type: 'move', shipId: s1.id, x: 715, y: 600 });
+  check('авто-конец: ход одним кораблём прошёл', r.ok, JSON.stringify(r));
+  eq('авто-конец: 1 корабль без золота → ход сам перешёл к Бобу', g.turn.idx, 1);
+  eq('авто-конец: счётчики сброшены', [g.turn.moves, g.turn.actedShips], [0, []]);
+}
+{ // два корабля, нет золота → ход закрывается после второго (а не висит до полного бюджета 3)
+  const g = setup(true);
+  const s1 = put(g, 0, 'shkhuna', 700, 600);
+  const s2 = put(g, 0, 'shkhuna', 800, 600);
+  put(g, 1, 'shkhuna', 1200, 600);
+  applyAction(g, 'A', { type: 'move', shipId: s1.id, x: 715, y: 600 });
+  eq('авто-конец: после 1-го из 2 кораблей ход ещё открыт', g.turn.idx, 0);
+  applyAction(g, 'A', { type: 'move', shipId: s2.id, x: 815, y: 600 });
+  eq('авто-конец: после 2-го (последнего) корабля ход сам закрылся', g.turn.idx, 1);
+}
+{ // один корабль, НО хватает золота на корабль → ход НЕ закрывается (можно докупиться в верфи)
+  const g = setup(true);
+  const s1 = put(g, 0, 'shkhuna', 700, 600);
+  put(g, 1, 'shkhuna', 1200, 600);
+  g.players[0].gold = SHIP_TYPES.barkas.price;   // ровно на самый дешёвый корабль
+  applyAction(g, 'A', { type: 'move', shipId: s1.id, x: 715, y: 600 });
+  eq('авто-конец: 1 корабль, но есть на верфь → ход остаётся открытым', g.turn.idx, 0);
+}
+{ // три корабля — авто-логика не закрывает ход раньше времени (как и было: до бюджета 3)
+  const g = setup(true);
+  const s1 = put(g, 0, 'shkhuna', 700, 600);
+  const s2 = put(g, 0, 'shkhuna', 800, 600);
+  put(g, 0, 'shkhuna', 900, 600);
+  put(g, 1, 'shkhuna', 1200, 600);
+  applyAction(g, 'A', { type: 'move', shipId: s1.id, x: 715, y: 600 });
+  applyAction(g, 'A', { type: 'move', shipId: s2.id, x: 815, y: 600 });
+  eq('авто-конец: при 3 кораблях после 2 ходов ход ещё открыт', g.turn.idx, 0);
 }
 
 // === classic publicState отдаёт movesPerTurn=1 ===

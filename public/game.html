@@ -86,7 +86,10 @@
   <!-- лобби -->
   <div class="overlay hidden" id="lobbyOverlay">
     <div class="note taped">
-      <h2>🏴‍☠️ Сбор флота</h2>
+      <div style="display:flex; align-items:center; gap:10px">
+        <h2 style="margin:0; flex:1">🏴‍☠️ Сбор флота</h2>
+        <button class="small" id="lobbyMinimize" title="Свернуть — лобби продолжит ждать, можно вернуться позже">✕</button>
+      </div>
       <p class="muted" id="lobbyConfig"></p>
       <label for="lobbyNick">Твой ник и цвет</label>
       <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">

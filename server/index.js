@@ -14,7 +14,7 @@ import { Server } from 'socket.io';
 import * as db from './db.js';
 import {
   createGame, addPlayer, startGame, applyAction, leaveGame, nudge,
-  timeoutTurn, publicState, setColor, randomFreeColor, forceFinish, isRanked, PALETTE
+  timeoutTurn, publicState, setColor, randomFreeColor, forceFinish, isRanked, lobbyExpired, PALETTE
 } from './game.js';
 import {
   SESSION_COOKIE, pidOf, googlePid, cleanNick, resolveAccountNick, parseCookies,
@@ -119,13 +119,11 @@ function maybeBotBuy(game) {
 }
 
 // --- браузер открытых лобби ---
-const LOBBY_MAX_AGE = 60 * 60 * 1000; // не показываем заброшенные старше часа
 function lobbyListData() {
   const now = Date.now();
   const list = [];
   for (const g of games.values()) {
-    if (g.status === 'lobby' && g.config?.listed && g.players.length > 0 &&
-        now - g.createdAt < LOBBY_MAX_AGE) {
+    if (g.status === 'lobby' && g.config?.listed && g.players.length > 0 && !lobbyExpired(g, now)) {
       list.push({
         id: g.id, host: g.players[0].nick,
         players: g.players.length, max: g.config.maxPlayers,
@@ -138,6 +136,15 @@ function lobbyListData() {
 function broadcastLobbies() {
   io.to('lobbies').emit('lobbyList', lobbyListData());
 }
+
+// Периодическая уборка заброшенных НЕ начатых лобби: неполное — через 6 ч, полное укомплектованное — через 24 ч.
+// (Раньше пустое лобби удалялось сразу при дисконнекте; теперь оно переживает уход хоста — «свернул и вернулся».)
+setInterval(() => {
+  const now = Date.now();
+  let changed = false;
+  for (const [id, g] of games) if (lobbyExpired(g, now)) { games.delete(id); changed = true; }
+  if (changed) broadcastLobbies();
+}, 10 * 60 * 1000);
 
 // --- ходы ботов ---
 const BOT_DELAY_MS = +(process.env.BOT_DELAY_MS || 1500);
@@ -295,6 +302,10 @@ app.post('/api/games', (req, res) => {
   // Онлайн-баттл требует аккаунт (когда вход через Google настроен) — гостя не пускаем.
   if (googleClient && !accountPid)
     return res.status(401).json({ error: 'Войдите через Google, чтобы играть онлайн', needAuth: true });
+  // одно открытое лобби на аккаунт: уже есть незавершённое — возвращаем в него, второе не плодим
+  for (const g of games.values())
+    if (g.status === 'lobby' && g.config?.listed && g.hostPid === pid && !lobbyExpired(g, Date.now()))
+      return res.json({ gameId: g.id, existing: true });
   const nm = cleanNick(nick);
   if (!nm) return res.status(400).json({ error: 'Нужны ник и токен' });
   const gmode = pickMode(req.body.gameMode);
@@ -306,6 +317,7 @@ app.post('/api/games', (req, res) => {
   game.config.mode = gmode;                             // режим (до addPlayer — влияет на старт. золото)
   db.upsertPlayer(pid, nm);
   addPlayer(game, pid, nm, color);
+  game.hostPid = pid;        // хост лобби = аккаунт создателя (по нему вернёмся как хост)
   games.set(id, game);
   db.saveGame(game);
   res.json({ gameId: id });
@@ -350,6 +362,15 @@ io.on('connection', socket => {
       socket.join('game:' + gameId);
       ack?.({ ok: true, playerId: pid, spectator: false, hotseatOwner: true });
       socket.emit('state', publicState(game, pid));
+      return;
+    }
+    // реконнект: игрок УЖЕ в этой игре/лобби (вернулся — напр. свернул лобби и зашёл снова) → пере-подключаем сокет, роль (хост) сохраняется
+    if (game.players.some(p => p.id === pid)) {
+      joinedGameId = gameId; myPid = pid; socket.data.pid = pid;
+      socket.join('game:' + gameId);
+      ack?.({ ok: true, playerId: pid, spectator: false });
+      socket.emit('state', publicState(game, pid));
+      broadcastLobbies();
       return;
     }
     db.upsertPlayer(pid, nm);
@@ -480,6 +501,13 @@ io.on('connection', socket => {
   socket.on('leave', (ack) => {
     const game = joinedGameId && getGame(joinedGameId);
     if (!game) return ack?.({ ok: false, error: 'Нет игры' });
+    // хост вышел из ещё НЕ начатого лобби → закрываем лобби целиком (остальных выкидываем на главную)
+    if (game.status === 'lobby' && game.hostPid === myPid) {
+      io.to('game:' + game.id).emit('lobbyClosed');
+      games.delete(game.id);
+      broadcastLobbies();
+      return ack?.({ ok: true, lobbyClosed: true });
+    }
     const result = leaveGame(game, myPid);
     if (!result.ok) return ack?.({ ok: false, error: result.error });
     maybeAutoFinish(game); // все люди сдались → доигрываем за ботов и завершаем сразу
@@ -506,21 +534,9 @@ io.on('connection', socket => {
       .then(sent => ack?.({ ok: true, emailSent: sent }));
   });
 
-  // отключение: если все ушли из ещё не начавшегося лобби — убираем его из списка
-  socket.on('disconnect', async () => {
-    if (!joinedGameId) return;
-    const game = games.get(joinedGameId);
-    if (!game || game.status !== 'lobby') return;
-    setTimeout(async () => {
-      const g = games.get(joinedGameId);
-      if (!g || g.status !== 'lobby') return;
-      const sockets = await io.in('game:' + joinedGameId).fetchSockets();
-      if (sockets.length === 0) { // в лобби никого не осталось — снимаем с витрины
-        games.delete(joinedGameId);
-        broadcastLobbies();
-      }
-    }, 1500); // даём шанс на переподключение/перезагрузку
-  });
+  // отключение: лобби НЕ удаляем — оно продолжает ждать (хост мог «свернуть» и вернётся).
+  // Заброшенные лобби чистит периодический сборщик по TTL (6 ч неполное / 24 ч полное укомплектованное).
+  socket.on('disconnect', () => {});
 });
 
 // Таймер хода: один на игру, перевзводится при каждой смене хода.

@@ -56,6 +56,7 @@ export function createGame(id, config) {
     turn: { idx: 0, number: 0, round: 1, deadline: null, moves: 0, actedShips: [] },
     log: [],
     winner: null,
+    hostPid: null,         // pid создателя онлайн-лобби (аккаунт): по нему опознаём хоста при возврате
     createdAt: Date.now()
   };
 }
@@ -517,6 +518,18 @@ export function leaveGame(game, playerId) {
   return { ok: true };
 }
 
+// --- Время жизни ещё НЕ начатого онлайн-лобби до авто-удаления ---
+// Неполное (заняты НЕ все места) — 6 часов; полностью укомплектованное (все места заняты, но игра не начата) — 24 часа.
+export const LOBBY_TTL_PARTIAL_MS = 6 * 60 * 60 * 1000;
+export const LOBBY_TTL_FULL_MS = 24 * 60 * 60 * 1000;
+export function lobbyTtlMs(game) {
+  const full = (game.players?.length || 0) >= (game.config?.maxPlayers || 0);
+  return full ? LOBBY_TTL_FULL_MS : LOBBY_TTL_PARTIAL_MS;
+}
+export function lobbyExpired(game, now) {
+  return game.status === 'lobby' && (now - (game.createdAt || 0)) >= lobbyTtlMs(game);
+}
+
 // «Поторопить» AFK-игрока: письмо + жёсткие 10 минут на ход.
 export const NUDGE_MS = 10 * 60 * 1000;
 export function nudge(game, playerId) {
@@ -566,6 +579,16 @@ function duelBuyFleet(game, pIdx, action) {
     pushLog(game, `⚔️ Флоты собраны — бой! Первым ходит ${game.players[0].nick}`, 'battle');
   }
   return { ok: true, bought: list.length };
+}
+
+// Остались ли у игрока ВОЗМОЖНЫЕ действия в этом ходу (режим «ход тремя судами»):
+// есть ещё не ходивший корабль (он хотя бы доплывёт/выстрелит) ИЛИ хватает золота на корабль в верфи.
+// Если ни того, ни другого — ждать ручного «Завершить ход» незачем, ход закроется сам.
+// Это про конец партии: судов осталось 1–2, и бюджет в 3 действия физически не выбрать.
+function playerHasAction(game, pIdx) {
+  const acted = new Set(game.turn.actedShips || []);
+  if (game.ships.some(s => s.owner === pIdx && !acted.has(s.id))) return true; // есть кем ходить
+  return (game.players[pIdx]?.gold || 0) >= cheapestShipPrice(isDuel(game));    // или есть на что купить в верфи
 }
 
 // Применение хода. action.type: buy | collect | move | attack | skip | buyFleet (дуэль)
@@ -885,7 +908,8 @@ export function applyAction(game, playerId, action) {
     }
   }
   const endsTurn = action.type === 'skip' || action.type === 'endTurn'
-    || !game.config.multiMove || game.turn.moves >= movesBudget(game.config);
+    || !game.config.multiMove || game.turn.moves >= movesBudget(game.config)
+    || !playerHasAction(game, pIdx);   // больше нечем ходить (под конец партии судов мало) → закрываем ход сам
   if (game.status === 'active' && endsTurn) advanceTurn(game);
   return { ok: true };
 }
@@ -963,6 +987,7 @@ export function publicState(game, viewerPid) {
   return {
     id: game.id,
     status: game.status,
+    hostPid: game.hostPid || game.players[0]?.id || null, // кто хост лобби (по аккаунту) — для роли «создатель» на клиенте
     config: game.config,
     map: game.map,
     players: game.players.map(p => ({

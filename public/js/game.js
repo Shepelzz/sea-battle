@@ -2193,6 +2193,10 @@ $('#leaveLobbyBtn').addEventListener('click', () => {
     else location.href = '/';
   });
 });
+// свернуть лобби: уходим на главную, лобби продолжает ждать — можно вернуться (через «найти игру») как хост
+$('#lobbyMinimize')?.addEventListener('click', () => { location.href = '/'; });
+// хост закрыл лобби (вышел совсем) — всех участников на главную
+socket.on('lobbyClosed', () => { location.href = '/'; });
 $('#btnBuy').addEventListener('click', () => {
   const ships = Object.entries(basket).flatMap(([t, n]) => Array(n).fill(t));
   if (!ships.length) { toast('Корзина пуста — добавь корабли «+»'); return; }
@@ -2356,7 +2360,7 @@ function renderOverlays() {
         taken);
     } else { $('#lobbyColors').innerHTML = ''; }
     $('#inviteUrl').textContent = location.href;
-    const isCreator = state.players[0]?.id === myId;
+    const isCreator = (state.hostPid || state.players[0]?.id) === myId;
     $('#lobbySlots').innerHTML = Array.from({ length: cfg.maxPlayers }, (_, i) => {
       const p = state.players[i];
       if (!p) return `<div class="slot">пусто…</div>`;
