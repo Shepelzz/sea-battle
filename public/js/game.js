@@ -2347,8 +2347,16 @@ function renderOverlays() {
   $('#lobbyOverlay').classList.toggle('hidden', !inLobby || $('#nickOverlay').classList.contains('hidden') === false);
   if (inLobby) {
     const cfg = state.config;
-    $('#lobbyConfig').textContent =
-      `${cfg.maxPlayers} игрока · ${cfg.turnTimer ? 'таймер ' + cfg.turnTimer + ' сек/ход' : 'без таймера'}`;
+    const lobParts = [
+      state.modeName || 'Классический',
+      `${cfg.maxPlayers} игрока`,
+      cfg.turnTimer ? `таймер ${cfg.turnTimer} сек/ход` : 'без таймера'
+    ];
+    if (!state.duel) {                                  // в дуэли правила фиксированы — туман/ход тремя судами не показываем
+      lobParts.push(cfg.fog ? 'туман войны' : 'без тумана');
+      lobParts.push(cfg.multiMove ? 'ход тремя судами' : 'по одному действию');
+    }
+    $('#lobbyConfig').textContent = lobParts.join(' · ');
     // показываем текущий ник (не перетираем, пока игрок печатает)
     const me = state.players.find(p => p.id === myId);
     if (me?.nick && document.activeElement !== $('#lobbyNick')) $('#lobbyNick').value = me.nick;

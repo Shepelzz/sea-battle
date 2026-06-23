@@ -33,6 +33,7 @@ export const upsertPlayer   = (token, nick, email = null, provider = null, avata
 export const createSession  = (token, pid) => api.createSession(token, pid);
 export const deleteSession  = (token) => api.deleteSession(token);
 export const saveGame       = (game) => api.saveGame(game);
+export const deleteGame     = (id) => api.deleteGame(id);
 export const saveResults    = (game) => api.saveResults(game);
 export const getPlayer      = (pid) => api.getPlayer(pid);
 export const getPlayerEmail = (pid) => api.getPlayerEmail(pid);
@@ -114,6 +115,7 @@ async function makeSqlite() {
              updated_at = excluded.updated_at`,
         game.id, game.status, JSON.stringify(game), game.createdAt, Date.now());
     },
+    async deleteGame(id) { run('DELETE FROM games WHERE id = ?', id); },
     async saveResults(game) {
       const now = Date.now();
       for (const r of resultRows(game)) {
@@ -208,6 +210,7 @@ async function makeMysql() {
                ON DUPLICATE KEY UPDATE status = VALUES(status), state = VALUES(state), updated_at = VALUES(updated_at)`,
         [game.id, game.status, JSON.stringify(game), game.createdAt, Date.now()]);
     },
+    async deleteGame(id) { await q('DELETE FROM games WHERE id = ?', [id]); },
     async saveResults(game) {
       const now = Date.now();
       for (const r of resultRows(game)) {

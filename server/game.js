@@ -6,7 +6,7 @@ import {
   SHIP_COLLISION_DIST, LOOT_REACH, WRECK_LOOT_FRAC, TRIBUTE_FRAC,
   BROADSIDE_CANNONS, BROADSIDE_HALF_ARC, BROADSIDE_FALLOFF_MIN, BROADSIDE_SIDE_MIN, BROADSIDE_PORT_MULT, MORTAR_SHIPS, MORTAR_SHIP_MULT,
   FISH_ZONE_CAP, movesBudget, SHIP_ACTIONS, CHEATS_ENABLED, REPAIR_CHARGES, REPAIR_DOCK_REACH,
-  modeStartGold, modeOf, isPeace, modePeaceRounds, isDuel, cheapestShipPrice,
+  modeStartGold, modeOf, isPeace, modePeaceRounds, isDuel, cheapestShipPrice, GAME_MODES, DEFAULT_MODE,
   MAP_EDGE_MARGIN, ISLAND_BLOCK_GAP, SPAWN_FAN_N, SPAWN_FAN_RINGS, SPAWN_FAN_R0, SPAWN_FAN_RING_STEP,
   PIRATE, PIRATE_MAX, PIRATE_ENGAGE_MULT, PIRATE_MIN_LIFETIME, PIRATE_STEP_MIN,
   PIRATE_DESPAWN_CHANCE, PIRATE_MOVE_CHANCE, PIRATE_BOSS_CHANCE, PIRATE_BOSS_HP,
@@ -530,6 +530,46 @@ export function lobbyExpired(game, now) {
   return game.status === 'lobby' && (now - (game.createdAt || 0)) >= lobbyTtlMs(game);
 }
 
+// --- Заброшенная игра (без активности GAME_STALE_MS) → авто-уборка сборщиком (и онлайн, и оффлайн) ---
+export const GAME_STALE_MS = 7 * 24 * 60 * 60 * 1000; // 7 дней
+export function gameStale(game, now) {
+  return (game.status === 'active' || game.status === 'finished')
+    && (now - (game.updatedAt || game.createdAt || 0)) >= GAME_STALE_MS;
+}
+
+// Сводка одной игры для секции «Мои игры» в браузере лобби (или null, если игра не моя / не идёт).
+// «Моя» = я среди игроков (онлайн/бот), хост лобби или владелец хотсита.
+export function myGameSummary(game, viewerPid) {
+  if (!viewerPid || game.status !== 'active') return null;
+  const mine = game.players.some(p => p.id === viewerPid) || game.hostPid === viewerPid || game.hotseatOwner === viewerPid;
+  if (!mine) return null;
+  const online = !!game.config?.listed;
+  const cur = game.players[game.turn?.idx];
+  return {
+    id: game.id,
+    mode: GAME_MODES[game.config?.mode]?.name || GAME_MODES[DEFAULT_MODE]?.name || 'Игра',
+    online, hotseat: !!game.config?.hotseat, bot: !!game.config?.botGame,
+    canFinish: online ? game.hostPid === viewerPid : true,   // оффлайн — всегда моя; онлайн — только хост
+    turnNick: cur?.nick || '',
+    myTurn: game.config?.hotseat ? true : cur?.id === viewerPid,
+    opponents: game.players.filter(p => p.id !== viewerPid).map(p => p.nick),
+    createdAt: game.createdAt
+  };
+}
+
+// Метки-ОТКЛОНЕНИЯ от стандарта для строки лобби в СПИСКЕ. Дефолты не пишем:
+// классика · туман войны ВКЛ · ход тремя судами · без таймера. Пишем только то, что отличается.
+export function lobbyTags(game) {
+  const c = game.config || {}, tags = [];
+  if (c.mode && c.mode !== DEFAULT_MODE) tags.push(GAME_MODES[c.mode]?.name);   // режим ≠ классики
+  if (c.turnTimer) tags.push(`таймер ${c.turnTimer / 60} мин`);                  // дефолт — без таймера
+  if (!isDuel(game)) {                                                           // в дуэли туман/ход-3 неприменимы
+    if (c.fog === false) tags.push('без тумана');                                // дефолт — туман ВКЛ
+    if (c.multiMove === false) tags.push('по одному ходу');                      // дефолт — ход тремя судами
+  }
+  return tags.filter(Boolean);
+}
+
 // «Поторопить» AFK-игрока: письмо + жёсткие 10 минут на ход.
 export const NUDGE_MS = 10 * 60 * 1000;
 export function nudge(game, playerId) {
@@ -1013,6 +1053,7 @@ export function publicState(game, viewerPid) {
     mode: game.config.mode || 'classic',
     // дуэль: фаза ('buy' закупка | 'battle' бой) + цена самого дешёвого корабля (для правила «скупись на всё»)
     duel: isDuel(game), phase: game.phase || null, minShipPrice: cheapestShipPrice(isDuel(game)),
+    modeName: GAME_MODES[game.config?.mode]?.name || GAME_MODES[DEFAULT_MODE]?.name, // человекочитаемое имя режима для клиента
     peace: { active: isPeace(game), round: game.turn?.round || 1, until: modePeaceRounds(game) },
     // параметры боя для клиента (сектор залпа, пушки по классам, у кого мортира)
     broadside: { halfArc: BROADSIDE_HALF_ARC, cannons: BROADSIDE_CANNONS, mortarShips: MORTAR_SHIPS, mortarShipMult: MORTAR_SHIP_MULT },

@@ -14,7 +14,7 @@ import { Server } from 'socket.io';
 import * as db from './db.js';
 import {
   createGame, addPlayer, startGame, applyAction, leaveGame, nudge,
-  timeoutTurn, publicState, setColor, randomFreeColor, forceFinish, isRanked, lobbyExpired, PALETTE
+  timeoutTurn, publicState, setColor, randomFreeColor, forceFinish, isRanked, lobbyExpired, gameStale, myGameSummary, lobbyTags, PALETTE
 } from './game.js';
 import {
   SESSION_COOKIE, pidOf, googlePid, cleanNick, resolveAccountNick, parseCookies,
@@ -101,6 +101,7 @@ async function broadcastState(game) {
 }
 
 function persistAndBroadcast(game) {
+  game.updatedAt = Date.now();   // отметка последней активности — по ней сборщик чистит заброшенные игры
   maybeBotBuy(game);   // дуэль: боты собирают флот в фазе закупки (до рассылки состояния)
   db.saveGame(game);
   broadcastState(game);
@@ -119,7 +120,7 @@ function maybeBotBuy(game) {
 }
 
 // --- браузер открытых лобби ---
-function lobbyListData() {
+function lobbyListData(viewerPid) {
   const now = Date.now();
   const list = [];
   for (const g of games.values()) {
@@ -127,22 +128,35 @@ function lobbyListData() {
       list.push({
         id: g.id, host: g.players[0].nick,
         players: g.players.length, max: g.config.maxPlayers,
-        turnTimer: g.config.turnTimer, createdAt: g.createdAt
+        tags: lobbyTags(g), createdAt: g.createdAt,    // метки-отклонения от стандарта (режим/таймер/туман/ход)
+        // isHost — я СОЗДАТЕЛЬ лобби (метка «твоё»); mine — я участник (хост ИЛИ уже в лобби) → вернуться можно даже когда полно
+        isHost: !!viewerPid && g.hostPid === viewerPid,
+        mine: !!viewerPid && (g.hostPid === viewerPid || g.players.some(p => p.id === viewerPid))
       });
     }
   }
   return list.sort((a, b) => b.createdAt - a.createdAt);
 }
-function broadcastLobbies() {
-  io.to('lobbies').emit('lobbyList', lobbyListData());
+// мои активные игры (онлайн — по аккаунту, бот — по токену, хотсит — по владельцу устройства)
+function myGamesData(viewerPid) {
+  const out = [];
+  for (const g of games.values()) { const s = myGameSummary(g, viewerPid); if (s) out.push(s); }
+  return out.sort((a, b) => b.createdAt - a.createdAt);
+}
+async function broadcastLobbies() {
+  // персонально каждому подписчику: и флаг mine у лобби, и список «моих игр» зависят от того, кто смотрит
+  for (const s of await io.in('lobbies').fetchSockets())
+    s.emit('lobbyList', { lobbies: lobbyListData(s.data.browsePid), myGames: myGamesData(s.data.browsePid) });
 }
 
-// Периодическая уборка заброшенных НЕ начатых лобби: неполное — через 6 ч, полное укомплектованное — через 24 ч.
-// (Раньше пустое лобби удалялось сразу при дисконнекте; теперь оно переживает уход хоста — «свернул и вернулся».)
+// Периодическая уборка: заброшенные НЕ начатые лобби (6 ч неполное / 24 ч полное укомплектованное)
+// и заброшенные игры (без активности 7 дней — и онлайн, и оффлайн). Чистим и память, и БД,
+// иначе при рестарте всё это снова поднимется из базы.
 setInterval(() => {
   const now = Date.now();
   let changed = false;
-  for (const [id, g] of games) if (lobbyExpired(g, now)) { games.delete(id); changed = true; }
+  for (const [id, g] of games)
+    if (lobbyExpired(g, now) || gameStale(g, now)) { games.delete(id); db.deleteGame(id); changed = true; }
   if (changed) broadcastLobbies();
 }, 10 * 60 * 1000);
 
@@ -337,9 +351,12 @@ io.on('connection', socket => {
   socket.data.accountPid = accountPidFromSession(parseCookies(socket.handshake.headers.cookie)[SESSION_COOKIE]);
 
   // подписка на браузер лобби (с главной страницы)
-  socket.on('lobbies:subscribe', ack => {
+  socket.on('lobbies:subscribe', (payload, ack) => {
+    const cb = typeof payload === 'function' ? payload : ack;        // старый клиент слал только колбэк
+    const token = (payload && typeof payload === 'object') ? payload.token : null;
+    socket.data.browsePid = socket.data.accountPid || (token ? pidOf(token) : null);
     socket.join('lobbies');
-    ack?.(lobbyListData());
+    cb?.({ lobbies: lobbyListData(socket.data.browsePid), myGames: myGamesData(socket.data.browsePid) });
   });
   socket.on('lobbies:unsubscribe', () => socket.leave('lobbies'));
 
@@ -514,6 +531,35 @@ io.on('connection', socket => {
     if (game.status === 'finished' && isRanked(game)) db.saveResults(game); // в лидерборд — только онлайн
     else armTurnTimer(game);
     persistAndBroadcast(game);
+    ack?.({ ok: true });
+  });
+
+  // Завершить/убрать «мою» игру из списка: оффлайн (бот/хотсит) — просто удаляем; онлайн — только хост (доигрываем за всех).
+  socket.on('game:finish', ({ gameId, token } = {}, ack) => {
+    const game = getGame(gameId);
+    if (!game) return ack?.({ ok: false, error: 'Игра не найдена' });
+    const pid = socket.data.accountPid || (token ? pidOf(token) : null);
+    const participant = game.players.some(p => p.id === pid) || game.hostPid === pid || game.hotseatOwner === pid;
+    if (!participant) return ack?.({ ok: false, error: 'Это не ваша игра' });
+    if (game.status === 'lobby') {                    // ещё НЕ начатое лобби: закрыть может только создатель → удаляем
+      if (game.hostPid !== pid) return ack?.({ ok: false, error: 'Закрыть лобби может только создатель' });
+      io.to('game:' + game.id).emit('lobbyClosed');   // кто в нём открыт — на главную
+      games.delete(game.id); db.deleteGame(game.id);
+      broadcastLobbies();
+      return ack?.({ ok: true });
+    }
+    if (game.config?.listed) {                       // ОНЛАЙН: завершить может только хост
+      if (game.hostPid !== pid) return ack?.({ ok: false, error: 'Завершить может только создатель' });
+      if (game.status === 'active') forceFinish(game);
+      if (game.status === 'finished' && isRanked(game)) db.saveResults(game);
+      io.to('game:' + game.id).emit('state', publicState(game)); // тем, кто открыт в игре — финал
+      db.saveGame(game);
+    } else {                                          // ОФФЛАЙН (бот/хотсит): это сольная игра — просто удаляем
+      io.to('game:' + game.id).emit('lobbyClosed');   // если кто-то открыт в этой игре — на главную
+      games.delete(game.id);
+      db.deleteGame(game.id);
+    }
+    broadcastLobbies();
     ack?.({ ok: true });
   });
 

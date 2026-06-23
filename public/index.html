@@ -22,7 +22,7 @@
         <div class="online-row">
           <button class="mode-btn" data-mode="online">🌐 Онлайн
             <span class="muted">создай баттл и зови друзей</span></button>
-          <button class="mode-btn join-btn" id="browseLobbiesBtn" title="Открытые лобби">👥
+          <button class="mode-btn join-btn" id="browseLobbiesBtn" title="Открытые лобби">👥<span class="lobby-badge hidden" id="lobbyBadge"></span>
             <span class="muted">найти игру</span></button>
         </div>
         <button class="mode-btn" data-mode="hotseat">📱 На одном устройстве
@@ -166,6 +166,7 @@
         <h2 style="margin:0; flex:1">👥 Открытые лобби</h2>
         <button class="small" id="lobbiesClose">✖</button>
       </div>
+      <div id="myGamesList"></div>
       <p class="muted" style="margin:6px 0 10px">Зайди в чужой баттл — попадёшь в его лобби. Когда хост начнёт, игра стартует у всех.</p>
       <div id="lobbiesList"></div>
     </div>

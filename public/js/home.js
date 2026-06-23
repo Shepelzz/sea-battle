@@ -62,29 +62,83 @@ function renderLobbies(list) {
     box.innerHTML = '<p class="muted">Пока нет открытых лобби. Создай свой через «🌐 Онлайн» — и он появится здесь у всех!</p>';
     return;
   }
-  const timerTxt = t => t ? `⏱ ${t / 60} мин/ход` : 'без таймера';
   box.innerHTML = list.map(l => {
     const full = l.players >= l.max;
+    const canEnter = !full || l.mine;                         // в полное лобби можно вернуться, если оно твоё
+    const label = l.mine ? 'Вернуться' : (full ? 'Полно' : 'Войти');
     return `<div class="lobby-item ${full ? 'full' : ''}">
       <div class="info">
-        <div class="host">🏴‍☠️ ${escapeHtml(l.host)}</div>
-        <div class="meta">👤 ${l.players}/${l.max} · ${timerTxt(l.turnTimer)}</div>
+        <div class="host">🏴‍☠️ ${escapeHtml(l.host)}${l.isHost ? ' · твоё' : ''}</div>
+        <div class="meta">👤 ${l.players}/${l.max}${(l.tags && l.tags.length) ? ' · ' + l.tags.map(escapeHtml).join(' · ') : ''}</div>
       </div>
-      <button class="small primary" data-join="${l.id}" ${full ? 'disabled' : ''}>${full ? 'Полно' : 'Войти'}</button>
+      <button class="small primary" data-join="${l.id}" ${canEnter ? '' : 'disabled'}>${label}</button>
+      ${l.isHost ? `<button class="small danger lobby-x" data-closelobby="${l.id}" title="Закрыть лобби">✕</button>` : ''}
     </div>`;
   }).join('');
   box.querySelectorAll('[data-join]').forEach(b =>
     b.addEventListener('click', () => { location.href = '/game/' + b.dataset.join; }));
+  box.querySelectorAll('[data-closelobby]').forEach(b =>
+    b.addEventListener('click', () => {
+      if (!confirm('Закрыть это лобби? Все, кто в нём, вернутся на главную.')) return;
+      socket.emit('game:finish', { gameId: b.dataset.closelobby, token: getToken() },
+        res => { if (!res || !res.ok) alert((res && res.error) || 'Не вышло'); });
+    }));
 }
-socket.on('lobbyList', renderLobbies);
+// «Мои игры» — секция сверху браузера: активные игры, в которых я участвую (онлайн и оффлайн)
+function renderMyGames(list) {
+  const box = $('#myGamesList');
+  if (!box) return;
+  if (!list.length) { box.innerHTML = ''; return; }
+  box.innerHTML = '<h3 class="browse-h">Мои игры</h3>' + list.map(g => {
+    const turn = g.myTurn ? '<b>твой ход</b>' : 'ход: ' + escapeHtml(g.turnNick);
+    const kind = g.online ? 'онлайн' : (g.hotseat ? 'на устройстве' : 'с ботами');
+    const opp = (g.opponents && g.opponents.length) ? ' · ' + g.opponents.map(escapeHtml).join(', ') : '';
+    return `<div class="lobby-item mygame ${g.myTurn ? 'myturn' : ''}">
+      <div class="info">
+        <div class="host">${escapeHtml(g.mode)} · ${kind}</div>
+        <div class="meta">${turn}${opp}</div>
+      </div>
+      <button class="small primary" data-resume="${g.id}">Войти</button>
+      ${g.canFinish ? `<button class="small danger" data-finish="${g.id}">Завершить</button>` : ''}
+    </div>`;
+  }).join('') + '<div class="browse-sep"></div>';
+  box.querySelectorAll('[data-resume]').forEach(b =>
+    b.addEventListener('click', () => { location.href = '/game/' + b.dataset.resume; }));
+  box.querySelectorAll('[data-finish]').forEach(b =>
+    b.addEventListener('click', () => {
+      if (!confirm('Завершить эту игру? Вернуться в неё будет нельзя.')) return;
+      socket.emit('game:finish', { gameId: b.dataset.finish, token: getToken() },
+        res => { if (!res || !res.ok) alert((res && res.error) || 'Не вышло'); });
+    }));
+}
+// бейдж с числом моих активных игр на кнопке «найти игру»
+function updateLobbyBadge(n) {
+  const b = $('#lobbyBadge');
+  if (!b) return;
+  b.textContent = n > 0 ? String(n) : '';
+  b.classList.toggle('hidden', !(n > 0));
+}
+// данные браузера приходят как { lobbies, myGames } (старый формат — просто массив лобби)
+function renderBrowse(data) {
+  const lobbies = Array.isArray(data) ? data : ((data && data.lobbies) || []);
+  const myGames = Array.isArray(data) ? [] : ((data && data.myGames) || []);
+  renderMyGames(myGames);
+  renderLobbies(lobbies);
+  updateLobbyBadge(myGames.length);
+}
+socket.on('lobbyList', renderBrowse);
+// Подписка на ленту лобби/«моих игр» — на КАЖДОМ (пере)подключении: и при загрузке (бейдж с числом игр),
+// и после логина (там сокет переподключаем, чтобы сервер по новой сессионной куке пересчитал, что «моё»).
+function subscribeBrowse() { socket.emit('lobbies:subscribe', { token: getToken() }, renderBrowse); }
+socket.on('connect', subscribeBrowse);
+if (socket.connected) subscribeBrowse();
 
-$('#browseLobbiesBtn').addEventListener('click', () => requireLogin(() => {
+$('#browseLobbiesBtn').addEventListener('click', () => {
   $('#lobbiesOverlay').classList.remove('hidden');
-  socket.emit('lobbies:subscribe', list => renderLobbies(list || []));
-}));
+  socket.emit('lobbies:subscribe', { token: getToken() }, renderBrowse); // подтянуть свежие данные
+});
 $('#lobbiesClose').addEventListener('click', () => {
-  $('#lobbiesOverlay').classList.add('hidden');
-  socket.emit('lobbies:unsubscribe');
+  $('#lobbiesOverlay').classList.add('hidden'); // не отписываемся — бейдж должен обновляться и дальше
 });
 
 // --- хотсит: поля имён по числу игроков ---
@@ -199,6 +253,9 @@ async function onGoogleCredential(resp) {
     $('#nick').value = data.nick;
     $('#botNick').value = data.nick;
     renderBadge();
+    // вошли без перезагрузки: переподключаем сокет, чтобы в рукопожатии была сессионная кука —
+    // сервер увидит аккаунт и пересчитает «мои» лобби/игры (иначе список как у гостя до рефреша).
+    socket.disconnect(); socket.connect();
     const act = pendingAction;
     closeLogin();
     if (act) act();   // продолжить то, ради чего входили (онлайн/лобби)

@@ -51,6 +51,15 @@ const xs = g.ships.filter(s => s.owner === 0).map(s => `${s.x},${s.y}`);
 eq('флот стоит в ряд (все позиции разные)', new Set(xs).size, 8);
 no('повторная закупка отклонена', applyAction(g, 'p0', { type: 'buyFleet', ships: Array(8).fill('linkor') }).ok);
 
+// === «в бой» при ОСТАТКЕ < самого дешёвого корабля (НЕ обязательно в ноль) ===
+{
+  const gp = newDuel();  // 4000 золота, мин. корабль в дуэли = шхуна 110
+  no('остаток 150 (≥110) — отклонён', applyAction(gp, 'p0', { type: 'buyFleet', ships: Array(35).fill('shkhuna') }).ok); // 3850, остаток 150
+  yes('остаток 40 (<110) — пускает в бой', applyAction(gp, 'p0', { type: 'buyFleet', ships: Array(36).fill('shkhuna') }).ok); // 3960, остаток 40
+  yes('p0 готов после частичной закупки', gp.players[0].ready);
+  eq('p0: остаток золота 40', gp.players[0].gold, 40);
+}
+
 // === гейт фаз: в закупке нельзя ходить/пропускать ===
 no('skip в фазе buy отклонён', applyAction(g, 'p0', { type: 'skip' }).ok);
 eq('всё ещё buy (p1 не готов)', g.phase, 'buy');
