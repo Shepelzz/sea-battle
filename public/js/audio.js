@@ -263,7 +263,11 @@ const Sound = (() => {
       noiseHit(0.35, 1500, 450, 0.35, 'bandpass', { q: 1.4, at: 0.05, delay: 0.28 });
       spray(22, 0.05, 0.55);
     },
-    myturn() { tone(NOTE(M.E5), 0.12, 'triangle', 0.35); tone(NOTE(M.A5), 0.22, 'triangle', 0.35, 0.13); },
+    // «твой ход»: ясный восходящий перезвон (A-арпеджио) — заметнее прежних двух нот
+    myturn() {
+      [['E5', 0], ['A5', 0.12], ['C#6', 0.24]].forEach(([n, t]) => tone(NOTE(M[n]), 0.5, 'triangle', 0.34, t));
+      tone(NOTE(M.A5), 0.55, 'sine', 0.1, 0.24); // мягкий «дзынь» сверху для заметности
+    },
     horn()   { tone(196, 0.5, 'sawtooth', 0.25); tone(98, 0.5, 'sawtooth', 0.18); },
     pirate() { tone(110, 0.3, 'triangle', 0.3, 0, 82); tone(165, 0.25, 'triangle', 0.2, 0.28, 110); },
     win()    {

@@ -2137,6 +2137,11 @@ Sound.armAutostart();
 // пушки залпа/мортиры — из сэмплов: предзагружаем, чтобы первый выстрел не был немым
 Sound.loadSample('large_cannon', '/sounds/large_cannon.wav').catch(() => {});
 Sound.loadSample('small_cannon', '/sounds/small_cannon.wav').catch(() => {});
+// рамка «твой ход» гаснет, как только игрок очнулся: повёл мышью/пальцем, тапнул или нажал клавишу
+// (renderSidebar поднимет её снова на старте следующего моего хода — см. turnFrameShownFor)
+let turnFrameShownFor = null;
+['pointerdown', 'pointermove', 'keydown', 'wheel'].forEach(ev =>
+  window.addEventListener(ev, () => $('#turnFrame')?.classList.remove('on'), { passive: true }));
 $('#muteBtn').textContent = Sound.muted ? '🔇' : '🔊';
 $('#muteBtn').addEventListener('click', () => {
   $('#muteBtn').textContent = Sound.toggleMute() ? '🔇' : '🔊';
@@ -2246,6 +2251,16 @@ function renderSidebar() {
   else if (isMyTurn()) banner.textContent = `🔥 Твой ход!${movesTag}`;
   else banner.textContent = `Ход: ${current?.nick ?? '…'} (№${state.turn.number})`;
   banner.classList.toggle('my-turn', isMyTurn() && !state.config?.hotseat);
+  // красная рамка «твой ход»: поднимаем на старте КАЖДОГО моего хода; гаснет, когда игрок «очнулся»
+  // (повёл мышью / тапнул / нажал клавишу — слушатели в инициализации). В хотсите не нужна.
+  {
+    const fr = $('#turnFrame'), mine = isMyTurn() && !state.config?.hotseat;
+    if (!mine) { turnFrameShownFor = null; fr?.classList.remove('on'); }
+    else {
+      const key = state.turn.number + ':' + state.turn.idx;       // новый «мой ход» → снова показать
+      if (key !== turnFrameShownFor) { turnFrameShownFor = key; fr?.classList.add('on'); }
+    }
+  }
 
   // приватность: чьи цифры (золото/HP порта) видно
   // онлайн/боты — только свои; хотсит — только у того, чей ход; в конце — все
