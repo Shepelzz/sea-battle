@@ -476,6 +476,8 @@ aside.panel {
   padding: 10px 12px; margin-bottom: 12px; cursor: pointer; font-size: 16px;
 }
 .info-toggle input { width: 20px; height: 20px; accent-color: #2b3a55; flex: none; }
+.info-toggle.disabled { opacity: .5; cursor: not-allowed; }
+.info-toggle.disabled input { cursor: not-allowed; }
 /* Тумблер «от руки» (туман войны) — в стиле листочка в клетку.
    Стилизуем сам input (appearance:none), чтобы клик по тумблеру всегда срабатывал. */
 .fog-toggle {
