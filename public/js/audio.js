@@ -1,5 +1,5 @@
-// Звук: всё синтезируется Web Audio API, без аудиофайлов.
-// Музыка — «Дрейф»: гипнотическое арпеджио Am(add9), как волны о борт.
+// Звук: музыка и почти все эффекты синтезируются Web Audio API; пушечный залп — из сэмплов (/sounds/).
+// Музыка — «Отлив»: гипнотическое арпеджио Dm(add9), как откатывающая от берега волна.
 const Sound = (() => {
   let ctx = null, master = null, musicGain = null, sfxGain = null, echo = null;
   let muted = localStorage.getItem('sb_muted') === '1';
@@ -73,18 +73,18 @@ const Sound = (() => {
     }
   }
 
-  const ARP_STEP = 0.42;
+  const ARP_STEP = 0.44;             // «Отлив» — чуть медленнее «Дрейфа»
   const LOOP_DUR = 8 * ARP_STEP * 4; // 4 круга по 8 нот
 
   function scheduleLoop(startT) {
-    const arpAm = ['A2','E3','A3','B3','C4','E4','C4','B3'];
-    const arpF  = ['F2','C3','F3','G3','A3','C4','A3','G3'];
+    const arpA = ['D3','A3','D4','E4','F4','A4','F4','E4'];   // Dm(add9)
+    const arpB = ['A#2','F3','A#3','C4','D4','F4','D4','C4']; // переход на Bb
     for (let r = 0; r < 4; r++) {
-      const seq = (r === 2) ? arpF : arpAm;
+      const seq = (r === 2) ? arpB : arpA;
       seq.forEach((n, i) => harp(n, startT + r * seq.length * ARP_STEP + i * ARP_STEP, 0.1));
     }
-    pad(['A2','E3'], startT, arpAm.length * ARP_STEP * 2);
-    pad(['F2','C3'], startT + arpAm.length * ARP_STEP * 2, arpAm.length * ARP_STEP * 2);
+    pad(['D3','A3'], startT, arpA.length * ARP_STEP * 2);
+    pad(['A#2','F3'], startT + arpA.length * ARP_STEP * 2, arpA.length * ARP_STEP * 2);
   }
 
   // Планировщик опирается на время АУДИО-контекста, а не на setTimeout:
@@ -285,6 +285,57 @@ const Sound = (() => {
     setTimeout(() => play(name), delayMs);
   }
 
+  // ─── сэмплы из файлов ───
+  // Для звуков, которые синтезом не передать (живой пушечный залп). Грузятся по требованию,
+  // играют через ту же sfx-шину — значит слушаются громкость эффектов и общий mute.
+  const samples = {}; // имя → AudioBuffer
+  async function loadSample(name, url) {
+    ensureCtx();
+    if (samples[name]) return samples[name];
+    samples[name] = await fetch(url).then(r => {
+      if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`);
+      return r.arrayBuffer();
+    }).then(a => ctx.decodeAudioData(a));
+    return samples[name];
+  }
+  function hasSample(name) { return !!samples[name]; }
+  // одиночный выстрел сэмплом: vol — громкость, rate — высота, delay — задержка (сек), pan — панорама [-1..1]
+  function playSample(name, { vol = 1, rate = 1, delay = 0, pan = 0 } = {}) {
+    const buf = samples[name];
+    if (muted || !buf) return;
+    ensureCtx();
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.playbackRate.value = rate;
+    const g = ctx.createGain();
+    g.gain.value = vol;
+    src.connect(g);
+    let tail = g;
+    if (pan && ctx.createStereoPanner) {
+      const p = ctx.createStereoPanner();
+      p.pan.value = Math.max(-1, Math.min(1, pan));
+      g.connect(p); tail = p;
+    }
+    tail.connect(sfxGain);
+    src.start(ctx.currentTime + Math.max(0, delay));
+  }
+  // 💥 бортовой залп сэмплом: очередь из shots выстрелов со случайным разносом и лёгким
+  // разбросом высоты/панорамы — «стволы бьют не идеально разом».
+  function volley(name, { shots = 4, spreadMs = 80, vol = 0.7 } = {}) {
+    if (muted || !samples[name]) return;
+    ensureCtx();
+    let t = 0;
+    for (let i = 0; i < shots; i++) {
+      playSample(name, {
+        vol: vol * (0.82 + Math.random() * 0.3),
+        rate: 0.93 + Math.random() * 0.14,
+        delay: t / 1000,
+        pan: (Math.random() * 2 - 1) * 0.55
+      });
+      t += spreadMs * (0.6 + Math.random() * 0.8);
+    }
+  }
+
   // звуки по записям журнала — только то, у чего нет события-анимации
   // (бой, лут и движение озвучиваются из playEvents синхронно с анимацией)
   const LOG_SOUNDS = [
@@ -344,6 +395,7 @@ const Sound = (() => {
 
   return {
     play, playAt, onState, toggleMute, armAutostart, setVolumes, startMusic,
+    loadSample, playSample, volley, hasSample,
     get muted() { return muted; },
     get volumes() { return { music: musicVol, sfx: sfxVol }; }
   };

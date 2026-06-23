@@ -73,9 +73,34 @@
         </div>
       </div>
       <div class="btn-row">
-        <button class="small" id="musicBtn">▶️ Музыка («Дрейф»)</button>
+        <button class="small" id="musicBtn">▶️ Музыка («Отлив»)</button>
       </div>
       <p class="muted">Громкости тоже сохраняются в браузере и действуют в игре.</p>
+    </div>
+
+    <div class="note tilt-r">
+      <h2>💥 Бортовой залп (живые пушки)</h2>
+      <p class="muted">Сэмплы <code>large_cannon</code> / <code>small_cannon</code>, что ты прислал. «Залп» — очередь выстрелов с разносом и панорамой по бортам, как настоящий борт. Покрути число стволов и разнос, сравни с нынешним синтез-залпом — скажешь, какой нравится, вошью в игру. Громкость берётся из ползунка «эффекты» выше.</p>
+      <div class="btn-row">
+        <button class="small danger" id="volleyBig">💥 Залп — большие пушки</button>
+        <button class="small danger" id="volleySmall">💥 Залп — малые пушки</button>
+        <button class="small" id="shotBig">🔫 Один выстрел (большая)</button>
+        <button class="small" id="shotSmall">🔫 Один выстрел (малая)</button>
+        <button class="small" id="volleySynth">🆚 Залп синтезом (как сейчас)</button>
+      </div>
+      <div class="sliders" style="max-width:520px">
+        <div class="slider-row">
+          <label>Стволов в залпе</label>
+          <input type="range" id="volShots" min="1" max="8" step="1" value="4">
+          <span class="val" id="volShotsVal">4</span>
+        </div>
+        <div class="slider-row">
+          <label>Разнос очереди, мс</label>
+          <input type="range" id="volSpread" min="10" max="260" step="10" value="80">
+          <span class="val" id="volSpreadVal">80</span>
+        </div>
+      </div>
+      <p class="muted" id="cannonStatus">Пушки подгрузятся при первом клике по «Залпу».</p>
     </div>
 
     <p><a class="btn" href="/">🏠 На главную</a></p>
@@ -469,6 +494,52 @@ let musicOn = false;
 $('#musicBtn').addEventListener('click', () => {
   if (!musicOn) { Sound.startMusic(); musicOn = true; $('#musicBtn').textContent = '🎵 Играет (выключить — 🔇 в игре)'; }
 });
+
+// ---- 💥 бортовой залп: живые сэмплы пушек ----
+let cannonsLoaded = false;
+async function ensureCannons() {
+  if (cannonsLoaded) return true;
+  $('#cannonStatus').textContent = '⏳ Заряжаю пушки…';
+  try {
+    await Promise.all([
+      Sound.loadSample('large_cannon', '/sounds/large_cannon.wav'),
+      Sound.loadSample('small_cannon', '/sounds/small_cannon.wav')
+    ]);
+    cannonsLoaded = true;
+    $('#cannonStatus').textContent = '✔ Пушки заряжены.';
+  } catch (e) {
+    $('#cannonStatus').textContent = '⚠️ Не удалось загрузить пушки: ' + e.message;
+  }
+  return cannonsLoaded;
+}
+const volShots = () => +$('#volShots').value;
+const volSpread = () => +$('#volSpread').value;
+$('#volShots').addEventListener('input', e => $('#volShotsVal').textContent = e.target.value);
+$('#volSpread').addEventListener('input', e => $('#volSpreadVal').textContent = e.target.value);
+
+// лёгкая визуалка: вспышки у борта стреляющего корабля A — чтобы залп ещё и «было видно»
+function muzzleFlashes(n) {
+  const s = scene.ships[0];
+  for (let i = 0; i < n; i++) {
+    addEffect({ kind: 'boom', x: s.x + (Math.random()*2-1)*30, y: s.y + (Math.random()*2-1)*24,
+      big: false, dur: 360, delay: i * volSpread() * 0.8 });
+  }
+}
+$('#volleyBig').addEventListener('click', async () => {
+  if (await ensureCannons()) { Sound.volley('large_cannon', { shots: volShots(), spreadMs: volSpread() }); muzzleFlashes(volShots()); }
+});
+$('#volleySmall').addEventListener('click', async () => {
+  if (await ensureCannons()) { Sound.volley('small_cannon', { shots: volShots(), spreadMs: volSpread() }); muzzleFlashes(volShots()); }
+});
+$('#shotBig').addEventListener('click', async () => { if (await ensureCannons()) Sound.playSample('large_cannon', { vol: 0.9 }); });
+$('#shotSmall').addEventListener('click', async () => { if (await ensureCannons()) Sound.playSample('small_cannon', { vol: 0.9 }); });
+$('#volleySynth').addEventListener('click', () => {
+  // нынешний игровой залп: процедурный shot ×N очередью (как в game.js)
+  const n = volShots(), spr = volSpread();
+  for (let i = 0; i < n; i++) Sound.playAt('shot', i * spr);
+  muzzleFlashes(n);
+});
 </script>
+  <script src="/js/lab-nav.js"></script>
 </body>
 </html>

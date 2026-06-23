@@ -249,6 +249,22 @@ function animTick(now) {
 // геометрия залпа в анимации: разнос стволов вдоль борта и вынос наружу к фальшборту (мировые ед.)
 const BS_SPACING = 12, BS_BEAM = 9;
 
+// калибр выстрела: борт — по числу стволов (фрегат 3 / линкор 4 / авианосец 6 = крупные; шхуна/бриг 2 = мелкие);
+// одиночный выстрел (мортира/пират/форт) — по классу стрелявшего корабля на позиции выстрела.
+const BIG_CANNON_SHIPS = new Set(['fregat', 'linkor', 'carrier']);
+function cannonFor(ev) {
+  if (ev.cannons != null) return ev.cannons >= 3 ? 'large_cannon' : 'small_cannon';
+  const firer = state?.ships?.find(s => Math.abs(s.x - ev.fx) < 1 && Math.abs(s.y - ev.fy) < 1);
+  if (firer) return BIG_CANNON_SHIPS.has(firer.type) ? 'large_cannon' : 'small_cannon';
+  return 'large_cannon'; // порт-форт огрызается / источник неизвестен → крупный калибр
+}
+// выстрел сэмплом нужного калибра; пока сэмпл не подгрузился — старый синтез «shot» как запас
+function fireSound(ev, delayMs, opts) {
+  const name = cannonFor(ev);
+  if (Sound.hasSample(name)) Sound.playSample(name, { delay: Math.max(0, delayMs) / 1000, ...opts });
+  else Sound.playAt('shot', delayMs);
+}
+
 function playEvents(events) {
   // туман войны: события вне зоны видимости не анимируем и не озвучиваем (иначе видно бой в тумане)
   const fog = fogActive();
@@ -291,7 +307,7 @@ function playEvents(events) {
       delay += 85; // следующий снаряд почти сразу — очередь
     } else if (ev.type === 'shot') {
       if (hidden(ev.fx, ev.fy) && hidden(ev.tx, ev.ty)) continue;
-      Sound.playAt('shot', delay);
+      fireSound(ev, delay, { vol: 0.95 });   // одиночный выстрел (мортира/пират/форт)
       addEffect({ kind: 'shell', fx: ev.fx, fy: ev.fy, tx: ev.tx, ty: ev.ty, dur: FX.shell.dur, delay });
       const impact = delay + FX.shell.dur - 20;
       Sound.playAt('hit', impact);
@@ -339,7 +355,7 @@ function playEvents(events) {
       for (let k = 0; k < shots.length; k++) {
         const { h, m } = shots[k];
         if (k > 0) t += 35 + Math.random() * 55;     // небольшая случайная задержка между стволами, мс
-        Sound.playAt('shot', t);
+        fireSound(ev, t, { vol: 0.55, rate: 0.95 + Math.random() * 0.1, pan: (Math.random() * 2 - 1) * 0.5 });
         addEffect({ kind: 'tracer', fx: m.x, fy: m.y, tx: h.tx, ty: h.ty, dur: TR, delay: t });
         addEffect({
           kind: 'muzzle', x: m.x, y: m.y, dir: m.dir, dur: 640, delay: t,
@@ -2109,6 +2125,9 @@ $('#btnCancel').addEventListener('click', deselect);
 
 // звук и сворачивание панели
 Sound.armAutostart();
+// пушки залпа/мортиры — из сэмплов: предзагружаем, чтобы первый выстрел не был немым
+Sound.loadSample('large_cannon', '/sounds/large_cannon.wav').catch(() => {});
+Sound.loadSample('small_cannon', '/sounds/small_cannon.wav').catch(() => {});
 $('#muteBtn').textContent = Sound.muted ? '🔇' : '🔊';
 $('#muteBtn').addEventListener('click', () => {
   $('#muteBtn').textContent = Sound.toggleMute() ? '🔇' : '🔊';
