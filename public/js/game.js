@@ -249,19 +249,9 @@ function animTick(now) {
 // геометрия залпа в анимации: разнос стволов вдоль борта и вынос наружу к фальшборту (мировые ед.)
 const BS_SPACING = 12, BS_BEAM = 9;
 
-// калибр выстрела: борт — по числу стволов (фрегат 3 / линкор 4 / авианосец 6 = крупные; шхуна/бриг 2 = мелкие);
-// одиночный выстрел (мортира/пират/форт) — по классу стрелявшего корабля на позиции выстрела.
-const BIG_CANNON_SHIPS = new Set(['fregat', 'linkor', 'carrier']);
-function cannonFor(ev) {
-  if (ev.cannons != null) return ev.cannons >= 3 ? 'large_cannon' : 'small_cannon';
-  const firer = state?.ships?.find(s => Math.abs(s.x - ev.fx) < 1 && Math.abs(s.y - ev.fy) < 1);
-  if (firer) return BIG_CANNON_SHIPS.has(firer.type) ? 'large_cannon' : 'small_cannon';
-  return 'large_cannon'; // порт-форт огрызается / источник неизвестен → крупный калибр
-}
-// выстрел сэмплом нужного калибра; пока сэмпл не подгрузился — старый синтез «shot» как запас
+// выстрел любой пушки — один общий сэмпл «cannon»; пока он не подгрузился — старый синтез «shot» как запас
 function fireSound(ev, delayMs, opts) {
-  const name = cannonFor(ev);
-  if (Sound.hasSample(name)) Sound.playSample(name, { delay: Math.max(0, delayMs) / 1000, ...opts });
+  if (Sound.hasSample('cannon')) Sound.playSample('cannon', { delay: Math.max(0, delayMs) / 1000, ...opts });
   else Sound.playAt('shot', delayMs);
 }
 
@@ -315,64 +305,66 @@ function playEvents(events) {
       if (ev.dmg) addEffect({ kind: 'dmg', x: ev.tx, y: ev.ty, amount: ev.dmg, dur: 1300, delay: impact });
       delay += FX.shell.dur + 140;
     } else if (ev.type === 'volley') {
-      // 💥 БОРТОВОЙ ЗАЛП: стволы борта бьют ОЧЕРЕДЬЮ со случайными паузами (звук настоящего залпа);
-      // быстрые ПРЯМЫЕ трассеры от каждого ствола к целям + вспышки и пороховые дымки у стволов.
+      // 💥 БОРТОВОЙ ЗАЛП — визуально: маленькие ЯДРА вылетают из стволов по всей длине борта.
+      // Пушки палят ВРАЗНОБОЙ (у каждой свой случайный момент), крайние стволы чуть доворачивают
+      // наружу — «трапеция» наведения. В борт врага не целятся: урон считает сервер (ev.hits).
       if (hidden(ev.fx, ev.fy) && ev.hits.every(h => hidden(h.tx, h.ty))) continue;
-      const N = Math.max(1, ev.cannons || 1);
-      const TR = 130;                               // полёт трассера, мс
-      // позиции стволов: вдоль борта, вынесены наружу к фальшборту (в сторону огня ev.sideDir)
-      const muzzles = [];
-      if (ev.full) {                                // чит-авианосец: круговой залп — стволы кольцом
-        for (let i = 0; i < N; i++) {
-          const a = (i / N) * Math.PI * 2;
-          muzzles.push({ x: ev.fx + Math.cos(a) * BS_BEAM, y: ev.fy + Math.sin(a) * BS_BEAM, dir: a });
-        }
-      } else {
-        const ox = Math.cos(ev.sideDir), oy = Math.sin(ev.sideDir);                          // наружу
-        const ax = Math.cos(ev.sideDir - Math.PI / 2), ay = Math.sin(ev.sideDir - Math.PI / 2); // вдоль корпуса
-        for (let i = 0; i < N; i++) {
-          const off = (i - (N - 1) / 2) * BS_SPACING;
-          muzzles.push({ x: ev.fx + ax * off + ox * BS_BEAM, y: ev.fy + ay * off + oy * BS_BEAM, dir: ev.sideDir });
-        }
-      }
-      // распределяем стволы по целям (больше урон цели → больше стволов в неё)
-      const totalDmg = ev.hits.reduce((s, h) => s + h.dmg, 0) || 1;
+      const showSpray = !hidden(ev.fx, ev.fy);      // ядра рисуем только если виден сам стрелявший
+      // число выстрелов по классу стрелявшего: бриг и меньше — 3, фрегат — 4, линкор/король моря — 6
+      const VOLLEY_SHOTS = { shkhuna: 3, brig: 3, fregat: 4, linkor: 6, carrier: 6 };
+      const N = ev.full ? Math.max(1, ev.cannons || 6) : (VOLLEY_SHOTS[ev.shipType] || ev.cannons || 3);
+      const TR = 170;                                // полёт ядра, мс
+      const SPLAY = 0.22;                            // доворот крайних стволов наружу, рад (~13° на краю) — трапеция
+      const ax = Math.cos(ev.sideDir - Math.PI / 2), ay = Math.sin(ev.sideDir - Math.PI / 2); // вдоль корпуса
+      const ox = Math.cos(ev.sideDir), oy = Math.sin(ev.sideDir);                              // наружу (борт)
       const shots = [];
-      let gi = 0;
-      for (const h of ev.hits) {
-        const cnt = Math.max(1, Math.min(N, Math.round(N * h.dmg / totalDmg)));
-        const tgtDir = Math.atan2(h.ty - ev.fy, h.tx - ev.fx);
-        for (let j = 0; j < cnt; j++) {
-          const m = ev.full // круговой залп: ствол, смотрящий ближе к цели; обычный борт — стволы по кругу
-            ? muzzles.reduce((b, mu) => Math.abs(angNorm(mu.dir - tgtDir)) < Math.abs(angNorm(b.dir - tgtDir)) ? mu : b, muzzles[0])
-            : muzzles[gi % N];
-          shots.push({ h, m }); gi++;
+      for (let i = 0; i < N; i++) {
+        let mx, my, dir;
+        if (ev.full) {                                // чит-авианосец: стволы кольцом, ядро радиально
+          const a = (i / N) * Math.PI * 2;
+          mx = ev.fx + Math.cos(a) * BS_BEAM; my = ev.fy + Math.sin(a) * BS_BEAM; dir = a;
+        } else {
+          const off = (i - (N - 1) / 2) * BS_SPACING * 0.6; // стволы кучнее — центральные ~60% борта
+          mx = ev.fx + ax * off + ox * BS_BEAM;
+          my = ev.fy + ay * off + oy * BS_BEAM;
+          const edge = N > 1 ? (i - (N - 1) / 2) / ((N - 1) / 2) : 0; // -1..+1 от центра к краям
+          dir = ev.sideDir - edge * SPLAY;            // центр — прямо, края веером наружу (трапеция)
+        }
+        const reach = 150 + Math.random() * 60;
+        shots.push({ mx, my, dir, tx: mx + Math.cos(dir) * reach, ty: my + Math.sin(dir) * reach });
+      }
+      // ВРАЗНОБОЙ + РАЗНЫМИ ЦИКЛАМИ: окна независимы, чтобы расширение звука не растягивало визуал.
+      const VIS_WINDOW = 90 + N * 35;                    // визуал кучно по времени (вспышки/ядра)
+      const SOUND_WINDOW = 170 + N * 70;                 // звук — интервалы ещё шире, раскат длиннее
+      let last = delay;
+      if (showSpray) {
+        for (const s of shots) {                          // визуальный цикл: дульная вспышка + ядро
+          const tv = delay + Math.random() * VIS_WINDOW;
+          addEffect({ kind: 'ball', fx: s.mx, fy: s.my, tx: s.tx, ty: s.ty, dur: TR, delay: tv });
+          addEffect({
+            kind: 'muzzle', x: s.mx, y: s.my, dir: s.dir, dur: 640, delay: tv,
+            puffs: Array.from({ length: 2 }, () => ({
+              a: (Math.random() - 0.5) * 0.55, spd: 20 + Math.random() * 16,
+              r0: 3 + Math.random() * 2, r1: 11 + Math.random() * 6, t0: Math.random() * 0.12
+            }))
+          });
+          last = Math.max(last, tv + TR);
+        }
+        for (let i = 0; i < N; i++) {                      // звуковой цикл: свои (чуть бóльшие) паузы
+          const ts = delay + Math.random() * SOUND_WINDOW;
+          fireSound(ev, ts, { vol: 0.5, rate: 0.93 + Math.random() * 0.14, pan: (Math.random() * 2 - 1) * 0.5 });
         }
       }
-      // ОЧЕРЕДЬ: каждый ствол стреляет чуть позже предыдущего (случайная пауза) — артиллерийский раскат
-      let t = delay;
-      const impactAt = new Map();                   // первый прилёт по каждой цели → один бум/«−N»
-      for (let k = 0; k < shots.length; k++) {
-        const { h, m } = shots[k];
-        if (k > 0) t += 35 + Math.random() * 55;     // небольшая случайная задержка между стволами, мс
-        fireSound(ev, t, { vol: 0.55, rate: 0.95 + Math.random() * 0.1, pan: (Math.random() * 2 - 1) * 0.5 });
-        addEffect({ kind: 'tracer', fx: m.x, fy: m.y, tx: h.tx, ty: h.ty, dur: TR, delay: t });
-        addEffect({
-          kind: 'muzzle', x: m.x, y: m.y, dir: m.dir, dur: 640, delay: t,
-          puffs: Array.from({ length: 2 }, () => ({
-            a: (Math.random() - 0.5) * 0.55, spd: 20 + Math.random() * 16,
-            r0: 3 + Math.random() * 2, r1: 11 + Math.random() * 6, t0: Math.random() * 0.12
-          }))
-        });
-        const impact = t + TR - 6;
-        if (!impactAt.has(h) || impact < impactAt.get(h)) impactAt.set(h, impact);
-      }
-      for (const [h, impact] of impactAt) {          // по каждой цели — один прилёт (бум + звук + «−N»)
+      // урон засчитан сервером — «−N» и буханье показываем на реальных целях, вразнобой во время залпа
+      const span = Math.max(1, last - delay);
+      for (const h of ev.hits) {
+        if (hidden(h.tx, h.ty)) continue;
+        const impact = delay + span * (0.35 + Math.random() * 0.5);
         Sound.playAt('hit', impact);
         addEffect({ kind: 'boom', x: h.tx, y: h.ty, big: false, dur: FX.boom.durSmall, delay: impact });
         addEffect({ kind: 'dmg', x: h.tx, y: h.ty, amount: h.dmg, dur: 1300, delay: impact });
       }
-      delay = t + TR + 220;                          // конец очереди + полёт последнего + хвост
+      delay = last + 220;                            // конец очереди + хвост
     } else if (ev.type === 'repair') {
       // ремонт: жёлтый «луч» от ремонтника к цели + всплывающее зелёное «+N»
       if (hidden(ev.fx, ev.fy) && hidden(ev.tx, ev.ty)) continue;
@@ -475,6 +467,14 @@ function drawEffects(under = false) {
       ctx.arc(sx(x), sy(y), Math.max(1.6, 2.4 * view.scale), 0, Math.PI * 2);
       ctx.fillStyle = '#fff3c0';
       ctx.fill();
+    } else if (e.kind === 'ball') {
+      // ядро бортового залпа: маленькая тёмная чугунная сфера, летит прямо
+      const x = e.fx + (e.tx - e.fx) * p, y = e.fy + (e.ty - e.fy) * p;
+      const r = Math.max(1.6, 2.3 * view.scale);
+      ctx.beginPath(); ctx.arc(sx(x), sy(y), r, 0, Math.PI * 2);
+      ctx.fillStyle = '#2b3a55'; ctx.fill();
+      ctx.beginPath(); ctx.arc(sx(x) - r * 0.3, sy(y) - r * 0.3, r * 0.4, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,255,255,.45)'; ctx.fill();      // блик на ядре
     } else if (e.kind === 'spark') {
       // искра попадания очереди — быстрая жёлтая вспышка (вместо «бума» ядра)
       const r = (4 + 7 * p) * view.scale;
@@ -2136,9 +2136,8 @@ $('#btnCancel').addEventListener('click', deselect);
 
 // звук и сворачивание панели
 Sound.armAutostart();
-// пушки залпа/мортиры — из сэмплов: предзагружаем, чтобы первый выстрел не был немым
-Sound.loadSample('large_cannon', '/sounds/large_cannon.wav').catch(() => {});
-Sound.loadSample('small_cannon', '/sounds/small_cannon.wav').catch(() => {});
+// выстрел пушки — общий сэмпл: предзагружаем, чтобы первый выстрел не был немым
+Sound.loadSample('cannon', '/sounds/cannon_fire.wav').catch(() => {});
 // рамка «твой ход» гаснет, как только игрок очнулся: повёл мышью/пальцем, тапнул или нажал клавишу
 // (renderSidebar поднимет её снова на старте следующего моего хода — см. turnFrameShownFor)
 let turnFrameShownFor = null;

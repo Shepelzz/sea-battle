@@ -925,7 +925,7 @@ export function applyAction(game, playerId, action) {
         if (victim.portHp <= 0) { victim.portHp = 0; eliminatePlayer(game, portHit.i, player); }
         else counterFrom = portHit.base;
       }
-      pushEvent(game, { type: 'volley', fx: ship.x, fy: ship.y, sideDir, cannons, full, hits: evHits });
+      pushEvent(game, { type: 'volley', fx: ship.x, fy: ship.y, sideDir, cannons, full, shipType: ship.type, hits: evHits });
       for (const t of toSink) sinkShip(game, t, player);
       if (counterFrom) { // порт устоял — огрызается по стрелявшему (как у мортиры)
         const retDmg = Math.round(PORT_RETURN_DMG * (ship.type === 'linkor' ? PORT_RETURN_LINKOR_MULT : 1));
