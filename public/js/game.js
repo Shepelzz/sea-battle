@@ -2520,7 +2520,28 @@ setInterval(() => {
 // ============ ОБУЧЕНИЕ (подсказки на первой игре) ============
 const Tutorial = (() => {
   let steps = [], idx = 0, active = false, repositionTimer = null;
+  let panelForced = false;     // мобила: панель временно открыта нами ради шага про баланс
+  const isMobile = () => window.matchMedia('(max-width: 900px)').matches;
   const canvasRect = () => canvas.getBoundingClientRect();
+  // свернуть/развернуть боковую панель (как кнопка ☰) — нужно на мобиле, где меню по умолчанию закрыто
+  function setPanelCollapsed(collapsed) {
+    const panel = $('#panel');
+    if (!panel || panel.classList.contains('collapsed') === collapsed) return;
+    panel.classList.toggle('collapsed', collapsed);
+    $('#panelToggle').textContent = collapsed ? '☰' : '✕';
+    resize();
+  }
+  // на телефоне цель внутри панели (баланс игроков) при свёрнутом меню не видна —
+  // открываем панель на время такого шага и возвращаем как было на следующем/последнем.
+  function syncPanel() {
+    if (!isMobile()) return;
+    const wantOpen = !!steps[idx]?.panel;
+    if (wantOpen && !panelForced && $('#panel')?.classList.contains('collapsed')) {
+      setPanelCollapsed(false); panelForced = true;
+    } else if (!wantOpen && panelForced) {
+      setPanelCollapsed(true); panelForced = false;
+    }
+  }
   // прямоугольник цели в координатах экрана: el — селектор DOM, либо canvas-точка {x,y,r}
   function targetRect(t) {
     if (!t) return null;
@@ -2575,6 +2596,7 @@ const Tutorial = (() => {
   }
 
   function show() {
+    syncPanel();   // мобила: открыть/закрыть панель под текущий шаг (баланс — внутри неё)
     // туториал-подсветка: ОДИН локальный кружок видимости вокруг цели (только reveal-шаги: рыба/клад/пират).
     // Остальная карта — под туманом, позиции врага не палятся.
     const st = steps[idx], w = st?.reveal && st.target?.world;
@@ -2590,6 +2612,7 @@ const Tutorial = (() => {
   function finish() {
     active = false;
     clearInterval(repositionTimer);
+    if (panelForced) { setPanelCollapsed(true); panelForced = false; } // вернуть панель свёрнутой (мобила)
     $('#coach').classList.add('hidden');
     tutReveal = null; if (state) render();          // убрать туториал-подсветку
     localStorage.setItem('sb_tut_done', '1');
@@ -2628,7 +2651,7 @@ const Tutorial = (() => {
       { text: 'В <b>Верфи</b> покупаешь корабли за золото 💰: шустрые шхуны и бриги, мощные фрегаты, рыбацкие баркасы — и <b>линкор</b>, который бьёт по портам сильнее всех 🏰.',
         target: { sel: '#btnShop' } },
       { text: 'Тут твой <b>баланс</b> — <b>золото</b> 💰. Зарабатывай его рыбалкой, кладами и потоплением врагов, а трать в <b>Верфи</b> на новые корабли.',
-        target: { sel: '#playersList' } },
+        target: { sel: '#playersList' }, panel: true },
       fish && { text: 'Поставь <b>баркас</b> в эту <b>🐟-рыбную зону</b> — он будет сам приносить золото каждый ход, и действие на это не тратится.',
                 target: { world: { x: fish.x, y: fish.y, r: fish.radius } }, reveal: true },
       loot && { text: 'А это <b>остров с кладом</b> 💰 — подведи любой корабль вплотную и жми <b>«Собрать»</b>, чтобы забрать золото.',
