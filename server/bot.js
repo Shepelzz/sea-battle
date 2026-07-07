@@ -1,7 +1,7 @@
 // Бот: на своём ходу собирает все осмысленные действия, оценивает и берёт лучшее.
 // Уровни: easy (Юнга) — шумные оценки и случайные ходы, mid (Боцман) — лучший ход,
 // hard (Адмирал) — лучший ход + фокус раненых, удушение экономики, ранняя агрессия.
-import { SHIP_TYPES, PIRATE, LOOT_REACH, PORT_RETURN_DMG, BROADSIDE_CANNONS, BROADSIDE_HALF_ARC, MORTAR_SHIPS, MORTAR_SHIP_MULT, modeOf, isPeace, isDuel, cheapestShipPrice, windMoveMult } from './config.js';
+import { SHIP_TYPES, PIRATE, LOOT_REACH, PORT_RETURN_DMG, BROADSIDE_CANNONS, BROADSIDE_HALF_ARC, MORTAR_SHIPS, MORTAR_SHIP_MULT, OUTPOST_LEVELS, OUTPOST_BUILD_REACH, modeOf, isPeace, isDuel, cheapestShipPrice, windMoveMult } from './config.js';
 import { shipPlacementBlocked } from './game.js';
 
 const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
@@ -174,6 +174,24 @@ export function chooseBotAction(game, pIdx, level = 'mid') {
       action: { type: 'collect' }
     });
   }
+
+  // --- ⛺ аванпост: стоим у залутанного острова и есть запас золота → построить/прокачать ---
+  // экономика вдолгую (доход/дозор/ремонт/пушка), но флот и оборона важнее — скор умеренный
+  game.map.lootIslands.forEach((isl, ii) => {
+    if (!isl.looted) return;
+    if (isl.outpost && (isl.outpost.owner !== pIdx || isl.outpost.level >= OUTPOST_LEVELS.length)) return;
+    const price = OUTPOST_LEVELS[(isl.outpost?.level || 0)].price;
+    if (me.gold < price + 250) return; // строим только с запасом на корабли
+    if (isl.outpost) { // апгрейд своего — гарнизон строит сам, корабль не нужен
+      cands.push({ score: 14 * (underSiege ? 0.4 : 1), action: { type: 'outpost', islandId: ii } });
+      return;
+    }
+    const builder = myShips.find(s => !acted.has(s.id) && dist(s.x, s.y, isl.x, isl.y) <= isl.radius + OUTPOST_BUILD_REACH);
+    if (builder) cands.push({
+      score: 18 * (underSiege ? 0.4 : 1), // первая постройка ценнее апгрейда
+      action: { type: 'outpost', shipId: builder.id, islandId: ii }
+    });
+  });
 
   // --- верфь (флот не раздуваем — место у порта и здравый смысл) ---
   const fishers = myShips.filter(s => SHIP_TYPES[s.type].fishing > 0).length;

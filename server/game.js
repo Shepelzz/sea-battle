@@ -5,9 +5,11 @@ import {
   PORT_RETURN_LINKOR_MULT, PORT_NO_SHIP_INCOME_MULT,
   SHIP_COLLISION_DIST, LOOT_REACH, WRECK_LOOT_FRAC, TRIBUTE_FRAC,
   BROADSIDE_CANNONS, BROADSIDE_HALF_ARC, BROADSIDE_FALLOFF_MIN, BROADSIDE_SIDE_MIN, BROADSIDE_PORT_MULT, MORTAR_SHIPS, MORTAR_SHIP_MULT,
-  FISH_ZONE_CAP, movesBudget, SHIP_ACTIONS, CHEATS_ENABLED, REPAIR_CHARGES, REPAIR_DOCK_REACH,
+  FISH_ZONE_CAP, movesBudget, SHIP_ACTIONS, CHEATS_ENABLED, DEBUG_GOLD_LOG, REPAIR_CHARGES, REPAIR_DOCK_REACH,
   modeStartGold, modeOf, isPeace, modePeaceRounds, isDuel, isRealtime, RT, cheapestShipPrice, GAME_MODES, DEFAULT_MODE,
   WIND_STRENGTH, WIND_TURN_STEP, WIND_STR_STEP, windMoveMult, REALTIME_NAME,
+  OUTPOST_LEVELS, OUTPOST_RADIUS, OUTPOST_BUILD_REACH,
+  FISH_DRIFT_PER_TURN, FISH_HOME_RADIUS, FISH_MIN_GAP, FISH_BASE_GAP,
   MAP_EDGE_MARGIN, ISLAND_BLOCK_GAP, SPAWN_FAN_N, SPAWN_FAN_RINGS, SPAWN_FAN_R0, SPAWN_FAN_RING_STEP,
   PIRATE, PIRATE_MAX, PIRATE_ENGAGE_MULT, PIRATE_MIN_LIFETIME, PIRATE_STEP_MIN,
   PIRATE_DESPAWN_CHANCE, PIRATE_MOVE_CHANCE, PIRATE_BOSS_CHANCE, PIRATE_BOSS_HP,
@@ -77,6 +79,13 @@ function pushLog(game, text, type = 'info') {
 // чтобы не палить позиции и экономику. Без тумана — подробный текст.
 function logEvent(game, detailed, abstract, type = 'info') {
   pushLog(game, game.config.fog ? abstract : detailed, type);
+}
+
+// 🐞 Дебаг-лог экономики (флаг DEBUG_GOLD_LOG в config.js): каждое начисление золота —
+// в журнал партии. Пишет мимо тумана войны (доходы всех видны всем) — только для отладки.
+export function debugGold(game, player, amount, reason) {
+  if (!DEBUG_GOLD_LOG || !amount || !player) return;
+  pushLog(game, `🐞 +${amount} зол. → ${player.nick}: ${reason}`, 'debug');
 }
 
 // События последнего хода — клиент проигрывает по ним анимации
@@ -218,6 +227,30 @@ const nearestShip = (pir, list) =>
 // Возвращает true, если пират занят боем — тогда он НЕ исчезает и не дрейфует просто так.
 const isDamaged = s => s.hp < SHIP_TYPES[s.type].hp; // подбит — HP меньше полного
 
+// 🏴‍☠️ БОРТОВОЙ ЗАЛП ПИРАТА (общий для пошагового pirateAct и реалтайм-pirateThink):
+// пират разворачивается бортом к цели и бьёт ВСЕХ игроков в секторе борта (урон плоский,
+// PIRATE.dmg каждому). Снарядов в залпе: у босса 3 (как у фрегата), у обычного — 2 (визуал клиента).
+export function pirateVolley(game, pir, target) {
+  const norm = a => Math.atan2(Math.sin(a), Math.cos(a));
+  const sideDir = Math.atan2(target.y - pir.y, target.x - pir.x);
+  pir.heading = norm(sideDir - Math.PI / 2); // цель — на траверзе борта
+  const hits = [];
+  for (const s of game.ships) {
+    if (s.owner < 0 || !game.players[s.owner]?.alive) continue; // пираты бьют только корабли игроков
+    if (dist(pir.x, pir.y, s.x, s.y) > PIRATE.fireRange) continue;
+    if (s !== target && Math.abs(norm(Math.atan2(s.y - pir.y, s.x - pir.x) - sideDir)) > BROADSIDE_HALF_ARC) continue;
+    hits.push(s);
+  }
+  const evHits = hits.map(s => (s.hp -= PIRATE.dmg, { tx: s.x, ty: s.y, dmg: PIRATE.dmg }));
+  pir.angryAt = target.owner;
+  pushEvent(game, { type: 'volley', fx: pir.x, fy: pir.y, sideDir, cannons: pir.boss ? 3 : 2, full: false, shipType: 'pirate', hits: evHits });
+  logEvent(game,
+    `🏴‍☠️ ${pir.boss ? 'БОСС-пират даёт бортовой залп' : 'Пираты дают бортовой залп'} по ${hits.length} цел. (−${PIRATE.dmg} HP)`,
+    `🏴‍☠️ Пираты дали залп по игроку ${game.players[target.owner].nick}`, 'battle');
+  for (const s of [...hits]) if (s.hp <= 0) sinkShip(game, s, null);
+  return hits.length;
+}
+
 function pirateAct(game, pir) {
   const D = PIRATE.dmg, FR = PIRATE.fireRange, MV = PIRATE.move;
   // теперь и рыбацкие баркасы — допустимая добыча: мелкий пират может пощипать баркас (одиночным выстрелом, не залпом)
@@ -246,16 +279,10 @@ function pirateAct(game, pir) {
   else if (inRange.length) target = inRange.reduce((a, b) => a.hp < b.hp ? a : b);
 
   if (target) {
-    // ДЕРЁМСЯ если можем добить ОДНИМ выстрелом, либо переживём ответку. БОСС агрессивен — бьёт, не считаясь со сдачей.
+    // ДЕРЁМСЯ если можем добить ОДНИМ залпом, либо переживём ответку. БОСС агрессивен — бьёт, не считаясь со сдачей.
     const willKill = target.hp <= D;
     if (willKill || pir.boss || pir.hp > incoming) {
-      target.hp -= D;
-      pir.angryAt = target.owner;
-      pushEvent(game, { type: 'shot', fx: pir.x, fy: pir.y, tx: target.x, ty: target.y, dmg: D });
-      logEvent(game,
-        `🏴‍☠️ ${pir.boss ? 'БОСС-пират атакует' : 'Пираты атакуют'} ${SHIP_TYPES[target.type].name} игрока ${game.players[target.owner].nick} (−${D} HP)`,
-        `🏴‍☠️ Пираты напали на игрока ${game.players[target.owner].nick}`, 'battle');
-      if (target.hp <= 0) sinkShip(game, target, null);
+      pirateVolley(game, pir, target); // 💥 бортовой залп: разворот бортом + все игроки в секторе
       return true;
     }
     // не добить и опасно — уходим от ближайшего корабля
@@ -334,6 +361,35 @@ function fishOccupants(game, zone) {
 }
 const fishEarners = (game, zone) => fishOccupants(game, zone).slice(0, zone.cap || FISH_ZONE_CAP);
 
+// 🐟 Миграция рыбных мест: зоны ОЧЕНЬ медленно блуждают вокруг родного места (якорь
+// FISH_HOME_RADIUS), держа дистанцию от баз и чужих целей (FISH_MIN_GAP) — в кучу не съедутся.
+// Пошагово зовётся из advanceTurn (шаг FISH_DRIFT_PER_TURN), в реалтайме — из тика (rt.js).
+export function driftFishZones(game, step) {
+  const m = game.map;
+  if (!m?.fishZones?.length) return;
+  for (const z of m.fishZones) {
+    z.homeX ??= z.x; z.homeY ??= z.y; // якорь — место рождения зоны
+    if (z.tx == null || dist(z.x, z.y, z.tx, z.ty) < 4) pickFishTarget(game, z);
+    const a = Math.atan2(z.ty - z.y, z.tx - z.x);
+    z.x += Math.cos(a) * step;
+    z.y += Math.sin(a) * step;
+  }
+}
+function pickFishTarget(game, z) {
+  const m = game.map;
+  for (let i = 0; i < 24; i++) {
+    const a = Math.random() * Math.PI * 2, r = Math.random() * FISH_HOME_RADIUS;
+    const tx = z.homeX + Math.cos(a) * r, ty = z.homeY + Math.sin(a) * r;
+    if (tx < 80 || ty < 80 || tx > m.w - 80 || ty > m.h - 80) continue;                          // не к краю
+    if (m.bases.some(b => dist(tx, ty, b.x, b.y) < b.radius + FISH_BASE_GAP)) continue;          // не к базам
+    if (m.lootIslands.some(i2 => dist(tx, ty, i2.x, i2.y) < i2.radius + 40)) continue;           // не центром на остров
+    if (m.fishZones.some(o => o !== z && dist(tx, ty, o.tx ?? o.x, o.ty ?? o.y) < FISH_MIN_GAP)) continue; // не в кучу
+    z.tx = tx; z.ty = ty;
+    return;
+  }
+  z.tx = z.homeX; z.ty = z.homeY; // подходящей воды не нашли — плывём домой
+}
+
 // 🌬 Пошаговый ветер: маленький шаг к целевому направлению/силе КАЖДУЮ смену хода (в свой ход
 // ветер стабилен — планируй спокойно); новая цель — раз в круг. Формула дальности — windMoveMult.
 function driftWind(game, newRound) {
@@ -362,6 +418,7 @@ function advanceTurn(game) {
   const newRound = next === game.players.findIndex(p => p.alive);
   if (newRound) game.turn.round = (game.turn.round || 1) + 1;
   driftWind(game, newRound); // 🌬 ветер дрейфует между ходами (контур хода вытянут по ветру)
+  driftFishZones(game, FISH_DRIFT_PER_TURN); // 🐟 рыбные места очень медленно мигрируют
   game.turn.deadline = turnDeadline(game);
   game.turn.nudged = false;
   game.turn.moves = 0;        // счётчик ходов кораблями этого хода (режим «ход тремя судами»)
@@ -374,7 +431,9 @@ function advanceTurn(game) {
   if (np?.alive && !isDuel(game)) {   // в дуэли дохода за ход НЕТ (золото — только за пиратов)
     // порт без единого корабля приносит на 50% больше золота — игроку, потерявшему флот, легче встать на ноги.
     const hasShips = game.ships.some(s => s.owner === next);
-    np.gold += hasShips ? PORT_INCOME : Math.round(PORT_INCOME * PORT_NO_SHIP_INCOME_MULT);
+    const income = hasShips ? PORT_INCOME : Math.round(PORT_INCOME * PORT_NO_SHIP_INCOME_MULT);
+    np.gold += income;
+    debugGold(game, np, income, hasShips ? 'доход порта' : 'доход порта (без флота, +50%)');
   }
 
   // пассивная рыбалка: каждый баркас игрока, стоящий в рыбном месте, сам приносит улов
@@ -392,6 +451,49 @@ function advanceTurn(game) {
       np.gold += catch_;
       np.stats.goldCollected += catch_;
       // нотиф про улов не пишем — это шум; остаётся всплывающее «+золото» на карте
+      debugGold(game, np, catch_, 'рыбалка');
+    }
+  }
+
+  // ⛺ АВАНПОСТЫ владельца — в начале его хода: доход, ремонт своих рядом, пушка форта.
+  // (Реалтайм не ходит через advanceTurn — там те же перки крутит tickOutposts в rt.js.)
+  if (np?.alive) applyOutpostPerks(game, next);
+}
+
+// Перки аванпостов игрока pIdx (общая логика пошагового хода и реалтайм-тика):
+// доход с каждого аванпоста, фактория чинит свои корабли в радиусе, форт бьёт врага/пирата.
+export function applyOutpostPerks(game, pIdx) {
+  const p = game.players[pIdx];
+  if (!p?.alive) return;
+  for (const isl of game.map?.lootIslands || []) {
+    const op = isl.outpost;
+    if (!op || op.owner !== pIdx) continue;
+    const lvl = OUTPOST_LEVELS[op.level - 1];
+    p.gold += lvl.income;
+    pushEvent(game, { type: 'gold', x: isl.x, y: isl.y, amount: lvl.income });
+    debugGold(game, p, lvl.income, `аванпост ур.${op.level}`);
+    if (lvl.heal) { // 🏪 фактория: латает свои корабли в радиусе (доля их МАКСИМАЛЬНОЙ прочности)
+      for (const s of game.ships.filter(s => s.owner === pIdx && dist(s.x, s.y, isl.x, isl.y) <= OUTPOST_RADIUS)) {
+        const maxHp = SHIP_TYPES[s.type].hp;
+        const healed = Math.min(Math.round(maxHp * lvl.heal), maxHp - s.hp);
+        if (healed > 0) { s.hp += healed; pushEvent(game, { type: 'repair', fx: isl.x, fy: isl.y, tx: s.x, ty: s.y, heal: healed }); }
+      }
+    }
+    if (lvl.gun && !isPeace(game)) { // 🏰 форт: береговая пушка по ближайшему врагу/пирату в радиусе
+      const foes = game.ships.filter(s => s.owner !== pIdx && (s.owner === -1 || game.players[s.owner]?.alive) &&
+        dist(s.x, s.y, isl.x, isl.y) <= OUTPOST_RADIUS);
+      if (foes.length) {
+        const t = foes.reduce((a, b) => dist(a.x, a.y, isl.x, isl.y) < dist(b.x, b.y, isl.x, isl.y) ? a : b);
+        t.hp -= lvl.gun;
+        p.stats.damageDealt += lvl.gun;
+        if (!isHumanFoe(game, t.owner)) p.stats.npcDamage += lvl.gun;
+        pushEvent(game, { type: 'shot', fx: isl.x, fy: isl.y, tx: t.x, ty: t.y, dmg: lvl.gun });
+        logEvent(game,
+          `🏰 Форт игрока ${p.nick} бьёт по ${t.owner === -1 ? 'пиратам' : SHIP_TYPES[t.type].name + ' игрока ' + game.players[t.owner].nick} (−${lvl.gun} HP)`,
+          `🏰 Форт игрока ${p.nick} дал залп`, 'battle');
+        if (t.hp <= 0) sinkShip(game, t, p);
+        else if (t.owner === -1) t.angryAt = pIdx;
+      }
     }
   }
 }
@@ -425,6 +527,7 @@ function sinkShip(game, ship, killer) {
     killer.stats.shipsSunk++; killer.stats.goldCollected += ship.bounty;  // общий зачёт (рекап/сим)
     killer.stats.npcSunk++;   killer.stats.npcGold += ship.bounty;        // …но НПС → из лидерборда вычтется
     pushEvent(game, { type: 'gold', x: ship.x, y: ship.y, amount: ship.bounty });
+    debugGold(game, killer, ship.bounty, 'награда за пирата');
     logEvent(game,
       `💥 Пиратский корабль потоплен! ${killer.nick} забирает награду ${ship.bounty} золота`,
       `💥 ${killer.nick} потопил пиратский корабль`, 'battle');
@@ -446,6 +549,7 @@ function sinkShip(game, ship, killer) {
     killer.stats.shipsSunk++; killer.stats.goldCollected += plunder;
     if (npcFoe) { killer.stats.npcSunk++; killer.stats.npcGold += plunder; }
     pushEvent(game, { type: 'gold', x: ship.x, y: ship.y, amount: plunder });
+    debugGold(game, killer, plunder, `лут с обломков (${SHIP_TYPES[ship.type].name})`);
     logEvent(game,
       `💥 ${SHIP_TYPES[ship.type].name} игрока ${owner.nick} потоплен! ${killer.nick} лутает ${plunder} золота с обломков`,
       `💥 ${killer.nick} потопил корабль игрока ${owner.nick}`, 'battle');
@@ -471,6 +575,7 @@ function eliminatePlayer(game, victimIdx, killer) {
     victim.gold -= tribute;
     killer.gold += tribute;                       // дань-валюту забираем,
     killer.stats.goldCollected += tribute;
+    debugGold(game, killer, tribute, `дань с игрока ${victim.nick}`);
     if (victim.isBot) killer.stats.npcGold += tribute; // дань с бота → из лидерборда вычтется
     const base = game.map.bases[victimIdx];
     if (base && !base.noPort) { // в дуэли порта/форта нет — взрыв уже сыгран на последнем корабле
@@ -759,6 +864,7 @@ export function applyAction(game, playerId, action) {
       if (!gained) return { ok: false, error: 'Нечего собирать: нет (ещё не ходивших) кораблей у нелутанных островов' };
       player.gold += gained;
       player.stats.goldCollected += gained;
+      debugGold(game, player, gained, 'клад с острова');
       if (!rt) reachers.forEach(id => (game.turn.actedShips ??= []).push(id)); // собравшие — походили этим ходом
       logEvent(game,
         `💰 ${player.nick} собирает добычу: +${gained} зол. (${notes.join(', ')})`,
@@ -866,6 +972,34 @@ export function applyAction(game, playerId, action) {
             `🏰 Порт игрока ${victim.nick} огрызается по ${SHIP_TYPES[ship.type].name} (−${retDmg} HP)`,
             `🏰 База игрока ${victim.nick} даёт отпор`, 'battle');
           if (ship.hp <= 0) sinkShip(game, ship, victim); // защитник забирает обломки
+        }
+      } else if (action.targetType === 'outpost') {
+        // 🎯 мортира — ЕДИНСТВЕННОЕ, что разрушает чужой аванпост (осада — дело тяжёлых)
+        const isl = (game.map.lootIslands || [])[action.targetId];
+        const op = isl?.outpost;
+        if (!op || op.owner === pIdx) return { ok: false, error: 'Неверная цель' };
+        if (isPeace(game)) return { ok: false, error: '🕊 Мирное время: чужие постройки трогать нельзя' };
+        if (dist(ship.x, ship.y, isl.x, isl.y) > st.fireRange + isl.radius * 0.5)
+          return { ok: false, error: 'Аванпост вне дальности стрельбы' };
+        const total = st.dmg * volley; // по строению мортира бьёт полным уроном
+        op.hp -= total;
+        player.stats.shotsFired++;
+        player.stats.damageDealt += total;
+        if (game.players[op.owner]?.isBot) player.stats.npcDamage += total; // постройка бота → не в лидерборд
+        for (let i = 0; i < volley; i++)
+          pushEvent(game, { type: 'shot', fx: ship.x, fy: ship.y, tx: isl.x, ty: isl.y, dmg: st.dmg, auto: volley > 1 });
+        const def = OUTPOST_LEVELS[op.level - 1];
+        const victimNick = game.players[op.owner]?.nick || '?';
+        if (op.hp <= 0) {
+          isl.outpost = null; // остров снова ничей — можно строить заново
+          pushEvent(game, { type: 'explosion', x: isl.x, y: isl.y, big: true });
+          logEvent(game,
+            `💥 ${player.nick} разрушает ${def.icon} ${def.name} игрока ${victimNick}!`,
+            `💥 ${player.nick} разрушил чужую постройку`, 'battle');
+        } else {
+          logEvent(game,
+            `🔥 ${player.nick}: ${st.name} бьёт по ${def.icon} ${def.name} игрока ${victimNick} (−${total} HP, осталось ${op.hp})`,
+            `🔥 ${player.nick} обстреливает чужую постройку`, 'battle');
         }
       } else {
         return { ok: false, error: 'Неизвестная цель' };
@@ -1005,6 +1139,33 @@ export function applyAction(game, playerId, action) {
       break;
     }
 
+    case 'outpost': {
+      // ⛺ аванпост на ЗАЛУТАННОМ острове. ПЕРВАЯ постройка — свой корабль вплотную (он привозит
+      // гарнизон); АПГРЕЙД — кликом по самому аванпосту, корабль не нужен (гарнизон строит сам).
+      const isl = (game.map.lootIslands || [])[action.islandId];
+      if (!isl) return { ok: false, error: 'Остров не найден' };
+      if (!isl.looted) return { ok: false, error: 'Сначала забери клад — аванпост ставят на залутанном острове' };
+      if (isl.outpost && isl.outpost.owner !== pIdx)
+        return { ok: false, error: 'Тут чужой аванпост — сначала разрушь его 🎯 мортирой' };
+      if (!isl.outpost) { // первая постройка: нужен корабль-строитель у берега
+        const ship = game.ships.find(s => s.id === action.shipId);
+        if (!ship || ship.owner !== pIdx) return { ok: false, error: 'Это не ваш корабль' };
+        if (!rt && game.turn.broadsideSides?.[ship.id]?.length) return { ok: false, error: 'Корабль уже даёт залп — добей вторым бортом или жди' };
+        if (dist(ship.x, ship.y, isl.x, isl.y) > isl.radius + OUTPOST_BUILD_REACH)
+          return { ok: false, error: 'Подведи корабль вплотную к острову' };
+      }
+      const level = (isl.outpost?.level || 0) + 1;
+      if (level > OUTPOST_LEVELS.length) return { ok: false, error: 'Аванпост уже прокачан до предела' };
+      const def = OUTPOST_LEVELS[level - 1];
+      if (player.gold < def.price) return { ok: false, error: `Не хватает золота (нужно ${def.price})` };
+      player.gold -= def.price;
+      isl.outpost = { owner: pIdx, level, hp: def.hp }; // апгрейд заодно отстраивает до полной прочности
+      logEvent(game,
+        `${def.icon} ${player.nick} ${level === 1 ? 'ставит' : 'прокачивает до'}: ${def.name} (−${def.price} зол.)`,
+        `⛺ ${player.nick} строит на острове`);
+      break;
+    }
+
     case 'skip':
     case 'endTurn':
       if (rt) break; // реалтайм: ходов нет — тихий no-op (страховка для старых кнопок/ботов)
@@ -1030,7 +1191,7 @@ export function applyAction(game, playerId, action) {
     game.turn.moves = (game.turn.moves || 0) + 1;
     if (action.type === 'broadside') {
       if ((game.turn.broadsideSides?.[action.shipId] || []).length >= 2) (game.turn.actedShips ??= []).push(action.shipId);
-    } else if (SHIP_ACTION_SET.has(action.type)) {
+    } else if (SHIP_ACTION_SET.has(action.type) && action.shipId) { // апгрейд аванпоста идёт без корабля
       (game.turn.actedShips ??= []).push(action.shipId);
     }
   }
@@ -1131,6 +1292,8 @@ export function publicState(game, viewerPid) {
     events: game.events || [],
     eventSeq: game.eventSeq || 0,
     lootReach: LOOT_REACH,
+    // ⛺ аванпосты: уровни/радиус перков/дистанция стройки (для кнопки, отрисовки и вики)
+    outposts: { levels: OUTPOST_LEVELS, radius: OUTPOST_RADIUS, reach: OUTPOST_BUILD_REACH },
     repairChargesMax: REPAIR_CHARGES,
     repairDockReach: REPAIR_DOCK_REACH,
     portMax: PORT_HP,

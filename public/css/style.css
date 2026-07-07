@@ -241,6 +241,7 @@ aside.panel {
   overflow-y: auto;
 }
 #log .battle { color: var(--red-pen); }
+#log .debug { opacity: .55; font-size: .92em; } /* 🐞 дебаг-лог экономики (DEBUG_GOLD_LOG в config.js) */
 #log div { padding: 2px 0; border-bottom: 1px dotted var(--grid); }
 
 .action-bar {

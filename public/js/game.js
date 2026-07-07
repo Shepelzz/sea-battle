@@ -168,6 +168,7 @@ socket.on('state', s => {
   }
   render();
   if (selectedShipId) updateActionButtons(); // синхронизировать кнопки выбранного корабля с новым состоянием (борта залпа)
+  updateOutpostPanel(); // ⛺ открытая панель аванпоста: обновить hp/золото, закрыть если снесли
   maybeMovesToast(prev, s); // «осталось N ходов» после моего суб-хода (режим ход-тремя-судами)
   updatePeaceBanner(prev, s); // баннер мирного времени (режим «Развитие»)
   if (anyBurning()) ensureAnimLoop(); // низкое HP базы → запустить анимацию огня/дыма
@@ -1022,6 +1023,10 @@ function visionCircles() {
     const pos = animPos.get(s.id) || (state.rt && rtPos.get(s.id)) || s; // «плавание»/шторм — туман плавно едет за лодкой
     circles.push({ x: pos.x, y: pos.y, r: Math.max(st.move, st.fireRange) * FOG_SHIP_MULT });
   }
+  // ⛺ дозор моих аванпостов: снимают туман вокруг своего острова
+  for (const isl of state.map.lootIslands || []) {
+    if (isl.outpost?.owner === me) circles.push({ x: isl.x, y: isl.y, r: state.outposts?.radius || 240 });
+  }
   return circles;
 }
 const fogVisible = (x, y, circles) => circles.some(c => Math.hypot(x - c.x, y - c.y) <= c.r);
@@ -1259,14 +1264,38 @@ function render(canvasOnly) {
     ctx.fillText(`${Math.min(taken, cap)}/${cap}`, sx(z.x), sy(z.y) + 20);
   }
 
-  // лут-острова
+  // лут-острова (⛺ с аванпостом — постройка, флаг владельца, радиус перков, HP если побит)
   for (const isl of m.lootIslands) {
     if (fog && !fogExploredAt(isl.x, isl.y) && !fogVisible(isl.x, isl.y, vis)) continue; // под туманом — пока не разведано (или подсвечено туториалом)
-    ctx.globalAlpha = isl.looted ? 0.45 : 1;
+    const op = isl.outpost;
+    ctx.globalAlpha = isl.looted && !op ? 0.45 : 1;
     drawPolygon(isl.x, isl.y, isl.shape, '#e8d9a8', '#8a7a45');
     ctx.font = `${Math.max(12, 18 * view.scale)}px serif`;
     ctx.textAlign = 'center';
-    ctx.fillText(isl.looted ? '✖' : '💰', sx(isl.x), sy(isl.y) + 5);
+    if (op) {
+      const def = (state.outposts?.levels || [])[op.level - 1] || { icon: '⛺', hp: 120 };
+      const col = state.players[op.owner]?.color || '#666';
+      if (op.owner === myIdx()) // радиус перков — только своих (чужие не палим детально)
+        dashedCircle(isl.x, isl.y, state.outposts?.radius || 240, col + '66', 1.2);
+      ctx.fillText(def.icon, sx(isl.x), sy(isl.y) + 5);
+      // флажок владельца над постройкой
+      const fx0 = sx(isl.x) + 10 * view.scale, fy0 = sy(isl.y) - 16 * view.scale;
+      ctx.strokeStyle = '#2b3a55'; ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.moveTo(fx0, fy0); ctx.lineTo(fx0, fy0 - 12 * view.scale); ctx.stroke();
+      ctx.fillStyle = col;
+      ctx.beginPath();
+      ctx.moveTo(fx0, fy0 - 12 * view.scale);
+      ctx.lineTo(fx0 + 10 * view.scale, fy0 - 9 * view.scale);
+      ctx.lineTo(fx0, fy0 - 6 * view.scale);
+      ctx.closePath(); ctx.fill();
+      if (op.hp < def.hp) { // постройка под обстрелом — полоска прочности
+        const w = 34 * view.scale, x0 = sx(isl.x) - w / 2, y0 = sy(isl.y - isl.radius) - 10;
+        ctx.fillStyle = 'rgba(43,58,85,.25)'; ctx.fillRect(x0, y0, w, 4);
+        ctx.fillStyle = '#c0392b'; ctx.fillRect(x0, y0, w * Math.max(0, op.hp / def.hp), 4);
+      }
+    } else {
+      ctx.fillText(isl.looted ? '✖' : '💰', sx(isl.x), sy(isl.y) + 5);
+    }
     if (!isl.looted) {
       ctx.font = `bold ${Math.max(11, 14 * view.scale)}px Neucha, cursive`;
       ctx.fillStyle = '#2b3a55';
@@ -1381,6 +1410,10 @@ function render(canvasOnly) {
       if (p && p.alive && i !== sel.owner && dist(sel.x, sel.y, b.x, b.y) <= st.fireRange + b.radius * 0.5)
         dashedCircle(b.x, b.y, b.radius + 10, '#c0392b', 2);
     });
+    for (const isl of m.lootIslands || []) { // ⛺ чужие аванпосты в радиусе мортиры — тоже цели
+      if (isl.outpost && isl.outpost.owner !== sel.owner && dist(sel.x, sel.y, isl.x, isl.y) <= st.fireRange + isl.radius * 0.5)
+        dashedCircle(isl.x, isl.y, isl.radius + 8, '#c0392b', 2);
+    }
   }
 
   // цели бортового залпа — вражеские суда в наводимом секторе (красные кольца)
@@ -1429,10 +1462,11 @@ function render(canvasOnly) {
       ctx.fillText(`${(d / 40).toFixed(1)} кл.`, mx, my - 8);
     }
 
-    // тач-прицел: крестик-цель + маркер пальца с тонкой линией (палец не закрывает цель)
+    // тач-прицел: крестик-цель + маркер пальца с тонкой линией (палец не закрывает цель).
+    // ⚡ в реалтайме крестик ПОД пальцем — маркер пальца не нужен (совпал бы с крестиком)
     if (aim && aim.dest) {
       drawCrosshair(sx(hoverPt.x), sy(hoverPt.y), aim.cancel ? '#9aa0a8' : aim.clamped ? '#c0392b' : '#2b3a55');
-      if (aim.finger) {
+      if (aim.finger && !state.rt) {
         ctx.beginPath();
         ctx.setLineDash([2, 4]);
         ctx.moveTo(sx(hoverPt.x), sy(hoverPt.y));
@@ -1513,7 +1547,9 @@ function updateMoveHint() {
   const showMove = IS_COARSE && mode === 'move' && selectedShipId;
   const showBroad = IS_COARSE && mode === 'broadside' && selectedShipId;
   if (showBroad) el.textContent = 'проведи от корабля в сторону борта';
-  else if (showMove) el.textContent = 'потяни корабль, чтобы выбрать курс';
+  else if (showMove) el.textContent = state?.rt
+    ? 'тапни, куда плыть — или потяни от корабля' // ⚡ реалтайм: тап-в-точку работает
+    : 'потяни корабль, чтобы выбрать курс';
   el.classList.toggle('hidden', !(showMove || showBroad));
 }
 
@@ -1947,10 +1983,12 @@ function updateAim(screenPt) {
   aim.cancel = fd < AIM_CANCEL_DIST;   // вернул палец почти на корабль → ход отменим (передумал)
   if (fd < 1) { aim.dest = { x: sel.x, y: sel.y }; aim.clamped = false; }
   else {
-    const len = fd * AIM_RATIO;    // крестик на «середине» пути до пальца
-    aim.clamped = len > range;     // середина вышла за круг хода — ход недопустим
+    // ⚡ реалтайм: крестик ПОД ПАЛЬЦЕМ (дальности нет — «середина пути» только укорачивала жест);
+    // пошагово — на AIM_RATIO пути (палец не закрывает цель, а дальше круга всё равно нельзя)
+    const len = fd * (state?.rt ? 1 : AIM_RATIO);
+    aim.clamped = len > range;     // вышла за контур хода — ход недопустим
     const k = len / fd;
-    aim.dest = { x: sel.x + dx * k, y: sel.y + dy * k }; // истинная середина (может быть вне круга)
+    aim.dest = { x: sel.x + dx * k, y: sel.y + dy * k };
   }
   hoverPt = aim.dest; // рендер «линейки» сам красит красным, если точка вне радиуса
 }
@@ -2070,9 +2108,10 @@ function handleTap(pos, isTouch) {
   const clickedShip = state.ships.find(s => dist(pt.x, pt.y, s.x, s.y) < tapR);
 
   if (mode === 'move' && selectedShipId) {
-    // на тач курс прокладывается только перетаскиванием от корабля (тык-в-точку убран —
-    // он путал). Мышь — как раньше, тык до пикселя.
-    if (isTouch) { startMoveDemo(); return; } // напомним жест демкой (если ещё не научился)
+    // Пошагово на тач курс прокладывается только перетаскиванием от корабля (тык-в-точку убран —
+    // он путал из-за круга дальности). ⚡ В РЕАЛТАЙМЕ дальность не ограничена и промах не страшен
+    // (перетапнул — курс переложен), поэтому тап-в-точку РАБОТАЕТ: «кликай куда угодно» честно и на тач.
+    if (isTouch && !state.rt) { startMoveDemo(); return; } // напомним жест демкой (если ещё не научился)
     sendAction({ type: 'move', shipId: selectedShipId, x: pt.x, y: pt.y });
     return;
   }
@@ -2098,7 +2137,14 @@ function handleTap(pos, isTouch) {
       sendAction({ type: 'attack', shipId: selectedShipId, targetType: 'port', targetId: baseIdx });
       return;
     }
-    errToast('Выбери цель: вражеский корабль или порт');
+    // ⛺ чужой аванпост на острове — цель мортиры (только она и разрушает постройки)
+    const opIdx = (state.map.lootIslands || []).findIndex(i =>
+      i.outpost && i.outpost.owner !== myIdx() && dist(pt.x, pt.y, i.x, i.y) < i.radius + 12);
+    if (opIdx >= 0) {
+      sendAction({ type: 'attack', shipId: selectedShipId, targetType: 'outpost', targetId: opIdx });
+      return;
+    }
+    errToast('Выбери цель: вражеский корабль, порт или аванпост');
     return;
   }
 
@@ -2118,6 +2164,7 @@ function handleTap(pos, isTouch) {
       if (isTouch) { clearTimeout(shipNoteTimer); shipNoteTimer = setTimeout(hideShipNote, 2200); }
       return;
     }
+    closeOutpostPanel(); // корабль и аванпост не толкаются
     selectedShipId = clickedShip.id;
     mode = 'idle';
     Sound.play('click');
@@ -2126,9 +2173,18 @@ function handleTap(pos, isTouch) {
     $('#shipActionsTitle').textContent = ST(clickedShip.type).icon + ' ' + ST(clickedShip.type).name;
     updateActionButtons();
     render();
-  } else {
-    deselect();
+    return;
   }
+  // ⛺ тап по СВОЕМУ аванпосту → панель постройки (уровень, перки, улучшение)
+  const opIdx = (state.map.lootIslands || []).findIndex(i =>
+    i.outpost && i.outpost.owner === myIdx() && dist(pt.x, pt.y, i.x, i.y) < i.radius + tapR);
+  if (opIdx >= 0 && !spectator) {
+    Sound.play('click');
+    openOutpostPanel(opIdx);
+    return;
+  }
+  closeOutpostPanel();
+  deselect();
 }
 
 // На мобиле панель действий ставим на половину экрана, ПРОТИВОПОЛОЖНУЮ кораблю —
@@ -2145,6 +2201,57 @@ function canShipCollect(ship) {
   return state.map.lootIslands.some(i => !i.looted &&
     dist(ship.x, ship.y, i.x, i.y) <= i.radius + (state.lootReach || 55));
 }
+// ⛺ остров рядом, где можно ПОСТРОИТЬ аванпост (первая постройка — кораблём;
+// апгрейды — кликом по самому аванпосту, см. openOutpostPanel)
+function outpostIslandAt(ship) {
+  const reach = state.outposts?.reach || 70;
+  const idx = (state.map.lootIslands || []).findIndex(i => i.looted && !i.outpost &&
+    dist(ship.x, ship.y, i.x, i.y) <= i.radius + reach);
+  return idx >= 0 ? idx : -1;
+}
+
+// ⛺ ПАНЕЛЬ АВАНПОСТА: клик по своему аванпосту → уровень, перки словами, кнопка «Улучшить».
+let outpostPanelIdx = null; // какой остров открыт (обновляется каждым стейтом, закрывается если снесли)
+function perkText(def) {
+  const parts = [`💰 +${def.income} золота/ход`];
+  if (def.heal) parts.push(`🛟 чинит твои корабли рядом (+${Math.round(def.heal * 100)}% прочности/ход)`);
+  if (def.gun) parts.push(`💥 пушка: −${def.gun} HP врагу/пирату рядом`);
+  parts.push('👁 дозор: снимает туман вокруг');
+  return parts.join(' · ');
+}
+function openOutpostPanel(idx) {
+  outpostPanelIdx = idx;
+  deselect(); // панель корабля и аванпоста не толкаются
+  updateOutpostPanel();
+}
+function closeOutpostPanel() {
+  outpostPanelIdx = null;
+  $('#outpostPanel').classList.add('hidden');
+}
+function updateOutpostPanel() {
+  if (outpostPanelIdx === null) return;
+  const isl = state.map.lootIslands?.[outpostPanelIdx];
+  const op = isl?.outpost;
+  if (!op || op.owner !== myIdx()) { closeOutpostPanel(); return; } // снесли/чужой — закрыть
+  const lv = state.outposts?.levels || [];
+  const def = lv[op.level - 1], next = lv[op.level];
+  $('#outpostPanel').classList.remove('hidden');
+  $('#outpostTitle').textContent = `${def.icon} ${def.name}${op.hp < def.hp ? ` · 🏚${op.hp}/${def.hp}` : ''}`;
+  $('#outpostPerks').textContent = perkText(def);
+  const btn = $('#btnOutpostUp'), hint = $('#outpostNext');
+  btn.classList.toggle('hidden', !next);
+  hint.classList.toggle('hidden', !next);
+  if (next) {
+    const gold = state.players[myIdx()]?.gold ?? 0;
+    btn.textContent = `⬆ ${next.icon} ${next.name} (${next.price})`;
+    btn.disabled = gold < next.price || (!isRT() && !isMyTurn());
+    hint.textContent = `даст: ${perkText(next)}`;
+  }
+}
+$('#btnOutpostUp').addEventListener('click', () => {
+  if (outpostPanelIdx !== null) sendAction({ type: 'outpost', islandId: outpostPanelIdx });
+});
+$('#outpostClose').addEventListener('click', closeOutpostPanel);
 // ремонтник с неполным запасом материалов, стоящий у СВОЕЙ базы — может «Пополнить»
 function repairChargesMax() { return state.repairChargesMax || 8; }
 function canShipRecharge(ship) {
@@ -2179,6 +2286,18 @@ function updateActionButtons() {
   $('#btnRepair').classList.toggle('hidden', !st.repairer);      // 🛟 Чинить
   $('#btnBroadside').classList.toggle('hidden', !canBroadside(sel)); // 💥 Залп
   $('#btnCollectHere').classList.toggle('hidden', !canShipCollect(sel));
+  // ⛺ построить/прокачать аванпост на залутанном острове рядом (цена след. уровня на кнопке)
+  const opIdx = outpostIslandAt(sel);
+  const opBtn = $('#btnOutpost');
+  opBtn.classList.toggle('hidden', opIdx < 0);
+  if (opIdx >= 0) {
+    const isl = state.map.lootIslands[opIdx];
+    const def = (state.outposts?.levels || [])[isl.outpost?.level || 0];
+    const gold = state.players[myIdx()]?.gold ?? 0;
+    opBtn.textContent = `${def.icon} ${def.name} (${def.price})`;
+    opBtn.dataset.island = opIdx;
+    opBtn.disabled = gold < def.price;
+  }
   $('#btnRecharge').classList.toggle('hidden', !canShipRecharge(sel)); // 🔧 Пополнить (у базы)
   $('#rechargeNote').classList.toggle('hidden', !noCharges);     // заметка «нет материалов — на базу»
   if (isRT()) {
@@ -2204,6 +2323,7 @@ function updateActionButtons() {
   $('#btnFire').disabled = committed;
   $('#btnRepair').disabled = committed || noCharges;             // чинить нечем без материалов
   $('#btnCollectHere').disabled = committed;
+  if (committed) $('#btnOutpost').disabled = true;               // начал залп — строить уже нельзя
   $('#btnRecharge').disabled = committed;
   $('#btnBroadside').disabled = fired.length >= 2;               // оба борта отстреляны
 }
@@ -2332,6 +2452,9 @@ if (window.matchMedia('(max-width: 900px)').matches) {
 }
 
 $('#btnCollectHere').addEventListener('click', () => sendAction({ type: 'collect' }));
+// ⛺ построить/прокачать аванпост на острове рядом (индекс острова кладёт updateActionButtons)
+$('#btnOutpost').addEventListener('click', () =>
+  sendAction({ type: 'outpost', shipId: selectedShipId, islandId: +$('#btnOutpost').dataset.island }));
 $('#btnRecharge').addEventListener('click', () => sendAction({ type: 'recharge', shipId: selectedShipId })); // 🔧 пополнить материалы у базы
 $('#btnSkip').addEventListener('click', () => sendAction({ type: 'skip' }));
 $('#btnShop').addEventListener('click', () => {
@@ -2372,6 +2495,7 @@ $('#btnBuy').addEventListener('click', () => {
 });
 
 // ============ САЙДБАР ============
+let lastLogSig = null; // подпись журнала: перерисовка только на новые записи (см. ниже)
 function renderSidebar() {
   const me = state.players[myIdx()];
   const current = state.players[state.turn.idx];
@@ -2447,17 +2571,29 @@ function renderSidebar() {
 
   // журнал: новые сообщения сверху (массив log — старые→новые, разворачиваем).
   // innerHTML переписывается целиком → скролл сам встаёт наверх, к самым свежим.
-  $('#log').innerHTML = [...state.log].reverse().map(l =>
-    `<div class="${l.type}">${escapeHtml(l.text)}</div>`).join('');
-  $('#log').scrollTop = 0;
+  // ⚡ реалтайм: перерисовываем ТОЛЬКО на новые записи — иначе тик 4 раза/сек сбрасывал скролл читающему
+  const logSig = state.id + ':' + state.log.length + ':' + (state.log[state.log.length - 1]?.t || 0);
+  if (logSig !== lastLogSig) {
+    lastLogSig = logSig;
+    $('#log').innerHTML = [...state.log].reverse().map(l =>
+      `<div class="${l.type}">${escapeHtml(l.text)}</div>`).join('');
+    $('#log').scrollTop = 0;
+  }
 
   // высота свёрнутой панели могла измениться (баннер хода, кнопки) — подвинуть карту
   if ($('#mapWrap').style.bottom !== desiredMapBottom()) resize();
 }
 
+// ⚡ Реалтайм шлёт стейт ~4 раза/сек, и renderShop дёргался на каждый тик: кнопки «+/−»
+// пересоздавались ПОД КУРСОРОМ (hover слетал, клики проглатывались). Пересобираем DOM верфи
+// ТОЛЬКО когда изменились её данные (золото/корзина/фаза/очередь хода) — подпись ниже.
+let shopSig = null;
 function renderShop() {
   const me = state.players[myIdx()];
   if (!me) return;
+  const sig = JSON.stringify([state.id, me.gold, basket, state.phase, state.duel, isMyTurn()]);
+  if (sig === shopSig) return; // данные не менялись — не трогаем кнопки под пальцем/курсором
+  shopSig = sig;
   // в фазе стартовой закупки дуэли — показываем правила вместо обычной подписи
   $('#duelRules')?.classList.toggle('hidden', state.phase !== 'buy');
   $('#shopDesc')?.classList.toggle('hidden', state.phase === 'buy');

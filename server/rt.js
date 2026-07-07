@@ -10,11 +10,12 @@
 import {
   SHIP_TYPES, PIRATE, PIRATE_MAX, PIRATE_MOVE_CHANCE, PIRATE_ENGAGE_MULT, MAP_EDGE_MARGIN,
   PORT_INCOME, PORT_NO_SHIP_INCOME_MULT, MORTAR_SHIPS, LOOT_REACH, FISH_ZONE_CAP,
+  OUTPOST_LEVELS, OUTPOST_BUILD_REACH, RT_OUTPOST_MS, FISH_DRIFT_RT,
   RT, isRealtime, windMoveMult
 } from './config.js';
 import {
-  applyAction, pushEvent, pushLog, logEvent, spawnPirate, sinkShip,
-  fishEarners, terrainBlocked, dist
+  applyAction, pushEvent, pushLog, logEvent, spawnPirate, sinkShip, pirateVolley,
+  fishEarners, terrainBlocked, dist, applyOutpostPerks, driftFishZones, debugGold
 } from './game.js';
 
 const norm = a => Math.atan2(Math.sin(a), Math.cos(a));
@@ -69,6 +70,8 @@ export function rtStart(game, hooks) {
       tickWind(g, t, dt);
       tickMovement(g, dt);
       tickEconomy(g, t);
+      tickOutposts(g, t);
+      driftFishZones(g, FISH_DRIFT_RT * dt / 1000); // 🐟 рыба очень медленно мигрирует
       tickPirates(g, t);
       tickBots(g, t);
 
@@ -116,8 +119,10 @@ export function tickWind(game, now, dt) {
 // Прямо по курсу суша → доворачиваем на ближайший свободный угол (обход островов).
 // Пираты плывут той же физикой (их мозг в tickPirates лишь ставит dest).
 const shipStats = s => (s.owner === -1 ? PIRATE : SHIP_TYPES[s.type]);
-// луч свободен, если чисто и на полпути, и в конце (одна точка «перескакивала» углы островов)
+// луч свободен, если чисто ВБЛИЗИ (первые метры — иначе при касательном заходе длинный луч
+// «перескакивает» кромку, а шаг упирается), на полпути и в конце
 const rayFree = (game, s, ang, look) =>
+  !terrainBlocked(game, s.x + Math.cos(ang) * 10, s.y + Math.sin(ang) * 10) &&
   !terrainBlocked(game, s.x + Math.cos(ang) * look * 0.5, s.y + Math.sin(ang) * look * 0.5) &&
   !terrainBlocked(game, s.x + Math.cos(ang) * look, s.y + Math.sin(ang) * look);
 
@@ -186,7 +191,9 @@ export function tickEconomy(game, now) {
       if (!p.alive) return;
       const hasShips = game.ships.some(s => s.owner === i);
       // как в пошаговом: порт без единого корабля приносит на 50% больше — легче встать на ноги
-      p.gold += hasShips ? PORT_INCOME : Math.round(PORT_INCOME * PORT_NO_SHIP_INCOME_MULT);
+      const inc = hasShips ? PORT_INCOME : Math.round(PORT_INCOME * PORT_NO_SHIP_INCOME_MULT);
+      p.gold += inc;
+      debugGold(game, p, inc, hasShips ? 'доход порта' : 'доход порта (без флота, +50%)');
     });
   }
   if (now >= rt.nextFish) {
@@ -199,9 +206,18 @@ export function tickEconomy(game, now) {
         p.gold += inc;
         p.stats.goldCollected += inc;
         pushEvent(game, { type: 'gold', x: s.x, y: s.y, amount: inc });
+        debugGold(game, p, inc, 'рыбалка');
       }
     }
   }
+}
+
+// ─── ⛺ Аванпосты: доход/ремонт/пушка форта — раз в RT_OUTPOST_MS (общая логика с пошаговым) ──
+export function tickOutposts(game, now) {
+  const rt = game.rt;
+  if (now < (rt.nextOutpost || 0)) return;
+  rt.nextOutpost = now + RT_OUTPOST_MS;
+  for (let i = 0; i < game.players.length; i++) applyOutpostPerks(game, i);
 }
 
 // ─── Пираты: реалтайм-ИИ — пушка ПО ПЕРЕЗАРЯДКЕ, плавание непрерывное (как у всех) ──
@@ -235,15 +251,9 @@ export function pirateThink(game, pir, now) {
     : inRange.length ? inRange.reduce((a, b) => (a.hp < b.hp ? a : b)) : null;
   const brave = !!target && (target.hp <= PIRATE.dmg || pir.boss || pir.hp > incoming);
 
-  if (target && brave && now >= (pir.gunAt || 0)) { // выстрел строго по перезарядке
+  if (target && brave && now >= (pir.gunAt || 0)) { // залп строго по перезарядке
     pir.gunAt = now + RT.PIRATE_CD_MS * (0.85 + Math.random() * 0.3);
-    target.hp -= PIRATE.dmg;
-    pir.angryAt = target.owner;
-    pushEvent(game, { type: 'shot', fx: pir.x, fy: pir.y, tx: target.x, ty: target.y, dmg: PIRATE.dmg });
-    logEvent(game,
-      `🏴‍☠️ ${pir.boss ? 'БОСС-пират атакует' : 'Пираты атакуют'} ${SHIP_TYPES[target.type].name} игрока ${game.players[target.owner].nick} (−${PIRATE.dmg} HP)`,
-      `🏴‍☠️ Пираты напали на игрока ${game.players[target.owner].nick}`, 'battle');
-    if (target.hp <= 0) sinkShip(game, target, null);
+    pirateVolley(game, pir, target); // 💥 бортовой залп: разворот бортом + все игроки в секторе
     return; // отстрелялся — манёвр обдумает в следующее «размышление»
   }
 
@@ -380,6 +390,17 @@ export function botThink(game, bIdx, now) {
   // ЛУТ: кто-то из своих стоит у нелутанного острова → собрать (сервер сам проверит дистанции)
   if (game.map.lootIslands?.some(i => !i.looted && mine.some(s => dist(s.x, s.y, i.x, i.y) <= i.radius + LOOT_REACH)))
     applyAction(game, bot.id, { type: 'collect' });
+
+  // ⛺ АВАНПОСТЫ: первая постройка — кораблём у острова; апгрейд — без корабля (гарнизон сам)
+  (game.map.lootIslands || []).forEach((isl, ii) => {
+    if (!isl.looted) return;
+    if (isl.outpost && (isl.outpost.owner !== bIdx || isl.outpost.level >= OUTPOST_LEVELS.length)) return;
+    const price = OUTPOST_LEVELS[(isl.outpost?.level || 0)].price;
+    if (bot.gold < price + 250) return; // строим только с запасом — флот важнее
+    if (isl.outpost) { applyAction(game, bot.id, { type: 'outpost', islandId: ii }); return; }
+    const builder = mine.find(s => dist(s.x, s.y, isl.x, isl.y) <= isl.radius + OUTPOST_BUILD_REACH);
+    if (builder) applyAction(game, bot.id, { type: 'outpost', shipId: builder.id, islandId: ii });
+  });
 
   // ВЕРФЬ: заглядываем нечасто, флот держим в разумных рамках
   if (now >= (rt_nextBuy(game, bIdx))) {

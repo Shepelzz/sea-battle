@@ -175,7 +175,7 @@ check('реалтайм НЕсовместим: дуэль и развитие',
   const sh = put(g, 0, 'shkhuna', start.x, start.y);
   sh.heading = 0;
   applyAction(g, 'p0', { type: 'move', shipId: sh.id, x: dest.x, y: dest.y });
-  for (let i = 0; i < 240 && sh.dest; i++) tickMovement(g, 250); // до минуты симуляции
+  for (let i = 0; i < 600 && sh.dest; i++) tickMovement(g, 250); // до 2.5 мин симуляции (скорость ÷3)
   const left = Math.hypot(sh.x - dest.x, sh.y - dest.y);
   check('корабль ОБОШЁЛ остров и дошёл до цели', !sh.dest && left < 12, `(осталось ${left.toFixed(0)}px)`);
   check('и не стоит на суше', !terrainBlocked(g, sh.x, sh.y));
@@ -202,6 +202,28 @@ check('реалтайм НЕсовместим: дуэль и развитие',
   tickMovement(g, 1000);
   const step = PIRATE_MOVE_EXPECT;
   check('пират плывёт непрерывно (move/MOVE_SECONDS в сек)', Math.abs((pir.x - px) - step) < 1.5, `(${(pir.x - px).toFixed(1)} ≈ ${step})`);
+}
+
+// ═══════════════ 🏴‍☠️ Пиратский БОРТОВОЙ ЗАЛП: 2 снаряда у малого, 3 у босса ═══════════════
+{
+  const g = newGame({ realtime: true });
+  const c = openWater(g);
+  const pir = put(g, -1, 'pirate', c.x, c.y, 80);
+  const prey1 = put(g, 0, 'shkhuna', c.x + 60, c.y);        // основная цель на востоке
+  const prey2 = put(g, 0, 'brig', c.x + 70, c.y + 15);      // рядом, в том же секторе борта
+  g.events = [];
+  pirateThink(g, pir, Date.now());
+  const ev = (g.events || []).find(e => e.type === 'volley' && e.shipType === 'pirate');
+  check('обычный пират бьёт ЗАЛПОМ из 2 снарядов (событие volley)', !!ev && ev.cannons === 2, `(cannons ${ev?.cannons})`);
+  check('залп накрывает ВСЕХ игроков в секторе борта', prey1.hp === 60 - 12 && prey2.hp === 110 - 12, `(hp ${prey1.hp}/${prey2.hp})`);
+  check('пират развернулся бортом (цель на траверзе)', Math.abs(Math.abs(pir.heading - Math.atan2(prey1.y - c.y, prey1.x - c.x)) - Math.PI / 2) < 0.3);
+
+  const boss = put(g, -1, 'pirate', c.x, c.y - 40, 220);
+  boss.boss = true;
+  g.events = [];
+  pirateThink(g, boss, Date.now());
+  const evB = (g.events || []).find(e => e.type === 'volley' && e.shipType === 'pirate');
+  check('БОСС бьёт залпом из 3 снарядов (как фрегат)', !!evB && evB.cannons === 3, `(cannons ${evB?.cannons})`);
 }
 
 // ═══════════════ ⚡ Реалтайм: перезарядки ═══════════════
