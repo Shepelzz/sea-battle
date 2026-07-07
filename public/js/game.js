@@ -151,6 +151,8 @@ $('#nickInput').addEventListener('keydown', e => { if (e.key === 'Enter') $('#ni
 socket.on('state', s => {
   const prev = state;
   state = s;
+  // ⛈️ шторм: синхронизируем часы с сервером (перезарядки) и держим аним-цикл живым (движение непрерывно)
+  if (s.rt) { rtSkew = s.rt.now - Date.now(); if (s.status === 'active') ensureAnimLoop(); }
   // сброс выбора, если корабль исчез или ход не наш
   if (selectedShipId && !state.ships.find(x => x.id === selectedShipId)) deselect();
   if (!isMyTurn()) deselect();
@@ -171,8 +173,8 @@ socket.on('state', s => {
   if (anyBurning()) ensureAnimLoop(); // низкое HP базы → запустить анимацию огня/дыма
   Sound.onState(prev, s, myIdx());
   updateTab();
-  // первый раз в активной игре и ты участник — показываем обучение
-  if (s.status === 'active' && s.map && !spectator && myIdx() >= 0) Tutorial.start();
+  // первый раз в активной игре и ты участник — показываем обучение (⛈️ шторм-бета — без тутора: там свой ритм)
+  if (s.status === 'active' && s.map && !spectator && myIdx() >= 0 && !s.rt) Tutorial.start();
 });
 
 // иконка и заголовок вкладки сигналят, чей ход (видно из соседней вкладки)
@@ -182,6 +184,8 @@ function updateTab() {
     setFavicon('lobby'); document.title = '⏳ Лобби — Морской бой';
   } else if (state.status === 'finished') {
     setFavicon('over'); document.title = '🏁 Баттл окончен — Морской бой';
+  } else if (state.status === 'active' && state.rt) {
+    setFavicon('myturn'); document.title = '⚡ Полный вперёд — Морской бой';
   } else if (state.status === 'active' && !spectator && isMyTurn()) {
     setFavicon('myturn'); document.title = '🟢 Твой ход! — Морской бой';
   } else if (state.status === 'active') {
@@ -223,6 +227,23 @@ function bezAng(e, t) {
 
 function animTick(now) {
   const dt = Math.min(0.05, (now - lastFrameT) / 1000); lastFrameT = now;
+  // ⚡ реалтайм: корабли скользят к серверным позициям и ПЛАВНО доворачивают нос
+  // (стейт ~4 Гц → экспоненциальное сглаживание координат и угла)
+  if (state?.rt && state.ships) {
+    const seen = new Set();
+    for (const s of state.ships) {
+      seen.add(s.id);
+      const p = rtPos.get(s.id);
+      if (!p) rtPos.set(s.id, { x: s.x, y: s.y, ...(typeof s.heading === 'number' ? { ang: s.heading } : {}) });
+      else {
+        const k = Math.min(1, dt * 6);
+        p.x += (s.x - p.x) * k; p.y += (s.y - p.y) * k;
+        if (typeof s.heading === 'number')
+          p.ang = p.ang === undefined ? s.heading : p.ang + angNorm(s.heading - p.ang) * Math.min(1, dt * 8);
+      }
+    }
+    for (const id of rtPos.keys()) if (!seen.has(id)) rtPos.delete(id); // потонувшие — прибрать
+  }
   animPos.clear();
   for (const e of effects) {
     if (e.kind !== 'sail') continue;
@@ -242,7 +263,8 @@ function animTick(now) {
   if (fogFade.length) fogFade = fogFade.filter(f => now - f.born < f.hold + f.fade); // отсев догоревших затуханий тумана
   updateBaseFires(dt);
   render(true); // каждый кадр — только канвас (DOM не трогаем, иначе магазин пересобирается 60 раз/сек)
-  if (effects.length || anyBurning() || fogFade.length) requestAnimationFrame(animTick);
+  // ⛈️ шторм: пока партия активна, цикл живёт всегда — корабли движутся непрерывно
+  if (effects.length || anyBurning() || fogFade.length || (state?.rt && state.status === 'active')) requestAnimationFrame(animTick);
   else { rafOn = false; animPos.clear(); render(); } // анимация кончилась — финальный полный рендер (DOM тоже)
 }
 
@@ -624,15 +646,30 @@ const myIdx = () => {
   if (state.config?.hotseat && hotseatOwner) return state.turn.idx; // ходим за текущего
   return state.players.findIndex(p => p.id === myId);
 };
-const isMyTurn = () => state && state.status === 'active' && myIdx() === state.turn.idx && state.players[myIdx()]?.alive;
+const isMyTurn = () => {
+  if (!state || state.status !== 'active') return false;
+  if (state.rt) return !spectator && myIdx() >= 0 && !!state.players[myIdx()]?.alive; // ⛈️ шторм: действуй когда хочешь
+  return myIdx() === state.turn.idx && !!state.players[myIdx()]?.alive;
+};
 const ST = t => state.shipTypes[t];
+
+// ── ⛈️ «Шторм» (реалтайм): без очереди ходов, стрельба по перезарядке ──
+const isRT = () => !!state?.rt;         // сервер прислал rt-блок → реалтайм-партия
+let rtSkew = 0;                          // серверные часы − наши (для честного отсчёта перезарядок)
+const rtNow = () => Date.now() + rtSkew;
+const cdLeft = (ship, key) => Math.max(0, (ship?.cd?.[key] || 0) - rtNow()); // мс до готовности орудия
+const rtPos = new Map();                 // сглаженные позиции кораблей (стейт приходит ~4 Гц — скользим между)
+
+// ── 🌬 ВЕТЕР (во всех режимах): множитель дальности/скорости для курса a ──
+// r(θ) = move × (1 + k·сила·cos(θ − ветер)) → контур хода — «капля», вытянутая по ветру
+const windK = a => 1 + (state?.windK ?? 0.35) * (state?.wind?.str || 0) * Math.cos(a - (state?.wind?.ang || 0));
 
 // ── режим «ход тремя судами» ──
 const movesPerTurn = () => state?.movesPerTurn || 1;          // бюджет ходов кораблями за ход
 const multiMoveOn = () => movesPerTurn() > 1;                 // включён ли многоходовый режим
 const movesUsed = () => state?.turn?.moves || 0;              // сколько уже сходило в этом ходу
 const movesLeft = () => Math.max(0, movesPerTurn() - movesUsed());
-const shipActed = id => (state?.turn?.actedShips || []).includes(id); // корабль уже ходил в этом ходу
+const shipActed = id => !state?.rt && (state?.turn?.actedShips || []).includes(id); // корабль уже ходил в этом ходу (в шторме ходов нет)
 
 // Нотифы-СТЕК сверху: новый добавляется СВЕРХУ и оттесняет прежние вниз, у каждого свой таймер
 // (не накладываются друг на друга). kind: 'err' (красный) | 'info' (бумажный).
@@ -982,7 +1019,7 @@ function visionCircles() {
   }
   for (const s of state.ships) if (s.owner === me) {
     const st = ST(s.type);
-    const pos = animPos.get(s.id) || s; // во время «плавания» — промежуточная позиция: туман плавно едет за лодкой
+    const pos = animPos.get(s.id) || (state.rt && rtPos.get(s.id)) || s; // «плавание»/шторм — туман плавно едет за лодкой
     circles.push({ x: pos.x, y: pos.y, r: Math.max(st.move, st.fireRange) * FOG_SHIP_MULT });
   }
   return circles;
@@ -1251,7 +1288,9 @@ function render(canvasOnly) {
   const sel = selectedShipId && state.ships.find(s => s.id === selectedShipId);
   if (sel) {
     const st = ST(sel.type);
-    if (mode === 'move' || mode === 'idle') dashedCircle(sel.x, sel.y, st.move, 'rgba(107,111,118,.8)', 1.6);
+    // ⚡ реалтайм: лимита дистанции нет — контур хода не рисуем (корабль доплывёт сам);
+    // пошагово: 🌬 КАПЛЕВИДНЫЙ контур дальности — вытянут по ветру, поджат против
+    if ((mode === 'move' || mode === 'idle') && !state.rt) drawMoveContour(sel, st.move);
     if (st.repairer) {
       // ремонтник: жёлтый радиус ремонта (чуть меньше хода), в режиме «Чинить» и при выборе
       if (mode === 'repair' || mode === 'idle') dashedCircle(sel.x, sel.y, st.fireRange, 'rgba(244,194,10,.85)', 1.6);
@@ -1264,6 +1303,19 @@ function render(canvasOnly) {
 
   // пенные следы — под кораблями
   drawEffects(true);
+
+  // ⛈️ шторм: пунктирный курс СВОИХ кораблей к точке назначения (у врагов приказы не показываем)
+  if (state.rt) for (const s of state.ships) {
+    if (s.owner !== myIdx() || !s.dest) continue;
+    const p = rtPos.get(s.id) || s;
+    ctx.setLineDash([6, 6]);
+    ctx.strokeStyle = 'rgba(43,58,85,.45)';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.moveTo(sx(p.x), sy(p.y)); ctx.lineTo(sx(s.dest.x), sy(s.dest.y)); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.beginPath(); ctx.arc(sx(s.dest.x), sy(s.dest.y), 4, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(43,58,85,.55)'; ctx.fill();
+  }
 
   // корабли (под туманом чужие/пиратов видно только в зоне видимости)
   for (const s of state.ships) {
@@ -1348,7 +1400,8 @@ function render(canvasOnly) {
   if (sel && mode === 'move' && hoverPt) {
     const st = ST(sel.type);
     const d = dist(sel.x, sel.y, hoverPt.x, hoverPt.y);
-    const ok = d <= st.move;
+    // ⚡ реалтайм: дистанция не ограничена; пошагово — 🌬 дальность по курсу (капля ветра)
+    const ok = state.rt ? true : d <= st.move * windK(Math.atan2(hoverPt.y - sel.y, hoverPt.x - sel.x));
     ctx.beginPath();
     ctx.setLineDash([4, 5]);
     ctx.moveTo(sx(sel.x), sy(sel.y));
@@ -1403,7 +1456,54 @@ function render(canvasOnly) {
   if (moveDemo && sel && mode === 'move' && !aim) drawMoveDemo(sel);
 
   drawEffects();
+  if (state.wind && state.status === 'active') drawWindCompass(); // 🌬 компас ветра — во всех режимах
   updateMoveHint();
+}
+
+// 🧭 Контур дальности хода с учётом ветра: r(θ) = move·windK(θ) — «капля», вытянутая по ветру.
+// При штиле (str=0) это прежний ровный круг — стиль и пунктир сохранены.
+function drawMoveContour(sel, move) {
+  ctx.beginPath();
+  ctx.setLineDash([6, 6]);
+  const N = 64;
+  for (let i = 0; i <= N; i++) {
+    const a = (i / N) * Math.PI * 2;
+    const r = move * windK(a);
+    const x = sx(sel.x + Math.cos(a) * r), y = sy(sel.y + Math.sin(a) * r);
+    i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  }
+  ctx.strokeStyle = 'rgba(107,111,118,.8)';
+  ctx.lineWidth = 1.6;
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+// 🌬 Компас ветра (все режимы): кружок в правом-верхнем углу карты, стрелка = куда дует,
+// длина стрелки = сила. По ветру плывёшь дальше/быстрее, против — меньше/медленнее.
+function drawWindCompass() {
+  const w = state.wind;
+  const cx = canvas.clientWidth - 52, cy = 52, R = 26;
+  ctx.save();
+  ctx.globalAlpha = 0.92;
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2);
+  ctx.fillStyle = '#fdfbf3'; ctx.fill();
+  ctx.lineWidth = 1.6; ctx.strokeStyle = '#2b3a55'; ctx.stroke();
+  const len = 8 + 14 * (w.str ?? 0.5);
+  const dx = Math.cos(w.ang), dy = Math.sin(w.ang);
+  const hx = cx + dx * len, hy = cy + dy * len;
+  ctx.beginPath();
+  ctx.moveTo(cx - dx * len, cy - dy * len);
+  ctx.lineTo(hx, hy);
+  ctx.lineWidth = 2.4; ctx.strokeStyle = '#2980b9'; ctx.stroke();
+  ctx.beginPath(); // наконечник
+  ctx.moveTo(hx, hy); ctx.lineTo(hx - Math.cos(w.ang - 0.5) * 8, hy - Math.sin(w.ang - 0.5) * 8);
+  ctx.moveTo(hx, hy); ctx.lineTo(hx - Math.cos(w.ang + 0.5) * 8, hy - Math.sin(w.ang + 0.5) * 8);
+  ctx.stroke();
+  ctx.font = '12px Neucha, cursive';
+  ctx.fillStyle = '#2b3a55';
+  ctx.textAlign = 'center';
+  ctx.fillText('🌬 ветер', cx, cy + R + 14);
+  ctx.restore();
 }
 
 // мелкая ненавязчивая подпись под панелью действий (тач, режимы «Плыть» / «Залп»)
@@ -1667,7 +1767,7 @@ function drawShip(s, selected) {
   const isPirate = s.owner === -1;
   const p = isPirate ? null : state.players[s.owner];
   const st = ST(s.type);
-  const pos = animPos.get(s.id) || s; // во время анимации — промежуточная позиция
+  const pos = animPos.get(s.id) || (state.rt && rtPos.get(s.id)) || s; // анимация → сглаженная (шторм) → серверная
   const px = sx(pos.x), py = sy(pos.y);
   const k = view.scale;
   if (s.type === 'carrier') { drawCarrier(s, p, px, py, pos, k, selected); return; } // чит-авианосец — своя отрисовка
@@ -1842,7 +1942,8 @@ function updateAim(screenPt) {
   aim.finger = f;
   const dx = f.x - sel.x, dy = f.y - sel.y;
   const fd = Math.hypot(dx, dy);
-  const range = ST(sel.type).move;
+  // ⚡ реалтайм: тянуть можно куда угодно; пошагово — 🌬 дальность по курсу (капля ветра)
+  const range = state?.rt ? Infinity : ST(sel.type).move * windK(Math.atan2(dy, dx));
   aim.cancel = fd < AIM_CANCEL_DIST;   // вернул палец почти на корабль → ход отменим (передумал)
   if (fd < 1) { aim.dest = { x: sel.x, y: sel.y }; aim.clamped = false; }
   else {
@@ -2057,8 +2158,14 @@ function canBroadside(ship) { return !!(state.broadside?.cannons?.[ship.type]); 
 // мортира — у фрегата/линкора (+ чит-авианосец)
 function canMortar(ship) { return (state.broadside?.mortarShips || []).includes(ship.type) || !!ST(ship.type).cheat; }
 const broadsideHalfArc = () => state.broadside?.halfArc || 0.8; // ~46°: борт средней ширины
-// какие борта корабль уже отстрелял в этом ходу
-const firedSides = id => (state.turn?.broadsideSides || {})[id] || [];
+// какие борта корабль уже отстрелял в этом ходу (⛈️ шторм: борта на перезарядке)
+const firedSides = id => {
+  if (isRT()) {
+    const s = state.ships.find(x => x.id === id);
+    return ['port', 'starboard'].filter(sd => cdLeft(s, sd === 'port' ? 'p' : 's') > 0);
+  }
+  return (state.turn?.broadsideSides || {})[id] || [];
+};
 
 // Кнопки выбранного корабля: видимость по способностям + блокировка по экономике хода.
 // Начал залп (один борт) → ход/мортира/сбор серые, но залп активен для 2-го борта. Оба борта/ход/мортира → корабль отстрелялся.
@@ -2067,7 +2174,6 @@ function updateActionButtons() {
   if (!sel || sel.owner !== myIdx()) return;
   if (shipActed(sel.id)) { deselect(); return; } // полностью отстрелялся — снять выбор
   const st = ST(sel.type);
-  const fired = firedSides(sel.id), committed = fired.length > 0;
   const noCharges = st.repairer && (sel.repairCharges ?? repairChargesMax()) <= 0; // ремонтник без материалов
   $('#btnFire').classList.toggle('hidden', !canMortar(sel));     // 🎯 Мортира — фрегат/линкор
   $('#btnRepair').classList.toggle('hidden', !st.repairer);      // 🛟 Чинить
@@ -2075,6 +2181,25 @@ function updateActionButtons() {
   $('#btnCollectHere').classList.toggle('hidden', !canShipCollect(sel));
   $('#btnRecharge').classList.toggle('hidden', !canShipRecharge(sel)); // 🔧 Пополнить (у базы)
   $('#rechargeNote').classList.toggle('hidden', !noCharges);     // заметка «нет материалов — на базу»
+  if (isRT()) {
+    // ⛈️ шторм: всё разрешено всегда, орудия — по перезарядке; кнопки показывают отсчёт в секундах
+    const bs = Math.min(cdLeft(sel, 'p'), cdLeft(sel, 's')); // хоть один борт готов?
+    const mCd = cdLeft(sel, 'm'), rCd = cdLeft(sel, 'r');
+    $('#btnMove').disabled = false;
+    $('#btnFire').disabled = mCd > 0;
+    $('#btnFire').textContent = mCd > 0 ? `🎯 ${Math.ceil(mCd / 1000)}с…` : '🎯 Мортира';
+    $('#btnBroadside').disabled = bs > 0;
+    $('#btnBroadside').textContent = bs > 0 ? `💥 ${Math.ceil(bs / 1000)}с…` : '💥 Залп';
+    $('#btnRepair').disabled = rCd > 0 || noCharges;
+    $('#btnRepair').textContent = rCd > 0 ? `🛟 ${Math.ceil(rCd / 1000)}с…` : '🛟 Чинить';
+    $('#btnCollectHere').disabled = false;
+    $('#btnRecharge').disabled = false;
+    return;
+  }
+  $('#btnFire').textContent = '🎯 Мортира';                      // вернуть подписи после шторма
+  $('#btnBroadside').textContent = '💥 Залп';
+  $('#btnRepair').textContent = '🛟 Чинить';
+  const fired = firedSides(sel.id), committed = fired.length > 0;
   $('#btnMove').disabled = committed;
   $('#btnFire').disabled = committed;
   $('#btnRepair').disabled = committed || noCharges;             // чинить нечем без материалов
@@ -2082,6 +2207,8 @@ function updateActionButtons() {
   $('#btnRecharge').disabled = committed;
   $('#btnBroadside').disabled = fired.length >= 2;               // оба борта отстреляны
 }
+// ⛈️ шторм: отсчёт перезарядок на кнопках выбранного корабля тикает раз в полсекунды
+setInterval(() => { if (isRT() && selectedShipId) updateActionButtons(); }, 500);
 
 // ─── Прицел бортового залпа ───
 const angNorm = a => Math.atan2(Math.sin(a), Math.cos(a));
@@ -2256,14 +2383,15 @@ function renderSidebar() {
   if (state.status === 'lobby') banner.textContent = '⏳ Сбор флота…';
   else if (state.phase === 'buy') banner.textContent = me?.ready ? '⏳ Ждём, пока соперник соберёт флот…' : '🛒 Собери флот — на всё золото!';
   else if (state.status === 'finished') banner.textContent = '🏁 Баттл окончен';
+  else if (state.rt) banner.textContent = '⚡ Полный вперёд — реалтайм, жми и плыви!'; // ходов нет — только море и перезарядки
   else if (state.config?.hotseat) banner.textContent = `✏️ Ходит: ${current?.nick} (№${state.turn.number})${movesTag}`;
   else if (isMyTurn()) banner.textContent = `🔥 Твой ход!${movesTag}`;
   else banner.textContent = `Ход: ${current?.nick ?? '…'} (№${state.turn.number})`;
-  banner.classList.toggle('my-turn', isMyTurn() && !state.config?.hotseat);
+  banner.classList.toggle('my-turn', isMyTurn() && !state.config?.hotseat && !state.rt);
   // красная рамка «твой ход»: поднимаем на старте КАЖДОГО моего хода; гаснет, когда игрок «очнулся»
-  // (повёл мышью / тапнул / нажал клавишу — слушатели в инициализации). В хотсите не нужна.
+  // (повёл мышью / тапнул / нажал клавишу — слушатели в инициализации). В хотсите/шторме не нужна.
   {
-    const fr = $('#turnFrame'), mine = isMyTurn() && !state.config?.hotseat;
+    const fr = $('#turnFrame'), mine = isMyTurn() && !state.config?.hotseat && !state.rt;
     if (!mine) { turnFrameShownFor = null; fr?.classList.remove('on'); }
     else {
       const key = state.turn.number + ':' + state.turn.idx;       // новый «мой ход» → снова показать
@@ -2299,16 +2427,19 @@ function renderSidebar() {
     // в многоходовом режиме «Пропустить» превращается в «Завершить ход» (когда уже что-то сходило)
     const finishing = multiMoveOn() && movesUsed() > 0;
     const btnSkip = $('#btnSkip');
+    btnSkip.classList.toggle('hidden', !!state.rt);   // ⛈️ шторм: ходов нет — нечего пропускать
     btnSkip.disabled = !isMyTurn();
     btnSkip.textContent = finishing ? '✅ Завершить ход' : '⏭ Пропустить';
     btnSkip.classList.toggle('primary', finishing && isMyTurn());
     $('#btnNudge').classList.toggle('hidden',
-      isMyTurn() || state.turn.nudged || !!state.players[state.turn.idx]?.isBot);
-    $('#hint').textContent = isMyTurn()
-      ? (multiMoveOn()
-          ? `Ход тремя судами: до ${movesPerTurn()} действий за ход — двигай и стреляй разными кораблями, собирай добычу, покупай (осталось ${movesLeft()}). Закончил раньше — «Завершить ход».`
-          : 'Одно действие за ход: купить, собрать, передвинуть один корабль или выстрелить.')
-      : `Ждём ход игрока ${current?.nick}…`;
+      !!state.rt || isMyTurn() || state.turn.nudged || !!state.players[state.turn.idx]?.isBot);
+    $('#hint').textContent = state.rt
+      ? '⚡ Полный вперёд (бета): без ходов! Корабли плывут к точке сами (кликай куда угодно), залп и мортира стреляют по перезарядке.'
+      : isMyTurn()
+        ? (multiMoveOn()
+            ? `Ход тремя судами: до ${movesPerTurn()} действий за ход — двигай и стреляй разными кораблями, собирай добычу, покупай (осталось ${movesLeft()}). Закончил раньше — «Завершить ход».`
+            : 'Одно действие за ход: купить, собрать, передвинуть один корабль или выстрелить.')
+        : `Ждём ход игрока ${current?.nick}…`;
     if (!$('#shopOverlay').classList.contains('hidden')) renderShop();
   } else {
     $('#shopOverlay').classList.add('hidden');
@@ -2644,7 +2775,7 @@ const Tutorial = (() => {
           ? 'Ходите <b>по очереди</b>. За ход — до <b>трёх действий</b>: двигай и стреляй <b>разными</b> кораблями (одним — раз за ход), собирай добычу, покупай в верфи. Готов раньше — жми <b>«✅ Завершить ход»</b>.'
           : 'Ходите <b>по очереди</b>. За ход — только <b>одно</b> действие: поплыть, выстрелить, собрать добычу или сходить в верфь.',
         target: { sel: '#turnBanner' } },
-      { text: 'Нажми на свой корабль → <b>«Плыть»</b> (в пределах круга) или <b>«💥 Залп»</b>. Главная атака — <b>бортовой залп</b>: бьёт только В БОРТ (повернись бортом к врагу!), наводишь как ход. Чем ближе цель к борту — тем больнее.',
+      { text: 'Нажми на свой корабль → <b>«Плыть»</b> (в пределах контура; 🌬 по ветру он вытянут — уплывёшь дальше!) или <b>«💥 Залп»</b>. Главная атака — <b>бортовой залп</b>: бьёт только В БОРТ (повернись бортом к врагу!), наводишь как ход. Чем ближе цель к борту — тем больнее.',
         target: heavyShip ? { world: { x: heavyShip.x, y: heavyShip.y, r: 26 } } : null },
       { text: 'За борт стреляешь раз в ход, но можно дать залп <b>и левым, и правым</b> бортом (это одно действие). А <b>фрегат и линкор</b> вдобавок имеют <b>🎯 Мортиру</b> — прицельный выстрел по одной цели, в т.ч. по <b>порту</b> (осада).',
         target: heavyShip ? { world: { x: heavyShip.x, y: heavyShip.y, r: 26 } } : null },

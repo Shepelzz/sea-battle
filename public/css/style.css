@@ -502,6 +502,15 @@ aside.panel {
 .fog-toggle input:focus-visible { outline: 2px dashed var(--ink-light); outline-offset: 3px; }
 .fog-toggle input:hover { transform: translate(-1px, -1px) rotate(-0.6deg); }
 .fog-label { font-weight: 700; }
+/* ⚡ бейдж «бета» у тумблера реалтайма — оранжевая наклейка */
+.beta-badge {
+  display: inline-block; margin-left: 6px; padding: 1px 7px 2px;
+  font-size: 11px; font-weight: 700; letter-spacing: .4px; color: #fff;
+  background: #e67e22; border-radius: 9px 6px 9px 6px / 6px 9px 6px 9px;
+  vertical-align: 2px; transform: rotate(-2deg);
+}
+/* тумблер реалтайма недоступен в выбранном режиме (дуэль/развитие) */
+.fog-toggle.disabled { opacity: .45; pointer-events: none; }
 .fog-toggle .muted { font-size: 13px; }
 /* строка выбора игрового режима */
 .mode-row { display: flex; align-items: center; gap: 8px; margin: 8px 0; flex-wrap: wrap; }

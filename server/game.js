@@ -6,7 +6,8 @@ import {
   SHIP_COLLISION_DIST, LOOT_REACH, WRECK_LOOT_FRAC, TRIBUTE_FRAC,
   BROADSIDE_CANNONS, BROADSIDE_HALF_ARC, BROADSIDE_FALLOFF_MIN, BROADSIDE_SIDE_MIN, BROADSIDE_PORT_MULT, MORTAR_SHIPS, MORTAR_SHIP_MULT,
   FISH_ZONE_CAP, movesBudget, SHIP_ACTIONS, CHEATS_ENABLED, REPAIR_CHARGES, REPAIR_DOCK_REACH,
-  modeStartGold, modeOf, isPeace, modePeaceRounds, isDuel, cheapestShipPrice, GAME_MODES, DEFAULT_MODE,
+  modeStartGold, modeOf, isPeace, modePeaceRounds, isDuel, isRealtime, RT, cheapestShipPrice, GAME_MODES, DEFAULT_MODE,
+  WIND_STRENGTH, WIND_TURN_STEP, WIND_STR_STEP, windMoveMult, REALTIME_NAME,
   MAP_EDGE_MARGIN, ISLAND_BLOCK_GAP, SPAWN_FAN_N, SPAWN_FAN_RINGS, SPAWN_FAN_R0, SPAWN_FAN_RING_STEP,
   PIRATE, PIRATE_MAX, PIRATE_ENGAGE_MULT, PIRATE_MIN_LIFETIME, PIRATE_STEP_MIN,
   PIRATE_DESPAWN_CHANCE, PIRATE_MOVE_CHANCE, PIRATE_BOSS_CHANCE, PIRATE_BOSS_HP,
@@ -56,6 +57,9 @@ export function createGame(id, config) {
     map: null,
     players: [], // {id, nick, color, gold, portHp, alive, placement, stats, votedSkip}
     ships: [],
+    // 🌬 ветер партии (во всех режимах): дует в ang, сила 0..1 — поднимается с нуля и меняется
+    // между ходами (advanceTurn) или тиком реалтайма (rt.js). Контур хода вытянут по ветру.
+    wind: { ang: Math.random() * Math.PI * 2, str: 0, targetAng: Math.random() * Math.PI * 2, targetStr: 0.3 + Math.random() * 0.7 },
     turn: { idx: 0, number: 0, round: 1, deadline: null, moves: 0, actedShips: [] },
     log: [],
     winner: null,
@@ -313,6 +317,7 @@ function movePirates(game) {
 }
 
 function turnDeadline(game) {
+  if (isRealtime(game)) return null; // ⚡ реалтайм: ходов нет — таймер хода не взводится никогда
   return game.config.turnTimer > 0 ? Date.now() + game.config.turnTimer * 1000 : null;
 }
 
@@ -329,6 +334,20 @@ function fishOccupants(game, zone) {
 }
 const fishEarners = (game, zone) => fishOccupants(game, zone).slice(0, zone.cap || FISH_ZONE_CAP);
 
+// 🌬 Пошаговый ветер: маленький шаг к целевому направлению/силе КАЖДУЮ смену хода (в свой ход
+// ветер стабилен — планируй спокойно); новая цель — раз в круг. Формула дальности — windMoveMult.
+function driftWind(game, newRound) {
+  const w = (game.wind ??= { ang: 0, str: 0, targetAng: 0, targetStr: 0.5 }); // старые сейвы без ветра
+  const norm = a => Math.atan2(Math.sin(a), Math.cos(a));
+  const clamp = (v, lim) => Math.max(-lim, Math.min(lim, v));
+  w.ang = norm(w.ang + clamp(norm((w.targetAng ?? w.ang) - w.ang), WIND_TURN_STEP));
+  w.str = Math.max(0, Math.min(1, w.str + clamp((w.targetStr ?? w.str) - w.str, WIND_STR_STEP)));
+  if (newRound) { // раз в круг ветер задумывает новое направление/силу
+    w.targetAng = Math.random() * Math.PI * 2;
+    w.targetStr = 0.3 + Math.random() * 0.7;
+  }
+}
+
 function advanceTurn(game) {
   movePirates(game);
   const n = game.players.length;
@@ -340,7 +359,9 @@ function advanceTurn(game) {
   game.turn.idx = next;
   game.turn.number++;
   // РАУНД = полный круг: счётчик растёт, когда ход вернулся к первому живому игроку (для мирного периода режима «Развитие»)
-  if (next === game.players.findIndex(p => p.alive)) game.turn.round = (game.turn.round || 1) + 1;
+  const newRound = next === game.players.findIndex(p => p.alive);
+  if (newRound) game.turn.round = (game.turn.round || 1) + 1;
+  driftWind(game, newRound); // 🌬 ветер дрейфует между ходами (контур хода вытянут по ветру)
   game.turn.deadline = turnDeadline(game);
   game.turn.nudged = false;
   game.turn.moves = 0;        // счётчик ходов кораблями этого хода (режим «ход тремя судами»)
@@ -494,7 +515,8 @@ export function forceFinish(game) {
 
 // В лидерборд (ranked) идут только онлайн-баттлы: игры с ботами и «на одном устройстве»
 // не засчитываются — нельзя нафармить статистику. `listed` ставится лишь онлайн-играм.
-export const isRanked = game => !!(game?.config?.listed);
+// В рейтинг идут только онлайн-партии; ⚡ реалтайм пока БЕТА — лидерборд не трогает
+export const isRanked = game => !!(game?.config?.listed) && !isRealtime(game);
 
 // Смена цвета в лобби (валидируем: из палитры и не занят другим игроком).
 export function setColor(game, playerId, color) {
@@ -573,11 +595,12 @@ export function myGameSummary(game, viewerPid) {
 // классика · туман войны ВКЛ · ход тремя судами · без таймера. Пишем только то, что отличается.
 export function lobbyTags(game) {
   const c = game.config || {}, tags = [];
+  if (c.realtime) tags.push(REALTIME_NAME + ' βeta');                            // ⚡ реалтайм-партия
   if (c.mode && c.mode !== DEFAULT_MODE) tags.push(GAME_MODES[c.mode]?.name);   // режим ≠ классики
   if (c.turnTimer) tags.push(`таймер ${c.turnTimer / 60} мин`);                  // дефолт — без таймера
   if (!isDuel(game)) {                                                           // в дуэли туман/ход-3 неприменимы
     if (c.fog === false) tags.push('без тумана');                                // дефолт — туман ВКЛ
-    if (c.multiMove === false) tags.push('по одному ходу');                      // дефолт — ход тремя судами
+    if (c.multiMove === false && !c.realtime) tags.push('по одному ходу');       // дефолт — ход-3; в реалтайме ходов нет вовсе
   }
   return tags.filter(Boolean);
 }
@@ -586,6 +609,7 @@ export function lobbyTags(game) {
 export const NUDGE_MS = 10 * 60 * 1000;
 export function nudge(game, playerId) {
   if (game.status !== 'active') return { ok: false, error: 'Игра не активна' };
+  if (isRealtime(game)) return { ok: false, error: 'В реалтайме некого торопить — все ходят одновременно' };
   if (game.config.hotseat) return { ok: false, error: 'В игре на одном устройстве это не нужно' };
   const requester = game.players.find(p => p.id === playerId);
   if (!requester || !requester.alive) return { ok: false, error: 'Вы не участник' };
@@ -643,6 +667,23 @@ function playerHasAction(game, pIdx) {
   return (game.players[pIdx]?.gold || 0) >= cheapestShipPrice(isDuel(game));    // или есть на что купить в верфи
 }
 
+// ═══ Реалтайм («Шторм»): перезарядки ═══
+// Метки готовности лежат прямо на корабле: ship.cd = { p: ts, s: ts, m: ts, r: ts }
+// (левый борт / правый борт / мортира / ремонт; ts — когда снова можно, Date.now()-мс).
+// Корабль сериализуется в стейт целиком → клиент сам рисует отсчёт перезарядки.
+export const rtReady = (ship, key) => !ship.cd || !ship.cd[key] || Date.now() >= ship.cd[key];
+export const rtArm = (ship, key, ms) => { (ship.cd ??= {})[key] = Date.now() + ms; };
+
+// Реалтайм: столкновение с сушей/краем карты (чужие корабли НЕ мешают — в море разойдутся,
+// иначе плывущие корабли вечно застревали бы друг в друге).
+export function terrainBlocked(game, x, y) {
+  const m = game.map;
+  if (x < MAP_EDGE_MARGIN || y < MAP_EDGE_MARGIN || x > m.w - MAP_EDGE_MARGIN || y > m.h - MAP_EDGE_MARGIN) return true;
+  for (const b of m.bases) if (!b.noPort && dist(x, y, b.x, b.y) < b.radius + ISLAND_BLOCK_GAP) return true;
+  for (const o of m.lootIslands) if (dist(x, y, o.x, o.y) < o.radius + ISLAND_BLOCK_GAP) return true;
+  return false;
+}
+
 // Применение хода. action.type: buy | collect | move | attack | skip | buyFleet (дуэль)
 export function applyAction(game, playerId, action) {
   if (game.status !== 'active') return { ok: false, error: 'Игра не активна' };
@@ -656,12 +697,18 @@ export function applyAction(game, playerId, action) {
     return duelBuyFleet(game, pIdx, action);
   }
   if (action.type === 'buyFleet') return { ok: false, error: 'Закупка флота уже завершена' };
-  if (pIdx !== game.turn.idx) return { ok: false, error: 'Сейчас не ваш ход' };
+  // ⛈️ Реалтайм («Шторм»): очереди ходов нет — действуешь когда хочешь, стрельба по перезарядке.
+  // Кейсы ниже ветвятся по rt: движение = приказ «плыть» (тик в rt.js везёт), борта/мортира/ремонт
+  // проверяют и взводят кулдауны вместо «уже ходил в этом ходу». События НЕ сбрасываются на каждое
+  // действие — копятся и уходят пачкой в рассылке тика (rt.js двигает eventSeq).
+  const rt = isRealtime(game);
+  if (!rt && pIdx !== game.turn.idx) return { ok: false, error: 'Сейчас не ваш ход' };
   const player = game.players[pIdx];
+  if (rt && !player.alive) return { ok: false, error: 'Ты выбыл из баттла' };
   // режим «ход тремя судами»: одним кораблём за ход ходить можно только раз
-  if (SHIP_ACTION_SET.has(action.type) && (game.turn.actedShips || []).includes(action.shipId))
+  if (!rt && SHIP_ACTION_SET.has(action.type) && (game.turn.actedShips || []).includes(action.shipId))
     return { ok: false, error: 'Этот корабль уже ходил' };
-  freshEvents(game); // события этого хода для анимаций на клиенте
+  if (!rt) freshEvents(game); // события этого хода для анимаций на клиенте
 
   switch (action.type) {
     case 'buy': {
@@ -695,7 +742,8 @@ export function applyAction(game, playerId, action) {
       // Клад берут лишь корабли, ещё НЕ ходившие в этом ходу: нельзя «походить кораблём,
       // а затем им же собрать клад» (каждый корабль — одно действие за ход). Собравшие корабли
       // помечаются сходившими. В классике actedShips пуст → как раньше, сбор любым кораблём.
-      const actedSet = new Set(game.turn.actedShips || []);
+      // Реалтайм: ходов нет — собирает любой корабль рядом (actedSet пуст).
+      const actedSet = new Set(rt ? [] : (game.turn.actedShips || []));
       const reachers = new Set();
       for (const isl of game.map.lootIslands.filter(i => !i.looted)) {
         const ships = game.ships.filter(s => s.owner === pIdx && !actedSet.has(s.id) &&
@@ -711,7 +759,7 @@ export function applyAction(game, playerId, action) {
       if (!gained) return { ok: false, error: 'Нечего собирать: нет (ещё не ходивших) кораблей у нелутанных островов' };
       player.gold += gained;
       player.stats.goldCollected += gained;
-      reachers.forEach(id => (game.turn.actedShips ??= []).push(id)); // собравшие — походили этим ходом
+      if (!rt) reachers.forEach(id => (game.turn.actedShips ??= []).push(id)); // собравшие — походили этим ходом
       logEvent(game,
         `💰 ${player.nick} собирает добычу: +${gained} зол. (${notes.join(', ')})`,
         `💰 ${player.nick} собирает добычу`);
@@ -721,10 +769,20 @@ export function applyAction(game, playerId, action) {
     case 'move': {
       const ship = game.ships.find(s => s.id === action.shipId);
       if (!ship || ship.owner !== pIdx) return { ok: false, error: 'Это не ваш корабль' };
+      if (rt) { // реалтайм: приказ «плыть» — без лимита дистанции; корабль плывёт сам (тик rt.js, ветер влияет)
+        const m = game.map;
+        ship.dest = {
+          x: Math.min(m.w - MAP_EDGE_MARGIN, Math.max(MAP_EDGE_MARGIN, Math.round(action.x))),
+          y: Math.min(m.h - MAP_EDGE_MARGIN, Math.max(MAP_EDGE_MARGIN, Math.round(action.y)))
+        };
+        break;
+      }
       if (game.turn.broadsideSides?.[ship.id]?.length) return { ok: false, error: 'Корабль уже даёт залп — добей вторым бортом или жди' };
       const x = Math.round(action.x), y = Math.round(action.y);
-      const range = SHIP_TYPES[ship.type].move;
-      if (dist(ship.x, ship.y, x, y) > range + 0.5) return { ok: false, error: 'Слишком далеко: линейка не дотягивается' };
+      // 🌬 дальность хода зависит от курса: по ветру дальше, против — меньше (каплевидный контур)
+      const range = SHIP_TYPES[ship.type].move * windMoveMult(game.wind, Math.atan2(y - ship.y, x - ship.x));
+      if (dist(ship.x, ship.y, x, y) > range + 0.5)
+        return { ok: false, error: dist(ship.x, ship.y, x, y) <= SHIP_TYPES[ship.type].move + 0.5 ? '🌬 Против ветра так далеко не уплыть' : 'Слишком далеко: линейка не дотягивается' };
       const blocked = shipPlacementBlocked(game, x, y, ship.id);
       if (blocked) return { ok: false, error: blocked };
       if (dist(ship.x, ship.y, x, y) > 1) ship.heading = Math.atan2(y - ship.y, x - ship.x); // курс — для определения бортов залпа
@@ -748,7 +806,8 @@ export function applyAction(game, playerId, action) {
       const st = SHIP_TYPES[ship.type];
       // 🎯 МОРТИРА (прицельный одиночный выстрел) — только у фрегата/линкора (+ чит-авианосец)
       if (!MORTAR_SHIPS.includes(ship.type) && !st.cheat) return { ok: false, error: 'Мортира только у фрегата и линкора' };
-      if (game.turn.broadsideSides?.[ship.id]?.length) return { ok: false, error: 'Корабль уже даёт залп — добей вторым бортом или жди' };
+      if (!rt && game.turn.broadsideSides?.[ship.id]?.length) return { ok: false, error: 'Корабль уже даёт залп — добей вторым бортом или жди' };
+      if (rt && !rtReady(ship, 'm')) return { ok: false, error: '🎯 Мортира перезаряжается' };
       const volley = st.volley || 1; // авианосец (чит) бьёт залпом из нескольких снарядов подряд
 
       if (action.targetType === 'ship') {
@@ -811,6 +870,7 @@ export function applyAction(game, playerId, action) {
       } else {
         return { ok: false, error: 'Неизвестная цель' };
       }
+      if (rt) rtArm(ship, 'm', RT.CD_MORTAR_MS); // реалтайм: мортира ушла на перезарядку
       break;
     }
 
@@ -820,6 +880,7 @@ export function applyAction(game, playerId, action) {
       if (!ship || ship.owner !== pIdx) return { ok: false, error: 'Это не ваш корабль' };
       const st = SHIP_TYPES[ship.type];
       if (!st.repairer) return { ok: false, error: 'Этот корабль не умеет чинить' };
+      if (rt && !rtReady(ship, 'r')) return { ok: false, error: '🛟 Ремонт перезаряжается' };
       if ((ship.repairCharges ?? REPAIR_CHARGES) <= 0) return { ok: false, error: 'Нет материалов — вернись на базу и пополни' };
       const target = game.ships.find(s => s.id === action.targetId);
       if (!target || target.owner !== pIdx) return { ok: false, error: 'Чинить можно только свои корабли' };
@@ -831,6 +892,7 @@ export function applyAction(game, playerId, action) {
       // ремонт = доля от МАКСИМАЛЬНОГО HP цели (healFrac), не больше недостающего
       const healed = Math.min(Math.round(maxHp * st.healFrac), maxHp - target.hp);
       target.hp += healed;
+      if (rt) rtArm(ship, 'r', RT.CD_REPAIR_MS); // реалтайм: ремонт на перезарядку
       ship.repairCharges = (ship.repairCharges ?? REPAIR_CHARGES) - 1; // потратили один заряд материалов (undefined=полный для старых сейвов)
       pushEvent(game, { type: 'repair', fx: ship.x, fy: ship.y, tx: target.x, ty: target.y, heal: healed });
       logEvent(game,
@@ -871,8 +933,11 @@ export function applyAction(game, playerId, action) {
       const portDir = norm(heading - Math.PI / 2), starDir = norm(heading + Math.PI / 2);
       const side = Math.abs(norm(aimAng - portDir)) <= Math.abs(norm(aimAng - starDir)) ? 'port' : 'starboard';
       const sideDir = side === 'port' ? portDir : starDir;
-      const sides = ((game.turn.broadsideSides ||= {})[ship.id] ||= []);
-      if (sides.includes(side)) return { ok: false, error: (side === 'port' ? 'Левый' : 'Правый') + ' борт уже стрелял в этом ходу' };
+      // пошагово: борт стреляет раз в ход (учёт в turn.broadsideSides); реалтайм: у каждого борта свой кулдаун
+      const sides = rt
+        ? ['port', 'starboard'].filter(sd => !rtReady(ship, sd === 'port' ? 'p' : 's'))
+        : ((game.turn.broadsideSides ||= {})[ship.id] ||= []);
+      if (sides.includes(side)) return { ok: false, error: (side === 'port' ? 'Левый' : 'Правый') + ' борт ' + (rt ? 'перезаряжается' : 'уже стрелял в этом ходу') };
       const range = st.fireRange, full = !!st.cheat; // чит-авианосец — круговой залп (без сектора)
       const peace = isPeace(game);
       // цели-корабли с этого борта в радиусе — все, урон только по дистанции (ближе = больнее)
@@ -904,7 +969,8 @@ export function applyAction(game, playerId, action) {
       }
       if (!shipHits.length && !portHit) return { ok: false, error: 'С этого борта нет целей в радиусе' };
       // ПРИМЕНЯЕМ
-      sides.push(side);
+      if (rt) rtArm(ship, side === 'port' ? 'p' : 's', RT.CD_BROADSIDE_MS); // борт на перезарядку
+      else sides.push(side);
       ship.heading = heading;
       player.stats.shotsFired++;
       const evHits = [], toSink = [];
@@ -941,6 +1007,7 @@ export function applyAction(game, playerId, action) {
 
     case 'skip':
     case 'endTurn':
+      if (rt) break; // реалтайм: ходов нет — тихий no-op (страховка для старых кнопок/ботов)
       // в многоходовом режиме после сделанных ходов это «завершить ход», а не «пропустить»
       pushLog(game, game.turn.moves > 0
         ? `✅ ${player.nick} завершает ход`
@@ -950,6 +1017,8 @@ export function applyAction(game, playerId, action) {
     default:
       return { ok: false, error: 'Неизвестное действие' };
   }
+
+  if (rt) return { ok: true }; // реалтайм: без бюджета ходов/actedShips/advanceTurn — время течёт само (rt.js)
 
   // любое успешное действие (ход/выстрел/залп/покупка/сбор) тратит один из ходов;
   // ход конкретным кораблём вдобавок помечает его сходившим (нельзя дважды за ход).
@@ -1075,6 +1144,22 @@ export function publicState(game, viewerPid) {
     peace: { active: isPeace(game), round: game.turn?.round || 1, until: modePeaceRounds(game), keepout: modeOf(game).peaceBaseKeepout || 0 },
     // параметры боя для клиента (сектор залпа, пушки по классам, у кого мортира)
     broadside: { halfArc: BROADSIDE_HALF_ARC, cannons: BROADSIDE_CANNONS, mortarShips: MORTAR_SHIPS, mortarShipMult: MORTAR_SHIP_MULT },
+    // 🌬 ветер — во всех режимах: направление/сила + коэффициент влияния (для каплевидного контура хода)
+    wind: game.wind ? { ang: game.wind.ang, str: game.wind.str } : { ang: 0, str: 0 },
+    windK: WIND_STRENGTH,
+    // ⚡ реалтайм («Полный вперёд», бета): серверные часы (для отсчёта перезарядок) и тайминги
+    ...(isRealtime(game) ? {
+      rt: {
+        now: Date.now(),
+        cds: { broadside: RT.CD_BROADSIDE_MS, mortar: RT.CD_MORTAR_MS, repair: RT.CD_REPAIR_MS },
+        moveSeconds: RT.MOVE_SECONDS
+      }
+    } : {}),
     shipTypes
   };
 }
+
+// ═══ Экспорт примитивов для реалтайм-движка (rt.js) ═══
+// Движок живёт отдельным файлом, но переиспользует игровые кирпичи: события/журнал,
+// потопление, пиратский ИИ и рыбные слоты — чтобы реалтайм не разъезжался с пошаговой игрой.
+export { pushEvent, pushLog, logEvent, sinkShip, spawnPirate, pirateAct, steerPirate, fishEarners, dist };

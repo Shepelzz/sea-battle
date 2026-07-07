@@ -1,7 +1,7 @@
 // Бот: на своём ходу собирает все осмысленные действия, оценивает и берёт лучшее.
 // Уровни: easy (Юнга) — шумные оценки и случайные ходы, mid (Боцман) — лучший ход,
 // hard (Адмирал) — лучший ход + фокус раненых, удушение экономики, ранняя агрессия.
-import { SHIP_TYPES, PIRATE, LOOT_REACH, PORT_RETURN_DMG, BROADSIDE_CANNONS, BROADSIDE_HALF_ARC, MORTAR_SHIPS, MORTAR_SHIP_MULT, modeOf, isPeace, isDuel, cheapestShipPrice } from './config.js';
+import { SHIP_TYPES, PIRATE, LOOT_REACH, PORT_RETURN_DMG, BROADSIDE_CANNONS, BROADSIDE_HALF_ARC, MORTAR_SHIPS, MORTAR_SHIP_MULT, modeOf, isPeace, isDuel, cheapestShipPrice, windMoveMult } from './config.js';
 import { shipPlacementBlocked } from './game.js';
 
 const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
@@ -17,9 +17,11 @@ function findStep(game, ship, tx, ty) {
   const st = SHIP_TYPES[ship.type];
   const d = dist(ship.x, ship.y, tx, ty);
   if (d < 8) return null;
-  const step = Math.min(st.move - 2, d);
   const base = Math.atan2(ty - ship.y, tx - ship.x);
   for (const da of [0, 0.4, -0.4, 0.8, -0.8, 1.3, -1.3]) {
+    // 🌬 дальность шага зависит от курса относительно ветра — тот же каплевидный контур, что у людей
+    const step = Math.min(st.move * windMoveMult(game.wind, base + da) - 2, d);
+    if (step < 6) continue; // в эту сторону против шквала почти не сдвинуться — пробуем другой угол
     const nx = Math.round(ship.x + Math.cos(base + da) * step);
     const ny = Math.round(ship.y + Math.sin(base + da) * step);
     if (!shipPlacementBlocked(game, nx, ny, ship.id)) return { x: nx, y: ny };

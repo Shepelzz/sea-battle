@@ -294,15 +294,43 @@ $('#loginOverlay').addEventListener('click', e => { if (e.target.id === 'loginOv
     // селекторы игрового режима (из включённых на сервере) + показ описания выбранного
     const modes = Array.isArray(cfg.modes) && cfg.modes.length ? cfg.modes : [{ key: 'classic', name: 'Классический', desc: '' }];
     document.querySelectorAll('.mode-dd').forEach(host => {
-      // дуэль — только онлайн и против бота (строго 1на1); «на одном устройстве» её не предлагаем
+      // дуэль — только онлайн и против бота (строго 1на1); «на одном устройстве» её не предлагаем.
       const ms = host.id === 'hotseatMode' ? modes.filter(m => m.key !== 'duel') : modes;
       const desc = host.parentElement.querySelector('.mode-desc');
       // селектор количества участников: в дуэли строго 1на1 — прячем (онлайн: игроки, бот: противники)
       const countBox = host.id === 'onlineMode' ? $('#maxPlayersBox')
         : host.id === 'botMode' ? $('#botCountBox') : null;
+      // ⚡ тумблер «Полный вперёд» (реалтайм, бета): несовместим с дуэлью (закупка) и «Развитием» (мир
+      // по раундам) — в этих режимах гасим тумблер и снимаем галку
+      const rtToggle = host.id === 'onlineMode' ? $('#onlineRealtime')
+        : host.id === 'botMode' ? $('#botRealtime') : null;
+      // «Ход тремя судами» несовместим с реалтаймом (там ходов нет вовсе):
+      // включил «Полный вперёд» → тумблер хода гаснет и снимается, выключил → возвращается как был
+      const multiToggle = host.id === 'onlineMode' ? $('#onlineMulti')
+        : host.id === 'botMode' ? $('#botMulti') : null;
+      const syncMulti = () => {
+        if (!rtToggle || !multiToggle) return;
+        const rtOn = rtToggle.checked;
+        const row = multiToggle.closest('.fog-toggle');
+        if (rtOn && !row.classList.contains('disabled')) {
+          multiToggle.dataset.was = multiToggle.checked ? '1' : '';  // запомнить, как было
+          multiToggle.checked = false;
+          row.classList.add('disabled');
+        } else if (!rtOn && row.classList.contains('disabled')) {
+          multiToggle.checked = multiToggle.dataset.was !== '';      // вернуть как было
+          row.classList.remove('disabled');
+        }
+      };
+      rtToggle?.addEventListener('change', syncMulti);
       const apply = key => {
         if (desc) desc.textContent = (ms.find(m => m.key === key) || {}).desc || '';
         if (countBox) countBox.classList.toggle('hidden', key === 'duel');
+        if (rtToggle) {
+          const noRt = key === 'duel' || key === 'develop';
+          rtToggle.closest('.fog-toggle')?.classList.toggle('disabled', noRt);
+          if (noRt) rtToggle.checked = false;
+          syncMulti(); // реалтайм мог сняться сменой режима → вернуть «ход тремя судами»
+        }
       };
       const draw = () => renderModeDropdown(host, ms, host.dataset.mode, key => {
         host.dataset.mode = key; apply(key); draw();   // выбран режим — обновить кнопку, описание, селектор кол-ва
@@ -334,6 +362,7 @@ $('#createBtn').addEventListener('click', async () => {
         turnTimer: +$('#turnTimer').value,
         fog: $('#onlineFog').checked,
         multiMove: $('#onlineMulti').checked,
+        realtime: $('#onlineRealtime').checked, // ⚡ «Полный вперёд» (бета) — реалтайм без ходов
         gameMode: $('#onlineMode').dataset.mode
       })
     });
@@ -368,6 +397,7 @@ $('#botBtn').addEventListener('click', async () => {
         color: botColor,
         fog: $('#botFog').checked,
         multiMove: $('#botMulti').checked,
+        realtime: $('#botRealtime').checked, // ⚡ «Полный вперёд» (бета) — реалтайм без ходов
         gameMode: $('#botMode').dataset.mode
       })
     });

@@ -22,7 +22,8 @@ import {
 } from './auth.js';
 import { chooseBotAction, BOT_NAMES, duelFleetPlan } from './bot.js';
 import { applyCheat } from './cheats.js';
-import { CHEATS_ENABLED, GAME_MODES, enabledModes, DEFAULT_MODE, isDuel } from './config.js';
+import { rtStart, rtStop } from './rt.js';
+import { CHEATS_ENABLED, GAME_MODES, enabledModes, DEFAULT_MODE, isDuel, isRealtime, realtimeAllowed } from './config.js';
 // валидируем игровой режим из запроса (classic/deathmatch/develop) — только из включённых
 const pickMode = m => enabledModes().includes(m) ? m : DEFAULT_MODE;
 
@@ -109,6 +110,11 @@ function persistAndBroadcast(game) {
   broadcastLobbies(); // слоты/статус лобби могли измениться
 }
 
+// ⚡ «Полный вперёд»: запустить реалтайм-тик игры (движок в rt.js; рассылка/сохранение — наши)
+function armRt(game) {
+  rtStart(game, { broadcast: broadcastState, save: g => db.saveGame(g) });
+}
+
 // Дуэль, фаза закупки: каждый бот сразу собирает флот (умно, на всё золото). Когда все готовы —
 // applyAction(buyFleet) сам переключит игру в фазу боя.
 function maybeBotBuy(game) {
@@ -156,7 +162,7 @@ setInterval(() => {
   const now = Date.now();
   let changed = false;
   for (const [id, g] of games)
-    if (lobbyExpired(g, now) || gameStale(g, now)) { games.delete(id); db.deleteGame(id); changed = true; }
+    if (lobbyExpired(g, now) || gameStale(g, now)) { rtStop(id); games.delete(id); db.deleteGame(id); changed = true; }
   if (changed) broadcastLobbies();
 }, 10 * 60 * 1000);
 
@@ -195,6 +201,7 @@ function maybeBotTurn(game) {
 function maybeAutoFinish(game) {
   if (game.status !== 'active') return;
   if (game.players.some(p => p.alive && !p.isBot)) return; // ещё есть живые люди
+  if (isRealtime(game)) { forceFinish(game); return; }     // ⛈️ шторм: без пошаговой доигровки — сразу финал по силе
   let guard = 0;
   while (game.status === 'active' && guard++ < 4000) {
     const cur = game.players[game.turn.idx];
@@ -267,6 +274,8 @@ app.post('/api/games', (req, res) => {
 
   // хотсит: все игроки вводятся сразу, лобби нет — игра стартует мгновенно
   if (mode === 'hotseat') {
+    if (req.body.realtime)
+      return res.status(400).json({ error: '⚡ Реалтайм на одном устройстве не сыграть — одна мышь на всех. Выбери «Против компьютера» или онлайн.' });
     const names = (Array.isArray(nicks) ? nicks : []).map(s => String(s || '').trim()).filter(Boolean);
     if (names.length < 2 || names.length > 4) return res.status(400).json({ error: 'Нужно 2–4 имени игроков' });
     const cols = Array.isArray(colors) ? colors : [];
@@ -293,10 +302,15 @@ app.post('/api/games', (req, res) => {
     const botCount = duel ? 1 : Math.min(3, Math.max(1, +req.body.bots || 1)); // дуэль — ровно 1 бот (1на1)
     const nm = cleanNick(nick);
     if (!nm) return res.status(400).json({ error: 'Нужен ник' });
+    // ⚡ «Полный вперёд» (реалтайм, бета) — тумблер; несовместим с дуэлью (фаза закупки) и «Развитием» (мир по раундам)
+    if (req.body.realtime && !realtimeAllowed(gmode))
+      return res.status(400).json({ error: '⚡ Реалтайм пока не дружит с этим режимом — выбери Классический или Дезматч' });
     const game = createGame(id, { maxPlayers: 1 + botCount, turnTimer: 0 });
     game.config.botGame = true;
+    game.config.realtime = !!req.body.realtime;           // ⚡ реалтайм-партия (бета)
     game.config.fog = req.body.fog !== false; // туман войны (по умолчанию вкл), визуал для игрока
-    game.config.multiMove = req.body.multiMove !== false; // ход тремя судами (по умолчанию вкл)
+    // ход тремя судами (по умолчанию вкл); в реалтайме ходов нет — форсим выкл, что бы ни прислал клиент
+    game.config.multiMove = !game.config.realtime && req.body.multiMove !== false;
     game.config.mode = gmode;                             // режим (до addPlayer — влияет на старт. золото)
     db.upsertPlayer(pid, nm);
     addPlayer(game, pid, nm, color);                      // цвет игрока — по выбору
@@ -310,6 +324,7 @@ app.post('/api/games', (req, res) => {
     maybeBotBuy(game);   // дуэль: бот сразу собирает свой флот (фаза закупки)
     games.set(id, game);
     db.saveGame(game);
+    armRt(game);         // ⛈️ шторм: завести реалтайм-тик (для остальных режимов — no-op)
     return res.json({ gameId: id });
   }
 
@@ -323,11 +338,17 @@ app.post('/api/games', (req, res) => {
   const nm = cleanNick(nick);
   if (!nm) return res.status(400).json({ error: 'Нужны ник и токен' });
   const gmode = pickMode(req.body.gameMode);
+  // ⚡ «Полный вперёд» (реалтайм, бета): онлайн МОЖНО, но вне рейтинга (isRanked это учитывает);
+  // несовместим с дуэлью/«Развитием» — их механика завязана на очередь ходов
+  if (req.body.realtime && !realtimeAllowed(gmode))
+    return res.status(400).json({ error: '⚡ Реалтайм пока не дружит с этим режимом — выбери Классический или Дезматч' });
   const maxP = GAME_MODES[gmode]?.duel ? 2 : +maxPlayers; // дуэль — строго 1 на 1
   const game = createGame(id, { maxPlayers: maxP, turnTimer: +turnTimer });
   game.config.listed = true; // онлайн-игра попадает в браузер лобби (и засчитывается в лидерборд)
+  game.config.realtime = !!req.body.realtime;           // ⚡ реалтайм-партия (бета, не в рейтинг)
   game.config.fog = req.body.fog !== false; // туман войны (по умолчанию вкл)
-  game.config.multiMove = req.body.multiMove !== false; // ход тремя судами (по умолчанию вкл)
+  // ход тремя судами (по умолчанию вкл); в реалтайме ходов нет — форсим выкл, что бы ни прислал клиент
+  game.config.multiMove = !game.config.realtime && req.body.multiMove !== false;
   game.config.mode = gmode;                             // режим (до addPlayer — влияет на старт. золото)
   db.upsertPlayer(pid, nm);
   addPlayer(game, pid, nm, color);
@@ -479,7 +500,8 @@ io.on('connection', socket => {
       return ack?.({ ok: false, error: 'Нужно минимум 2 живых игрока. Игра против ботов — в одиночном режиме.' });
     const result = startGame(game, myPid);
     if (!result.ok) return ack?.({ ok: false, error: result.error });
-    armTurnTimer(game);
+    armTurnTimer(game); // ⚡ реалтайм: deadline=null → no-op
+    armRt(game);        // ⚡ реалтайм: завести тик (для пошаговых — no-op)
     persistAndBroadcast(game);
     ack?.({ ok: true });
   });
@@ -556,6 +578,7 @@ io.on('connection', socket => {
       db.saveGame(game);
     } else {                                          // ОФФЛАЙН (бот/хотсит): это сольная игра — просто удаляем
       io.to('game:' + game.id).emit('lobbyClosed');   // если кто-то открыт в этой игре — на главную
+      rtStop(game.id);                                // ⛈️ шторм: заглушить тик удалённой игры
       games.delete(game.id);
       db.deleteGame(game.id);
     }
@@ -611,8 +634,11 @@ async function bootstrap() {
     for (const state of await db.getAllGames()) {
       games.set(state.id, state);
       if (state.status === 'active') {
-        armTurnTimer(state); // возобновляем таймер хода после рестарта/деплоя
-        maybeBotTurn(state);  // ...и ход бота, если он не успел сходить
+        if (isRealtime(state)) armRt(state); // ⛈️ шторм: возобновить реалтайм-тик после рестарта
+        else {
+          armTurnTimer(state); // возобновляем таймер хода после рестарта/деплоя
+          maybeBotTurn(state);  // ...и ход бота, если он не успел сходить
+        }
         active++;
       }
     }
