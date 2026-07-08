@@ -67,6 +67,19 @@ export function rtStart(game, hooks) {
         return;
       }
 
+      // ⏸ пауза: мир заморожен — симуляцию не тикаем, только рассылаем состояние (лог/снятие паузы
+      // доходят мгновенно и через action-рассылку, это подстраховка) и изредка сейвим.
+      if (g.rt.paused) {
+        if (t >= (rt.nextCast || 0)) {
+          rt.nextCast = t + RT.BROADCAST_MS;
+          if (g.events?.length) g.eventSeq = (g.eventSeq || 0) + 1;
+          await hooks.broadcast(g);
+          g.events = [];
+        }
+        if (t >= (rt.nextSave || 0)) { rt.nextSave = t + RT.SAVE_MS; hooks.save?.(g); }
+        return;
+      }
+
       tickWind(g, t, dt);
       tickMovement(g, dt);
       tickEconomy(g, t);
@@ -354,9 +367,17 @@ export function botThink(game, bIdx, now) {
 
     // ДВИЖЕНИЕ — только если корабль стоит без приказа
     if (s.dest) continue;
-    if (st.fishing > 0) { // баркас → рыбная зона со свободным слотом
-      const zone = (game.map.fishZones || []).find(z =>
-        fishEarners(game, z).some(e => e.id === s.id) || fishEarners(game, z).length < (z.cap || FISH_ZONE_CAP));
+    if (st.fishing > 0) {
+      // баркас → БЛИЖАЙШАЯ зона со свободным местом (раньше .find() всегда брал ПЕРВУЮ зону
+      // карты — в «Развитии» это зона первого игрока, и все боты пёрлись рыбачить к нему).
+      // Свои уже плывущие туда рыбаки считаются занявшими место — в полную зону не ломимся,
+      // а вставший в переполненную (не кормится) снимается и уходит в следующую.
+      const inbound = z => mine.filter(m => m.id !== s.id && SHIP_TYPES[m.type].fishing > 0 &&
+        m.dest && dist(m.dest.x, m.dest.y, z.x, z.y) <= z.radius).length;
+      const zone = (game.map.fishZones || [])
+        .slice().sort((a, b) => dist(s.x, s.y, a.x, a.y) - dist(s.x, s.y, b.x, b.y))
+        .find(z => fishEarners(game, z).some(e => e.id === s.id) ||
+                   fishEarners(game, z).length + inbound(z) < (z.cap || FISH_ZONE_CAP));
       if (zone && dist(s.x, s.y, zone.x, zone.y) > zone.radius * 0.5)
         applyAction(game, bot.id, { type: 'move', shipId: s.id, x: zone.x, y: zone.y });
     } else if (st.repairer) { // ремонтник держится за самым толстым боевым

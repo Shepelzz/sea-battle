@@ -548,6 +548,26 @@ aside.panel {
   white-space: nowrap; transition: opacity .4s; backdrop-filter: blur(1px);
 }
 .peace-banner.hidden { display: none; }
+
+/* ⏸ пауза реалтайма: полупрозрачный оверлей поверх карты, карточка по центру */
+.pause-overlay {
+  position: absolute; inset: 0; z-index: 30;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(150, 160, 178, 0.35); backdrop-filter: blur(1.5px);
+}
+.pause-overlay.hidden { display: none; }
+.pause-card {
+  display: flex; flex-direction: column; align-items: center; gap: 14px;
+  background: rgba(253, 251, 243, 0.96); border: 2px solid #2b3a55; border-radius: 14px;
+  padding: 22px 30px; box-shadow: 2px 4px 0 rgba(43, 58, 85, .2);
+  font-family: var(--font-title); font-size: 21px; color: #2b3a55; text-align: center;
+}
+.pause-card button {
+  font-family: var(--font-title); font-size: 19px; padding: 10px 22px; cursor: pointer;
+  background: #2b3a55; color: #fdfbf3; border: none; border-radius: 10px;
+  box-shadow: 1px 2px 0 rgba(43, 58, 85, .25);
+}
+.pause-card button:active { transform: translateY(1px); }
 .info-body {
   overflow-y: auto; flex: 1;
   display: flex; flex-direction: column; gap: 12px;

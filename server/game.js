@@ -352,14 +352,22 @@ function currentPlayer(game) {
   return game.players[game.turn.idx];
 }
 
-// Все рыбацкие суда (любых владельцев), стоящие в зоне. Доход капает только первым zone.cap
-// из них (по стабильному порядку id) — лимит зависит от размера зоны (крупная кормит на 1 больше).
+// Все рыбацкие суда (любых владельцев), стоящие в зоне.
 function fishOccupants(game, zone) {
   return game.ships
-    .filter(s => SHIP_TYPES[s.type]?.fishing > 0 && dist(s.x, s.y, zone.x, zone.y) <= zone.radius)
-    .sort((a, b) => (a.id < b.id ? -1 : 1));
+    .filter(s => SHIP_TYPES[s.type]?.fishing > 0 && dist(s.x, s.y, zone.x, zone.y) <= zone.radius);
 }
-const fishEarners = (game, zone) => fishOccupants(game, zone).slice(0, zone.cap || FISH_ZONE_CAP);
+// Доход капает только zone.cap судам — МЕСТА ПО ПОРЯДКУ ПРИХОДА («кто первый встал — того и рыба»):
+// зона помнит очередь crew (id прибывших), ушедшие вычёркиваются, вернувшиеся встают в КОНЕЦ.
+// (Раньше сортировали по id — опоздавший с «меньшим» id выталкивал давно кормящегося.)
+function fishEarners(game, zone) {
+  const occ = fishOccupants(game, zone);
+  const here = new Set(occ.map(s => s.id));
+  zone.crew = (zone.crew || []).filter(id => here.has(id));
+  for (const s of occ) if (!zone.crew.includes(s.id)) zone.crew.push(s.id);
+  const feed = new Set(zone.crew.slice(0, zone.cap || FISH_ZONE_CAP));
+  return occ.filter(s => feed.has(s.id));
+}
 
 // 🐟 Миграция рыбных мест: зоны ОЧЕНЬ медленно блуждают вокруг родного места (якорь
 // FISH_HOME_RADIUS), держа дистанцию от баз и чужих целей (FISH_MIN_GAP) — в кучу не съедутся.
@@ -544,7 +552,8 @@ function sinkShip(game, ship, killer) {
       `💥 ${SHIP_TYPES[ship.type].name} игрока ${owner.nick} потоплен! (${killer.nick})`,
       `💥 ${killer.nick} потопил корабль игрока ${owner.nick}`, 'battle');
   } else if (killer) {
-    const plunder = Math.round(SHIP_TYPES[ship.type].price * WRECK_LOOT_FRAC);
+    // реалтайм: лут скромнее (война не должна окупаться) — пошаговый баланс не трогаем
+    const plunder = Math.round(SHIP_TYPES[ship.type].price * (isRealtime(game) ? RT.WRECK_LOOT_FRAC : WRECK_LOOT_FRAC));
     killer.gold += plunder;                    // лут-валюту даём всегда
     killer.stats.shipsSunk++; killer.stats.goldCollected += plunder;
     if (npcFoe) { killer.stats.npcSunk++; killer.stats.npcGold += plunder; }
@@ -779,6 +788,22 @@ function playerHasAction(game, pIdx) {
 export const rtReady = (ship, key) => !ship.cd || !ship.cd[key] || Date.now() >= ship.cd[key];
 export const rtArm = (ship, key, ms) => { (ship.cd ??= {})[key] = Date.now() + ms; };
 
+// ⏸ Снятие паузы: сдвинуть ВСЕ абсолютные часы партии на её длительность — мир «просыпается»
+// ровно там, где заснул (кулдауны не перезарядились, доход не капнул, мирное время не утекло).
+// nextCast/nextSave НЕ трогаем — это wall-clock темп рассылки/сейва, не игровое время.
+export function rtShift(game, ms) {
+  const r = game.rt;
+  if (!r || !(ms > 0)) return;
+  for (const k of Object.keys(r))
+    if (k !== 'nextCast' && k !== 'nextSave' && k !== 'paused' && typeof r[k] === 'number' && r[k] > 1e12)
+      r[k] += ms; // сдвигаем только timestamp-поля (startedAt, windShiftAt, nextIncome/Fish/Outpost/Bot/Buy*, …)
+  for (const s of game.ships) {
+    if (s.cd) for (const k of Object.keys(s.cd)) s.cd[k] += ms;
+    if (s.rtNext) s.rtNext += ms;   // пиратские «мысли»
+    if (s.gunAt) s.gunAt += ms;     // пиратская перезарядка
+  }
+}
+
 // Реалтайм: столкновение с сушей/краем карты (чужие корабли НЕ мешают — в море разойдутся,
 // иначе плывущие корабли вечно застревали бы друг в друге).
 export function terrainBlocked(game, x, y) {
@@ -810,6 +835,9 @@ export function applyAction(game, playerId, action) {
   if (!rt && pIdx !== game.turn.idx) return { ok: false, error: 'Сейчас не ваш ход' };
   const player = game.players[pIdx];
   if (rt && !player.alive) return { ok: false, error: 'Ты выбыл из баттла' };
+  // ⏸ пауза реалтайма: мир заморожен, приказы не принимаются — только снятие паузы (любым игроком)
+  if (rt && game.rt?.paused && action.type !== 'rtPause')
+    return { ok: false, error: '⏸ Игра на паузе' };
   // режим «ход тремя судами»: одним кораблём за ход ходить можно только раз
   if (!rt && SHIP_ACTION_SET.has(action.type) && (game.turn.actedShips || []).includes(action.shipId))
     return { ok: false, error: 'Этот корабль уже ходил' };
@@ -1166,6 +1194,23 @@ export function applyAction(game, playerId, action) {
       break;
     }
 
+    case 'rtPause': {
+      // ⏸ пауза реалтайма: ставит любой живой участник, снимает ТОЖЕ ЛЮБОЙ (анти-грифинг:
+      // вечной паузой не запереть — оппонент просто снимет). На время паузы тик спит (rt.js),
+      // при снятии ВСЕ часы (кулдауны, доходы, мир, агро ботов, пираты) сдвигаются на её длительность.
+      if (!rt) return { ok: false, error: 'Пауза — только в «Полном вперёд»' };
+      const rts = (game.rt ??= {});
+      if (!rts.paused) {
+        rts.paused = { by: pIdx, at: Date.now() };
+        pushLog(game, `⏸ ${player.nick} ставит игру на паузу`, 'battle');
+      } else {
+        rtShift(game, Date.now() - rts.paused.at);
+        rts.paused = null;
+        pushLog(game, `▶️ ${player.nick} снимает паузу — полный вперёд!`, 'battle');
+      }
+      break;
+    }
+
     case 'skip':
     case 'endTurn':
       if (rt) break; // реалтайм: ходов нет — тихий no-op (страховка для старых кнопок/ботов)
@@ -1307,8 +1352,9 @@ export function publicState(game, viewerPid) {
     peace: {
       active: isPeace(game), round: game.turn?.round || 1, until: modePeaceRounds(game), keepout: modeOf(game).peaceBaseKeepout || 0,
       // реалтайм: мир меряется временем — клиент показывает обратный отсчёт вместо раундов
+      // (⏸ на паузе отсчёт замирает: «сейчас» = момент постановки паузы)
       ...(isRealtime(game) && modePeaceRounds(game)
-        ? { leftMs: Math.max(0, (game.rt?.startedAt || Date.now()) + modePeaceRounds(game) * RT.PEACE_MS_PER_ROUND - Date.now()) }
+        ? { leftMs: Math.max(0, (game.rt?.startedAt || Date.now()) + modePeaceRounds(game) * RT.PEACE_MS_PER_ROUND - (game.rt?.paused?.at || Date.now())) }
         : {})
     },
     // параметры боя для клиента (сектор залпа, пушки по классам, у кого мортира)
@@ -1321,7 +1367,9 @@ export function publicState(game, viewerPid) {
       rt: {
         now: Date.now(),
         cds: { broadside: RT.CD_BROADSIDE_MS, mortar: RT.CD_MORTAR_MS, repair: RT.CD_REPAIR_MS },
-        moveSeconds: RT.MOVE_SECONDS
+        moveSeconds: RT.MOVE_SECONDS,
+        // ⏸ пауза: когда и кем поставлена (клиент морозит отсчёты и показывает оверлей)
+        ...(game.rt?.paused ? { pausedAt: game.rt.paused.at, pausedBy: game.rt.paused.by } : {})
       }
     } : {}),
     shipTypes

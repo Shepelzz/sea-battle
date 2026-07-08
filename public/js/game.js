@@ -171,6 +171,7 @@ socket.on('state', s => {
   updateOutpostPanel(); // ⛺ открытая панель аванпоста: обновить hp/золото, закрыть если снесли
   maybeMovesToast(prev, s); // «осталось N ходов» после моего суб-хода (режим ход-тремя-судами)
   updatePeaceBanner(prev, s); // баннер мирного времени (режим «Развитие»)
+  updatePauseUI(s); // ⏸ пауза реалтайма: кнопка + оверлей
   if (anyBurning()) ensureAnimLoop(); // низкое HP базы → запустить анимацию огня/дыма
   Sound.onState(prev, s, myIdx());
   updateTab();
@@ -657,7 +658,8 @@ const ST = t => state.shipTypes[t];
 // ── ⛈️ «Шторм» (реалтайм): без очереди ходов, стрельба по перезарядке ──
 const isRT = () => !!state?.rt;         // сервер прислал rt-блок → реалтайм-партия
 let rtSkew = 0;                          // серверные часы − наши (для честного отсчёта перезарядок)
-const rtNow = () => Date.now() + rtSkew;
+// ⏸ на паузе «сейчас» замирает в моменте постановки — отсчёты перезарядок не тикают
+const rtNow = () => state?.rt?.pausedAt || (Date.now() + rtSkew);
 const cdLeft = (ship, key) => Math.max(0, (ship?.cd?.[key] || 0) - rtNow()); // мс до готовности орудия
 const rtPos = new Map();                 // сглаженные позиции кораблей (стейт приходит ~4 Гц — скользим между)
 
@@ -730,6 +732,23 @@ function updatePeaceBanner(prev, s) {
     }
   } else if (prev?.peace?.active && pc && !pc.active) {
     hudToast('⚔️ Мирное время кончилось — война!', 4000); // разовый сигнал на старте войны
+  }
+}
+
+// ⏸ Пауза реалтайма: кнопка в шапке (только участникам активной RT-партии) + оверлей поверх карты.
+// Ставит любой живой игрок, снимает тоже ЛЮБОЙ (кнопкой или «Продолжить» на оверлее).
+function updatePauseUI(s) {
+  const btn = $('#pauseBtn'), ov = $('#pauseOverlay');
+  if (!btn || !ov) return;
+  const rtActive = s?.status === 'active' && s.rt && !spectator && myIdx() >= 0 && s.players[myIdx()]?.alive;
+  btn.classList.toggle('hidden', !rtActive);
+  const paused = !!(rtActive && s.rt.pausedAt);
+  btn.textContent = paused ? '▶️' : '⏸';
+  btn.title = paused ? 'Продолжить' : 'Пауза';
+  ov.classList.toggle('hidden', !paused);
+  if (paused) {
+    const who = s.players[s.rt.pausedBy]?.nick || '?';
+    $('#pauseWho').textContent = `⏸ Пауза — игру остановил ${who}`;
   }
 }
 
@@ -1393,7 +1412,8 @@ function render(canvasOnly) {
 
   // 🕊 «Развитие», мирное время: пунктирная светло-серая граница вокруг ЧУЖИХ баз —
   // ближе подходить нельзя. Рисуем только пока идёт мир; как peace.active станет false — исчезнет сама.
-  if (state.peace?.active && state.peace.keepout > 0) {
+  // ⚡ Реалтайм: запрет на подход там не действует (движение свободное) — пунктир не рисуем, чтоб не врал.
+  if (state.peace?.active && state.peace.keepout > 0 && !state.rt) {
     for (let i = 0; i < m.bases.length; i++) {
       if (i === myIdx() || !state.players[i]?.alive) continue;
       dashedCircle(m.bases[i].x, m.bases[i].y, state.peace.keepout, 'rgba(158,162,168,.6)', 1.4);
@@ -2462,6 +2482,9 @@ $('#btnOutpost').addEventListener('click', () =>
   sendAction({ type: 'outpost', shipId: selectedShipId, islandId: +$('#btnOutpost').dataset.island }));
 $('#btnRecharge').addEventListener('click', () => sendAction({ type: 'recharge', shipId: selectedShipId })); // 🔧 пополнить материалы у базы
 $('#btnSkip').addEventListener('click', () => sendAction({ type: 'skip' }));
+// ⏸ пауза реалтайма: кнопка в шапке и «Продолжить» на оверлее шлют один и тот же тумблер
+$('#pauseBtn')?.addEventListener('click', () => sendAction({ type: 'rtPause' }));
+$('#pauseResumeBtn')?.addEventListener('click', () => sendAction({ type: 'rtPause' }));
 $('#btnShop').addEventListener('click', () => {
   basket = {};
   renderShop();

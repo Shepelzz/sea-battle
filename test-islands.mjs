@@ -3,7 +3,7 @@
 // мирное время; дрейф рыбы: медленный, с якорем к дому, без съезжания в одну точку.
 import {
   createGame, addPlayer, startGame, applyAction, publicState,
-  driftFishZones, applyOutpostPerks
+  driftFishZones, applyOutpostPerks, fishEarners
 } from './server/game.js';
 import {
   OUTPOST_LEVELS, OUTPOST_RADIUS, OUTPOST_BUILD_REACH, RT_OUTPOST_MS,
@@ -172,6 +172,29 @@ const banishPirates = g => {
   const snap = g2.map.fishZones.map(zz => zz.x + ':' + zz.y);
   applyAction(g2, 'p0', { type: 'skip' });
   check('advanceTurn дрейфует рыбу', g2.map.fishZones.some((zz, i) => zz.x + ':' + zz.y !== snap[i]));
+}
+
+// ═══════════════ 🐟 «Кто первый встал — того и рыба» (очередь прихода, не id) ═══════════════
+{
+  const g = newGame();
+  banishPirates(g);
+  const z = g.map.fishZones[0];
+  const cap = z.cap || 4;
+  const first = put(g, 0, 'barkas', z.x, z.y);
+  first.id = 'яяя_последний_по_алфавиту'; // при старой сортировке по id он бы вылетел первым
+  fishEarners(g, z); // пришёл — застолбил место в очереди
+  const late = [];
+  for (let i = 0; i < cap; i++) { const b = put(g, 1, 'barkas', z.x + 10 + i * 8, z.y); b.id = 'aaa_ранний_ид_' + i; late.push(b); }
+  let earn = fishEarners(g, z);
+  check('первый пришедший кормится, хоть его id «старше» всех', earn.some(s => s.id === first.id));
+  check(`опоздавший — за бортом (мест ${cap})`, !earn.some(s => s.id === late[cap - 1].id), earn.map(s => s.id).join(','));
+  // ушёл — место потерял; вернулся — в КОНЕЦ очереди
+  first.x += 1000;
+  fishEarners(g, z);
+  first.x -= 1000;
+  earn = fishEarners(g, z);
+  check('ушёл и вернулся → в конец очереди (зона полна — не кормится)', !earn.some(s => s.id === first.id));
+  check('его место унаследовал следующий в очереди', earn.some(s => s.id === late[cap - 1].id));
 }
 
 console.log(`\n⛺🐟 Аванпосты + миграция: ${ok} ок, ${fail} провалов`);

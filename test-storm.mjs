@@ -1,10 +1,10 @@
 // ⚡ «Полный вперёд» (реалтайм, бета) + 🌬 ветер во всех режимах.
 // Реалтайм: одновременные действия, движение по тикам, перезарядки, экономика по таймерам, бот.
 // Ветер: множитель дальности по курсу (каплевидный контур), дрейф между ходами, валидация хода.
-import { createGame, addPlayer, startGame, applyAction, publicState, terrainBlocked } from './server/game.js';
+import { createGame, addPlayer, startGame, applyAction, publicState, terrainBlocked, sinkShip } from './server/game.js';
 import {
   GAME_MODES, isRealtime, realtimeAllowed, RT, SHIP_TYPES, PORT_INCOME, PIRATE,
-  WIND_STRENGTH, windMoveMult, MORTAR_SHIPS, OUTPOST_LEVELS, isPeace
+  WIND_STRENGTH, windMoveMult, MORTAR_SHIPS, OUTPOST_LEVELS, isPeace, WRECK_LOOT_FRAC
 } from './server/config.js';
 const PIRATE_MOVE_EXPECT = PIRATE.move / RT.MOVE_SECONDS; // 80/5 = 16 px/с — скорость пирата
 import { tickMovement, tickEconomy, tickWind, windMult, botThink, pirateThink } from './server/rt.js';
@@ -403,6 +403,73 @@ check('реалтайм доступен во ВСЕХ режимах', ['classi
   botThink(g, 1, Date.now() + 999999); // раш давно — базы-якоря (noPort) целью быть не должны
   check('бот в дуэли раздал приказы и не упал (якоря не цель)',
     g.ships.filter(s => s.owner === 1 && s.dest).length >= 1);
+}
+
+// ═══════════════ ⚡ Бот-рыбаки: в БЛИЖАЙШУЮ зону, в полную не ломятся ═══════════════
+{
+  const dd = (x1, y1, x2, y2) => Math.hypot(x1 - x2, y1 - y2);
+  const g = newGame({ realtime: true });
+  g.ships = g.ships.filter(s => s.owner !== -1);
+  g.players[1].isBot = true; g.players[1].botLevel = 'mid';
+  const zs = g.map.fishZones;
+  const zFar = zs[zs.length - 1]; // ставим рыбака у ПОСЛЕДНЕЙ зоны списка — старый .find() погнал бы его в первую
+  const bk = put(g, 1, 'barkas', zFar.x + zFar.radius + 50, zFar.y);
+  const nearest = zs.reduce((a, b) => dd(bk.x, bk.y, a.x, a.y) < dd(bk.x, bk.y, b.x, b.y) ? a : b);
+  botThink(g, 1, 1000);
+  check('рыбак плывёт в БЛИЖАЙШУЮ зону, а не в первую по списку',
+    bk.dest && dd(bk.dest.x, bk.dest.y, nearest.x, nearest.y) <= nearest.radius, JSON.stringify(bk.dest));
+  // ближайшая забита под кап (чужими) → рыбак выбирает другую
+  const cap = nearest.cap || 4;
+  for (let i = 0; i < cap; i++) put(g, 0, 'barkas', nearest.x + i * 9, nearest.y);
+  delete bk.dest;
+  botThink(g, 1, 2000);
+  check('в полную зону не ломится — плывёт в другую',
+    bk.dest && dd(bk.dest.x, bk.dest.y, nearest.x, nearest.y) > nearest.radius, JSON.stringify(bk.dest));
+}
+
+// ═══════════════ ⏸ Пауза реалтайма: мир замирает, снять может любой ═══════════════
+{
+  const g = newGame({ realtime: true });
+  g.ships = g.ships.filter(s => s.owner !== -1);
+  const a = put(g, 0, 'fregat', 500, 500);
+  const r0 = applyAction(g, 'p0', { type: 'rtPause' });
+  check('пауза ставится (любым живым участником)', r0.ok && !!g.rt.paused && g.rt.paused.by === 0, r0.error || '');
+  const rMove = applyAction(g, 'p0', { type: 'move', shipId: a.id, x: 600, y: 500 });
+  check('на паузе приказы отбиваются', !rMove.ok && /пауз/i.test(rMove.error || ''), rMove.error || '');
+  const st = publicState(g, 'p0');
+  check('стейт несёт паузу (pausedAt/pausedBy)', st.rt.pausedAt > 0 && st.rt.pausedBy === 0);
+  // пауза «длилась 2с» → при снятии все часы сдвигаются на её длительность
+  a.cd = { m: Date.now() + 5000 };
+  const started0 = g.rt.startedAt = Date.now() - 30000;
+  g.rt.paused.at = Date.now() - 2000;
+  const cd0 = a.cd.m;
+  const r1 = applyAction(g, 'p1', { type: 'rtPause' }); // снимает ДРУГОЙ игрок
+  check('снять паузу может ЛЮБОЙ игрок', r1.ok && !g.rt.paused, r1.error || '');
+  check('кулдауны сдвинуты на длительность паузы', a.cd.m - cd0 >= 1900 && a.cd.m - cd0 <= 2500, `+${a.cd.m - cd0}`);
+  check('часы партии (мир/агро ботов) сдвинуты', g.rt.startedAt - started0 >= 1900, `+${g.rt.startedAt - started0}`);
+  check('после снятия приказы проходят', applyAction(g, 'p0', { type: 'move', shipId: a.id, x: 600, y: 500 }).ok);
+  check('в пошаговой партии пауза отклонена', !applyAction(newGame(), 'p0', { type: 'rtPause' }).ok);
+}
+
+// ═══════════════ ⚡ Экономика реалтайма: доход раз в «раунд», лут скромнее ═══════════════
+{
+  check('доход/рыба/лут — раз в «раунд» (≈MOVE_SECONDS)',
+    RT.INCOME_MS === 15000 && RT.FISH_MS === 15000, `${RT.INCOME_MS}/${RT.FISH_MS}`);
+  // лут с обломков: RT 30% (война не окупается), пошагово прежние 50%
+  const rtG = newGame({ realtime: true });
+  const rtVictim = put(rtG, 1, 'brig', 500, 500);
+  const gold1 = rtG.players[0].gold;
+  sinkShip(rtG, rtVictim, rtG.players[0]);
+  check('реалтайм: лут с обломков 30% цены',
+    rtG.players[0].gold - gold1 === Math.round(SHIP_TYPES.brig.price * RT.WRECK_LOOT_FRAC),
+    `+${rtG.players[0].gold - gold1}`);
+  const tG = newGame();
+  const tVictim = put(tG, 1, 'brig', 500, 500);
+  const gold2 = tG.players[0].gold;
+  sinkShip(tG, tVictim, tG.players[0]);
+  check('пошагово: лут прежний, 50% цены',
+    tG.players[0].gold - gold2 === Math.round(SHIP_TYPES.brig.price * WRECK_LOOT_FRAC),
+    `+${tG.players[0].gold - gold2}`);
 }
 
 console.log(`\n⚡🌬 Полный вперёд + ветер: ${ok} ок, ${fail} провалов`);
