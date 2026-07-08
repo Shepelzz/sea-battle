@@ -197,5 +197,22 @@ const banishPirates = g => {
   check('его место унаследовал следующий в очереди', earn.some(s => s.id === late[cap - 1].id));
 }
 
+// ═══════════════ 🎣 Стейт помечает кормящихся (netting) — сеть рисуем только им ═══════════════
+{
+  const g = newGame();
+  banishPirates(g);
+  const z = g.map.fishZones[0];
+  const cap = z.cap || 4;
+  const boats = [];
+  for (let i = 0; i <= cap; i++) boats.push(put(g, 0, 'barkas', z.x + i * 8, z.y)); // cap+1 рыбаков
+  const st = publicState(g, 'p0');
+  const flags = boats.map(b => !!st.ships.find(s => s.id === b.id)?.netting);
+  check(`netting у первых ${cap} (в лимите зоны)`, flags.slice(0, cap).every(Boolean), flags.join(','));
+  check('лишнему (сверх лимита) сеть не положена', !flags[cap]);
+  const brig = put(g, 0, 'brig', z.x, z.y + 12);
+  check('боевой корабль в зоне — без netting', !publicState(g, 'p0').ships.find(s => s.id === brig.id)?.netting);
+  check('сама игра флагом не замусорена (только копия в стейте)', !g.ships.some(s => s.netting));
+}
+
 console.log(`\n⛺🐟 Аванпосты + миграция: ${ok} ок, ${fail} провалов`);
 process.exit(fail ? 1 : 0);

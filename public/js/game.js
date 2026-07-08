@@ -1886,12 +1886,46 @@ function drawShip(s, selected) {
       ctx.lineTo(i * L / 5, W / 2 - W * 0.18);
       ctx.stroke();
     }
-    ctx.setLineDash([2, 3]);
-    ctx.strokeStyle = 'rgba(43,58,85,.7)';
-    ctx.beginPath();
-    ctx.arc(-L / 2 - L * 0.18, W * 0.18, L * 0.14, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.setLineDash([]);
+    if (s.netting) {
+      // 🎣 СЕТЬ РАЗВЁРНУТА: рыбак в зоне И в лимите — реально ловит (флаг netting с сервера).
+      // Веер-купол за кормой: дуги + радиальные нити + поплавки, слегка «дышит» (в реалтайме анимируется).
+      const ph = (Date.now() / 1100) % (Math.PI * 2);
+      const R = L * (0.62 + Math.sin(ph) * 0.04);
+      const a0 = Math.PI * 0.62, a1 = Math.PI * 1.38; // раскрыт назад (корма = −x)
+      ctx.save();
+      ctx.translate(-L / 2 - L * 0.06, 0);
+      ctx.rotate(Math.sin(ph * 0.7) * 0.05); // лёгкое покачивание купола
+      ctx.strokeStyle = 'rgba(43,58,85,.55)';
+      ctx.lineWidth = Math.max(0.5, 0.9 * k);
+      for (const rr of [R, R * 0.66, R * 0.34]) { // ячеистость: три дуги купола
+        ctx.beginPath();
+        ctx.arc(0, 0, rr, a0, a1);
+        ctx.stroke();
+      }
+      for (let i = 0; i <= 4; i++) { // радиальные нити от кормы к внешней дуге
+        const a = a0 + (a1 - a0) * (i / 4);
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * R * 0.12, Math.sin(a) * R * 0.12);
+        ctx.lineTo(Math.cos(a) * R, Math.sin(a) * R);
+        ctx.stroke();
+      }
+      ctx.fillStyle = '#2b3a55'; // поплавки на внешней дуге
+      for (let i = 0; i <= 3; i++) {
+        const a = a0 + (a1 - a0) * (i / 3);
+        ctx.beginPath();
+        ctx.arc(Math.cos(a) * R, Math.sin(a) * R, Math.max(0.8, 1.3 * k), 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    } else {
+      // сеть сложена на корме (не ловит: плывёт, ждёт места или зона переполнена)
+      ctx.setLineDash([2, 3]);
+      ctx.strokeStyle = 'rgba(43,58,85,.7)';
+      ctx.beginPath();
+      ctx.arc(-L / 2 - L * 0.18, W * 0.18, L * 0.14, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
   } else {
     // мачты с реями
     const mastXs = masts === 1 ? [0] : masts === 2 ? [-L / 6, L / 6] : [-L / 4, 0, L / 4];

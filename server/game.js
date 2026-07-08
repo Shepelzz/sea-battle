@@ -1330,7 +1330,13 @@ export function publicState(game, viewerPid) {
       ready: p.ready || false,                 // дуэль: собрал ли флот в фазе закупки
       stats: p.stats, isBot: p.isBot || false
     })),
-    ships: game.ships,
+    // 🎣 кормящиеся рыбаки помечаются netting (клиент рисует развёрнутую сеть ТОЛЬКО у попавших
+    // в лимит зоны — очередь crew живёт на сервере, клиенту её не восстановить)
+    ships: (() => {
+      const netting = new Set();
+      for (const z of game.map?.fishZones || []) for (const f of fishEarners(game, z)) netting.add(f.id);
+      return netting.size ? game.ships.map(s => netting.has(s.id) ? { ...s, netting: true } : s) : game.ships;
+    })(),
     turn: game.turn,
     log: game.log,
     winner: game.winner,
