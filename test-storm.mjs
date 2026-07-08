@@ -4,7 +4,7 @@
 import { createGame, addPlayer, startGame, applyAction, publicState, terrainBlocked } from './server/game.js';
 import {
   GAME_MODES, isRealtime, realtimeAllowed, RT, SHIP_TYPES, PORT_INCOME, PIRATE,
-  WIND_STRENGTH, windMoveMult
+  WIND_STRENGTH, windMoveMult, MORTAR_SHIPS, OUTPOST_LEVELS, isPeace
 } from './server/config.js';
 const PIRATE_MOVE_EXPECT = PIRATE.move / RT.MOVE_SECONDS; // 80/5 = 16 px/с — скорость пирата
 import { tickMovement, tickEconomy, tickWind, windMult, botThink, pirateThink } from './server/rt.js';
@@ -14,8 +14,9 @@ const check = (n, c, extra = '') => { c ? (ok++, console.log('✓', n, extra)) :
 
 const setWind = (g, ang, str) => { g.wind = { ang, str, targetAng: ang, targetStr: str }; };
 
-function newGame({ realtime = false } = {}) {
+function newGame({ realtime = false, mode = null } = {}) {
   const g = createGame('st', { maxPlayers: 2, turnTimer: 0, seed: 7 });
+  if (mode) g.config.mode = mode; // до startGame — влияет на карту и стартовое золото
   if (realtime) g.config.realtime = true;
   addPlayer(g, 'p0', 'P0');
   addPlayer(g, 'p1', 'P1');
@@ -51,8 +52,7 @@ function openWater(g, r = 70) {
 // ═══════════════ Каркас: реалтайм — флаг конфига, не режим ═══════════════
 check('storm-режима больше нет (реалтайм = тумблер)', !GAME_MODES.storm);
 check('isRealtime по config.realtime', isRealtime({ config: { realtime: true } }) === true && isRealtime({ config: { mode: 'classic' } }) === false);
-check('реалтайм совместим: классика и дезматч', realtimeAllowed('classic') && realtimeAllowed('deathmatch'));
-check('реалтайм НЕсовместим: дуэль и развитие', !realtimeAllowed('duel') && !realtimeAllowed('develop'));
+check('реалтайм доступен во ВСЕХ режимах', ['classic', 'deathmatch', 'duel', 'develop'].every(m => realtimeAllowed(m)));
 
 // ═══════════════ 🌬 Ветер: математика и публичное состояние ═══════════════
 {
@@ -280,6 +280,129 @@ check('реалтайм НЕсовместим: дуэль и развитие',
   g.players[1].portHp = 5;
   const r = applyAction(g, 'p0', { type: 'attack', shipId: lk.id, targetType: 'port', targetId: 1 });
   check('порт добит — игра завершена', r.ok && g.status === 'finished' && g.winner !== null, r.error || g.status);
+}
+
+// ═══════════════ ⚡ Бот-экономика: рыбаки → мортирный резерв → аванпосты ═══════════════
+// Позиции статичны (тики движения не гоняем) — botThink детерминирован.
+{
+  const g = newGame({ realtime: true });
+  g.ships = g.ships.filter(s => s.owner !== -1); // без пиратов: случайный потоп = случайное золото
+  g.players[1].isBot = true; g.players[1].botLevel = 'mid';
+  const bot = g.players[1];
+  const mine = () => g.ships.filter(s => s.owner === 1);
+  const islands = g.map.lootIslands;
+  g.map.lootIslands = []; // пока без островов: клады/постройки не искажают золото
+
+  // 1) рыбаки-кормильцы — первый приоритет верфи
+  bot.gold = 520; g.rt.nextBuy1 = 0; botThink(g, 1, 1000);
+  check('верфь: сперва баркас-кормилец, не линкор',
+    mine().filter(s => s.type === 'barkas').length === 1 && !mine().some(s => s.type === 'linkor'),
+    mine().map(s => s.type).join(','));
+  bot.gold = 520; g.rt.nextBuy1 = 0; botThink(g, 1, 2000);
+  bot.gold = 520; g.rt.nextBuy1 = 0; botThink(g, 1, 3000);
+  const wantF = Math.min(2, g.map.fishZones.length);
+  check(`рыбаков ровно ${wantF}, дальше — боевые`,
+    mine().filter(s => s.type === 'barkas').length === wantF && mine().some(s => s.type === 'linkor'),
+    mine().map(s => s.type).join(','));
+
+  // 2) потеряв тяжёлых, бот копит на фрегат, а не спускает всё на шхуны
+  g.ships = g.ships.filter(s => !(s.owner === 1 && MORTAR_SHIPS.includes(s.type)));
+  bot.gold = 300;
+  const n0 = mine().length;
+  g.rt.nextBuy1 = 0; botThink(g, 1, 4000);
+  check('без мортиры и 300 зол. — копит, мелочь не берёт',
+    mine().length === n0 && bot.gold === 300, `флот +${mine().length - n0}, зол. ${bot.gold}`);
+  bot.gold = 400; g.rt.nextBuy1 = 0; botThink(g, 1, 5000);
+  check('накопил 400 → куплен фрегат (мортира вернулась)',
+    mine().some(s => MORTAR_SHIPS.includes(s.type)) && bot.gold === 400 - SHIP_TYPES.fregat.price,
+    `зол. ${bot.gold}`);
+
+  // 3) аванпост ждёт прокачки: верфь при флоте 6+ не объедает апгрейд; резерв апгрейда = цена+120
+  g.map.lootIslands = islands;
+  const spot = (() => { // точка вдали от островов (клад) и чужих кораблей (случайный потоп)
+    for (let y = 120; y < 1100; y += 50)
+      for (let x = 120; x < 1500; x += 50)
+        if (islands.every(i => Math.hypot(i.x - x, i.y - y) > i.radius + 160) &&
+            g.ships.every(s => Math.hypot(s.x - x, s.y - y) > 250)) return { x, y };
+    throw new Error('нет спокойной точки');
+  })();
+  while (mine().length < 6) put(g, 1, 'brig', spot.x + mine().length * 12, spot.y);
+  const isl0 = islands[0];
+  isl0.looted = true;
+  isl0.outpost = { owner: 1, level: 1, hp: OUTPOST_LEVELS[0].hp };
+  bot.gold = 300; // на бриг хватило бы, но апгрейд (250+120) важнее — копим
+  const n1 = mine().length;
+  g.rt.nextBuy1 = 0; botThink(g, 1, 6000);
+  check('флот 6+ и апгрейд ждёт → верфь копит (300 зол. целы)',
+    mine().length === n1 && bot.gold === 300 && isl0.outpost.level === 1,
+    `флот +${mine().length - n1}, зол. ${bot.gold}, ур. ${isl0.outpost.level}`);
+  bot.gold = OUTPOST_LEVELS[1].price + 120;
+  botThink(g, 1, 7000); // апгрейд — каждую «мысль», без таймера верфи
+  check('370 зол. → аванпост прокачан до Фактории (резерв +120)',
+    isl0.outpost.level === 2 && bot.gold === 120, `ур. ${isl0.outpost.level}, зол. ${bot.gold}`);
+}
+
+// ═══════════════ ⚡ Мортиру бережём на подходе к осаждаемому порту ═══════════════
+{
+  const g = newGame({ realtime: true });
+  g.ships = g.ships.filter(s => s.owner !== -1);
+  g.players[1].isBot = true; g.players[1].botLevel = 'hard'; // разгон 20с — при now=999999 бот давно «в раше»
+  const base0 = g.map.bases[0];
+  const dx = base0.x < g.map.w / 2 ? 1 : -1;
+  // фрегат на подходе: порт вне дальности мортиры (250 > 165+r/2), но ближе 2×fireRange
+  const fr = put(g, 1, 'fregat', base0.x + dx * 250, base0.y);
+  put(g, 0, 'shkhuna', fr.x + dx * 100, fr.y); // сосед-цель: соблазн разрядить мортиру в него
+  const fr2 = put(g, 1, 'fregat', g.map.w / 2, g.map.h / 2); // контроль: вдали от портов
+  put(g, 0, 'shkhuna', g.map.w / 2 + 80, g.map.h / 2);
+  botThink(g, 1, 999999);
+  check('на подходе к порту мортира придержана (не ушла в корабль)', !fr.cd?.m, JSON.stringify(fr.cd || {}));
+  check('вдали от портов мортира по кораблям работает', !!fr2.cd?.m, JSON.stringify(fr2.cd || {}));
+}
+
+// ═══════════════ ⚡ Реалтайм + «Развитие»: мир по времени ═══════════════
+{
+  const g = newGame({ realtime: true, mode: 'develop' });
+  g.ships = g.ships.filter(s => s.owner !== -1); // детерминизм: без пиратов
+  g.rt.startedAt = Date.now(); // мир только начался
+  check('развитие+реалтайм: мир идёт (меряется временем)', isPeace(g));
+  const a = put(g, 0, 'fregat', 500, 500), b = put(g, 1, 'shkhuna', 560, 500);
+  const r1 = applyAction(g, 'p0', { type: 'attack', shipId: a.id, targetType: 'ship', targetId: b.id });
+  check('в мирное время атака игрока отклонена', !r1.ok && /Мирное/.test(r1.error || ''), r1.error || '');
+  const st = publicState(g, 'p0');
+  check('стейт шлёт обратный отсчёт мира (leftMs)',
+    st.peace.active && st.peace.leftMs > 0 && st.peace.leftMs <= GAME_MODES.develop.peaceRounds * RT.PEACE_MS_PER_ROUND,
+    `leftMs=${st.peace.leftMs}`);
+  g.rt.startedAt = Date.now() - GAME_MODES.develop.peaceRounds * RT.PEACE_MS_PER_ROUND - 1000;
+  check('мир кончился по таймеру', !isPeace(g) && publicState(g, 'p0').peace.leftMs === 0);
+  const r2 = applyAction(g, 'p0', { type: 'attack', shipId: a.id, targetType: 'ship', targetId: b.id });
+  check('после мира атака проходит', r2.ok, r2.error || '');
+  // бот в мирное время игроков не целит вовсе
+  g.rt.startedAt = Date.now(); // мир снова
+  g.players[1].isBot = true; g.players[1].botLevel = 'hard';
+  const fr = put(g, 1, 'fregat', 700, 700);
+  put(g, 0, 'shkhuna', 780, 700); // сосед-игрок в дальности — но мир!
+  botThink(g, 1, Date.now());
+  check('бот в мир не целит игроков (мортира и борта молчат)', !fr.cd?.m && !fr.cd?.p && !fr.cd?.s, JSON.stringify(fr.cd || {}));
+}
+
+// ═══════════════ ⚡ Реалтайм + Дуэль: закупка и бой без дохода ═══════════════
+{
+  const g = newGame({ realtime: true, mode: 'duel' });
+  g.ships = g.ships.filter(s => s.owner !== -1);
+  check('дуэль+реалтайм: фаза закупки', g.phase === 'buy');
+  check('дуэльная карта: без рыбы и островов (бот-баркасы не полезут)',
+    g.map.fishZones.length === 0 && g.map.lootIslands.length === 0);
+  const b0 = applyAction(g, 'p0', { type: 'buyFleet', ships: Array(8).fill('linkor') });
+  const b1 = applyAction(g, 'p1', { type: 'buyFleet', ships: Array(8).fill('linkor') });
+  check('оба закупились → бой', b0.ok && b1.ok && g.phase === 'battle', (b0.error || '') + (b1.error || ''));
+  g.rt.nextIncome = 0; g.rt.nextFish = 0;
+  const gold0 = g.players[0].gold;
+  tickEconomy(g, Date.now());
+  check('дуэль: доход порта по таймеру НЕ капает', g.players[0].gold === gold0, `+${g.players[0].gold - gold0}`);
+  g.players[1].isBot = true; g.players[1].botLevel = 'hard';
+  botThink(g, 1, Date.now() + 999999); // раш давно — базы-якоря (noPort) целью быть не должны
+  check('бот в дуэли раздал приказы и не упал (якоря не цель)',
+    g.ships.filter(s => s.owner === 1 && s.dest).length >= 1);
 }
 
 console.log(`\n⚡🌬 Полный вперёд + ветер: ${ok} ок, ${fail} провалов`);

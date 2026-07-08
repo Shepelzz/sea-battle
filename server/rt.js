@@ -11,7 +11,7 @@ import {
   SHIP_TYPES, PIRATE, PIRATE_MAX, PIRATE_MOVE_CHANCE, PIRATE_ENGAGE_MULT, MAP_EDGE_MARGIN,
   PORT_INCOME, PORT_NO_SHIP_INCOME_MULT, MORTAR_SHIPS, LOOT_REACH, FISH_ZONE_CAP,
   OUTPOST_LEVELS, OUTPOST_BUILD_REACH, RT_OUTPOST_MS, FISH_DRIFT_RT,
-  RT, isRealtime, windMoveMult
+  RT, isRealtime, isDuel, isPeace, windMoveMult
 } from './config.js';
 import {
   applyAction, pushEvent, pushLog, logEvent, spawnPirate, sinkShip, pirateVolley,
@@ -187,7 +187,8 @@ export function tickEconomy(game, now) {
   const rt = game.rt;
   if (now >= rt.nextIncome) {
     rt.nextIncome = now + RT.INCOME_MS;
-    game.players.forEach((p, i) => {
+    // в дуэли дохода нет (как и «за ход» в пошаговой) — золото только за пиратов
+    if (!isDuel(game)) game.players.forEach((p, i) => {
       if (!p.alive) return;
       const hasShips = game.ships.some(s => s.owner === i);
       // как в пошаговом: порт без единого корабля приносит на 50% больше — легче встать на ноги
@@ -311,14 +312,17 @@ function tickBots(game, now) {
 export function botThink(game, bIdx, now) {
   const bot = game.players[bIdx];
   const mine = game.ships.filter(s => s.owner === bIdx);
-  const foes = game.ships.filter(s => s.owner >= 0 && s.owner !== bIdx && game.players[s.owner]?.alive);
+  // 🕊 мирное время («Развитие»): игроки — не цели вовсе, бот качает экономику и бьёт пиратов
+  const peace = isPeace(game);
+  const foes = peace ? [] : game.ships.filter(s => s.owner >= 0 && s.owner !== bIdx && game.players[s.owner]?.alive);
   const pirates = game.ships.filter(s => s.owner === -1);
   // «РАЗГОН»: первые минуты бот не рашит чужую базу — строит экономику и держится своей половины.
   // Игрок успевает освоить реалтайм-управление. Длина разгона — по уровню бота.
   const aggroDelay = { easy: 180000, mid: 75000, hard: 20000 }[bot.botLevel || 'mid'] ?? 75000;
-  const rushing = now - (game.rt.startedAt || 0) >= aggroDelay;
-  const enemyPorts = game.players
-    .map((p, i) => (i !== bIdx && p.alive) ? { i, base: game.map.bases[i] } : null)
+  const rushing = !peace && now - (game.rt.startedAt || 0) >= aggroDelay;
+  const enemyPorts = peace ? [] : game.players
+    .map((p, i) => (i !== bIdx && p.alive && game.map.bases[i] && !game.map.bases[i].noPort)
+      ? { i, base: game.map.bases[i] } : null) // дуэль: базы-якоря без порта — не цель
     .filter(Boolean);
   const nearest = (from, list) => list.reduce((a, b) => dist(from.x, from.y, a.x, a.y) < dist(from.x, from.y, b.x, b.y) ? a : b);
 
@@ -332,11 +336,14 @@ export function botThink(game, bIdx, now) {
       const t = nearest(s, targets);
       applyAction(game, bot.id, { type: 'broadside', shipId: s.id, tx: t.x, ty: t.y });
     }
-    // мортира тяжёлых: приоритет — вражеский порт в радиусе, иначе корабль
+    // мортира тяжёлых: приоритет — вражеский порт в радиусе, иначе корабль.
+    // На подходе к осаждаемому порту мортиру БЕРЕЖЁМ: не разряжаем в корабли, чтобы
+    // не встать у стен с пустой мортирой на 14с перезарядки (осада — её работа).
     if (MORTAR_SHIPS.includes(s.type)) {
       const port = enemyPorts.find(p => dist(s.x, s.y, p.base.x, p.base.y) <= st.fireRange + p.base.radius * 0.5);
+      const closingIn = rushing && enemyPorts.some(p => dist(s.x, s.y, p.base.x, p.base.y) <= st.fireRange * 2);
       if (port) applyAction(game, bot.id, { type: 'attack', shipId: s.id, targetType: 'port', targetId: port.i });
-      else if (targets.length) applyAction(game, bot.id, { type: 'attack', shipId: s.id, targetType: 'ship', targetId: nearest(s, targets).id });
+      else if (!closingIn && targets.length) applyAction(game, bot.id, { type: 'attack', shipId: s.id, targetType: 'ship', targetId: nearest(s, targets).id });
     }
     // ремонтник: чинит самого побитого в радиусе (и держится за флотом ниже)
     if (st.repairer) {
@@ -391,22 +398,36 @@ export function botThink(game, bIdx, now) {
   if (game.map.lootIslands?.some(i => !i.looted && mine.some(s => dist(s.x, s.y, i.x, i.y) <= i.radius + LOOT_REACH)))
     applyAction(game, bot.id, { type: 'collect' });
 
-  // ⛺ АВАНПОСТЫ: первая постройка — кораблём у острова; апгрейд — без корабля (гарнизон сам)
+  // ⛺ АВАНПОСТЫ: первая постройка — кораблём у острова; апгрейд — без корабля (гарнизон сам).
+  // Резерв небольшой (апгрейд окупается доходом) — с большим боты копили вечно и не качали ничего.
   (game.map.lootIslands || []).forEach((isl, ii) => {
     if (!isl.looted) return;
     if (isl.outpost && (isl.outpost.owner !== bIdx || isl.outpost.level >= OUTPOST_LEVELS.length)) return;
     const price = OUTPOST_LEVELS[(isl.outpost?.level || 0)].price;
-    if (bot.gold < price + 250) return; // строим только с запасом — флот важнее
+    if (bot.gold < price + 120) return; // строим только с запасом — флот важнее
     if (isl.outpost) { applyAction(game, bot.id, { type: 'outpost', islandId: ii }); return; }
     const builder = mine.find(s => dist(s.x, s.y, isl.x, isl.y) <= isl.radius + OUTPOST_BUILD_REACH);
     if (builder) applyAction(game, bot.id, { type: 'outpost', shipId: builder.id, islandId: ii });
   });
 
-  // ВЕРФЬ: заглядываем нечасто, флот держим в разумных рамках
+  // ВЕРФЬ: заглядываем нечасто, флот держим в разумных рамках. Приоритеты:
+  // 1) баркасы-кормильцы (без рыбалки экономика бота чахнет);
+  // 2) мортирный корабль, если ни одного, — КОПИМ на фрегат, мелочь не берём
+  //    (иначе, потеряв тяжёлых, бот вечно скупал шхуны и физически не мог добить порт);
+  // 3) при крепком флоте и ждущем прокачки аванпосте — тоже копим (мелочь не объедает апгрейд);
+  // 4) иначе обычная лесенка по золоту.
   if (now >= (rt_nextBuy(game, bIdx))) {
     game.rt['nextBuy' + bIdx] = now + RT.BOT_BUY_MS;
     if (mine.length < 8) {
-      const wish = bot.gold >= 500 && mine.length >= 3 ? 'linkor'
+      const fishers = mine.filter(m => SHIP_TYPES[m.type].fishing > 0).length;
+      const wantFishers = Math.min(2, (game.map.fishZones || []).length);
+      const hasMortar = mine.some(m => MORTAR_SHIPS.includes(m.type));
+      const upWaiting = mine.length >= 6 && (game.map.lootIslands || []).some(i =>
+        i.outpost && i.outpost.owner === bIdx && i.outpost.level < OUTPOST_LEVELS.length);
+      let wish = null;
+      if (fishers < wantFishers && bot.gold >= SHIP_TYPES.barkas.price + 60) wish = 'barkas';
+      else if (!hasMortar) wish = bot.gold >= SHIP_TYPES.fregat.price ? 'fregat' : null;
+      else if (!upWaiting) wish = bot.gold >= 500 && mine.length >= 3 ? 'linkor'
         : bot.gold >= 380 ? 'fregat'
         : bot.gold >= 220 ? 'brig'
         : bot.gold >= 110 ? 'shkhuna' : null;

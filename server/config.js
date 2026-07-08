@@ -73,12 +73,13 @@ export const isDuel = (game) => !!modeOf(game).duel;
 export const cheapestShipPrice = (duel = false) =>
   Math.min(...Object.values(SHIP_TYPES).filter(s => !s.cheat && s.price > 0 && (!duel || !s.fishing)).map(s => s.price));
 // ⚡ «Полный вперёд!» (бета): реалтайм без ходов — стрельба по кулдауну, непрерывное движение.
-// Это НЕ игровой режим, а ТУМБЛЕР партии (game.config.realtime) — комбинируется с классикой/дезматчем.
-// «Развитие» и «Дуэль» пока без него: мир по раундам и фаза закупки завязаны на очередь ходов.
+// Это НЕ игровой режим, а ТУМБЛЕР партии (game.config.realtime) — комбинируется с ЛЮБЫМ режимом:
+// в «Развитии» мир считается временем (см. isPeace/PEACE_MS_PER_ROUND), в «Дуэли» фаза закупки
+// идёт как обычно (она и так одновременная), дохода за время в дуэли нет — как и за ход.
 export const isRealtime = (game) => !!game?.config?.realtime;
 export const REALTIME_NAME = '⚡ Полный вперёд!';
-// режимы, несовместимые с реалтаймом (валидация при создании партии)
-export const realtimeAllowed = (modeKey) => !GAME_MODES[modeKey]?.duel && !GAME_MODES[modeKey]?.peaceRounds;
+// реалтайм доступен во всех режимах (хотсит — отдельная история: один экран на всех, ходов нет)
+export const realtimeAllowed = () => true;
 
 // ─── 🌬 ВЕТЕР — во ВСЕХ режимах ───────────────────────────────────────────────
 // Дальность/скорость хода зависит от направления: по ветру дальше/быстрее, против — меньше.
@@ -116,12 +117,20 @@ export const RT = {
   TURN_SLOW: 0.35,          // множитель хода при развороте круче 90° (разворот дугой, не на месте)
   BOT_THINK_MS: 1300,       // мозг бота думает раз в столько мс
   BOT_BUY_MS: 12000,        // бот заглядывает в верфь не чаще
+  PEACE_MS_PER_ROUND: 20000, // «раунд» мира в реалтайме ≈ 20с (Развитие: 10 раундов → ~3.3 мин мира)
 };
 
 // длина мирного периода в РАУНДАХ (0 — мира нет)
 export const modePeaceRounds = (game) => modeOf(game).peaceRounds || 0;
-// идёт ли сейчас мирное время (раунд ≤ peaceRounds)
-export const isPeace = (game) => (game?.turn?.round || 1) <= modePeaceRounds(game);
+// идёт ли сейчас мирное время: пошагово — раунд ≤ peaceRounds; реалтайм — раундов нет,
+// мир меряется ВРЕМЕНЕМ от старта тика (rt.startedAt): peaceRounds × PEACE_MS_PER_ROUND мс.
+export const isPeace = (game) => {
+  const rounds = modePeaceRounds(game);
+  if (!rounds) return false;
+  if (isRealtime(game))
+    return Date.now() - (game.rt?.startedAt || Date.now()) < rounds * RT.PEACE_MS_PER_ROUND;
+  return (game?.turn?.round || 1) <= rounds;
+};
 
 // ─── Рыбалка: доход ──────────────────────────────────────────────────────────
 // Золота за ход баркасу, стоящему в рыбном месте (= SHIP_TYPES.barkas.fishing).

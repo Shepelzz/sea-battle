@@ -1304,7 +1304,13 @@ export function publicState(game, viewerPid) {
     // дуэль: фаза ('buy' закупка | 'battle' бой) + цена самого дешёвого корабля (для правила «скупись на всё»)
     duel: isDuel(game), phase: game.phase || null, minShipPrice: cheapestShipPrice(isDuel(game)),
     modeName: GAME_MODES[game.config?.mode]?.name || GAME_MODES[DEFAULT_MODE]?.name, // человекочитаемое имя режима для клиента
-    peace: { active: isPeace(game), round: game.turn?.round || 1, until: modePeaceRounds(game), keepout: modeOf(game).peaceBaseKeepout || 0 },
+    peace: {
+      active: isPeace(game), round: game.turn?.round || 1, until: modePeaceRounds(game), keepout: modeOf(game).peaceBaseKeepout || 0,
+      // реалтайм: мир меряется временем — клиент показывает обратный отсчёт вместо раундов
+      ...(isRealtime(game) && modePeaceRounds(game)
+        ? { leftMs: Math.max(0, (game.rt?.startedAt || Date.now()) + modePeaceRounds(game) * RT.PEACE_MS_PER_ROUND - Date.now()) }
+        : {})
+    },
     // параметры боя для клиента (сектор залпа, пушки по классам, у кого мортира)
     broadside: { halfArc: BROADSIDE_HALF_ARC, cannons: BROADSIDE_CANNONS, mortarShips: MORTAR_SHIPS, mortarShipMult: MORTAR_SHIP_MULT },
     // 🌬 ветер — во всех режимах: направление/сила + коэффициент влияния (для каплевидного контура хода)

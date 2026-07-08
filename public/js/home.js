@@ -300,8 +300,8 @@ $('#loginOverlay').addEventListener('click', e => { if (e.target.id === 'loginOv
       // селектор количества участников: в дуэли строго 1на1 — прячем (онлайн: игроки, бот: противники)
       const countBox = host.id === 'onlineMode' ? $('#maxPlayersBox')
         : host.id === 'botMode' ? $('#botCountBox') : null;
-      // ⚡ тумблер «Полный вперёд» (реалтайм, бета): несовместим с дуэлью (закупка) и «Развитием» (мир
-      // по раундам) — в этих режимах гасим тумблер и снимаем галку
+      // ⚡ тумблер «Полный вперёд» (реалтайм, бета): доступен во всех режимах
+      // (в «Развитии» мир идёт по времени, в дуэли закупка как обычно)
       const rtToggle = host.id === 'onlineMode' ? $('#onlineRealtime')
         : host.id === 'botMode' ? $('#botRealtime') : null;
       // «Ход тремя судами» несовместим с реалтаймом (там ходов нет вовсе):
@@ -325,12 +325,6 @@ $('#loginOverlay').addEventListener('click', e => { if (e.target.id === 'loginOv
       const apply = key => {
         if (desc) desc.textContent = (ms.find(m => m.key === key) || {}).desc || '';
         if (countBox) countBox.classList.toggle('hidden', key === 'duel');
-        if (rtToggle) {
-          const noRt = key === 'duel' || key === 'develop';
-          rtToggle.closest('.fog-toggle')?.classList.toggle('disabled', noRt);
-          if (noRt) rtToggle.checked = false;
-          syncMulti(); // реалтайм мог сняться сменой режима → вернуть «ход тремя судами»
-        }
       };
       const draw = () => renderModeDropdown(host, ms, host.dataset.mode, key => {
         host.dataset.mode = key; apply(key); draw();   // выбран режим — обновить кнопку, описание, селектор кол-ва

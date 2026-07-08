@@ -302,9 +302,9 @@ app.post('/api/games', (req, res) => {
     const botCount = duel ? 1 : Math.min(3, Math.max(1, +req.body.bots || 1)); // дуэль — ровно 1 бот (1на1)
     const nm = cleanNick(nick);
     if (!nm) return res.status(400).json({ error: 'Нужен ник' });
-    // ⚡ «Полный вперёд» (реалтайм, бета) — тумблер; несовместим с дуэлью (фаза закупки) и «Развитием» (мир по раундам)
+    // ⚡ «Полный вперёд» (реалтайм, бета) — тумблер, доступен в любом режиме
     if (req.body.realtime && !realtimeAllowed(gmode))
-      return res.status(400).json({ error: '⚡ Реалтайм пока не дружит с этим режимом — выбери Классический или Дезматч' });
+      return res.status(400).json({ error: '⚡ Реалтайм недоступен в этом режиме' });
     const game = createGame(id, { maxPlayers: 1 + botCount, turnTimer: 0 });
     game.config.botGame = true;
     game.config.realtime = !!req.body.realtime;           // ⚡ реалтайм-партия (бета)
@@ -338,10 +338,9 @@ app.post('/api/games', (req, res) => {
   const nm = cleanNick(nick);
   if (!nm) return res.status(400).json({ error: 'Нужны ник и токен' });
   const gmode = pickMode(req.body.gameMode);
-  // ⚡ «Полный вперёд» (реалтайм, бета): онлайн МОЖНО, но вне рейтинга (isRanked это учитывает);
-  // несовместим с дуэлью/«Развитием» — их механика завязана на очередь ходов
+  // ⚡ «Полный вперёд» (реалтайм, бета): онлайн МОЖНО в любом режиме, но вне рейтинга (isRanked учитывает)
   if (req.body.realtime && !realtimeAllowed(gmode))
-    return res.status(400).json({ error: '⚡ Реалтайм пока не дружит с этим режимом — выбери Классический или Дезматч' });
+    return res.status(400).json({ error: '⚡ Реалтайм недоступен в этом режиме' });
   const maxP = GAME_MODES[gmode]?.duel ? 2 : +maxPlayers; // дуэль — строго 1 на 1
   const game = createGame(id, { maxPlayers: maxP, turnTimer: +turnTimer });
   game.config.listed = true; // онлайн-игра попадает в браузер лобби (и засчитывается в лидерборд)

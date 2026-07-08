@@ -720,9 +720,14 @@ function updatePeaceBanner(prev, s) {
   const show = s?.status === 'active' && pc && pc.active && pc.until > 0;
   el.classList.toggle('hidden', !show);
   if (show) {
-    const left = Math.max(1, pc.until - pc.round + 1);
-    const word = left === 1 ? 'раунд' : left < 5 ? 'раунда' : 'раундов';
-    el.textContent = `🕊 Мирное время — до войны ${left} ${word}`;
+    if (pc.leftMs != null) { // ⚡ реалтайм: мир по времени — обратный отсчёт (обновляется тиками стейта)
+      const sec = Math.ceil(pc.leftMs / 1000);
+      el.textContent = `🕊 Мирное время — до войны ${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+    } else {
+      const left = Math.max(1, pc.until - pc.round + 1);
+      const word = left === 1 ? 'раунд' : left < 5 ? 'раунда' : 'раундов';
+      el.textContent = `🕊 Мирное время — до войны ${left} ${word}`;
+    }
   } else if (prev?.peace?.active && pc && !pc.active) {
     hudToast('⚔️ Мирное время кончилось — война!', 4000); // разовый сигнал на старте войны
   }

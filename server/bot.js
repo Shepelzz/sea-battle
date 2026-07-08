@@ -181,7 +181,7 @@ export function chooseBotAction(game, pIdx, level = 'mid') {
     if (!isl.looted) return;
     if (isl.outpost && (isl.outpost.owner !== pIdx || isl.outpost.level >= OUTPOST_LEVELS.length)) return;
     const price = OUTPOST_LEVELS[(isl.outpost?.level || 0)].price;
-    if (me.gold < price + 250) return; // строим только с запасом на корабли
+    if (me.gold < price + 120) return; // строим только с запасом на корабли (апгрейд окупается доходом)
     if (isl.outpost) { // апгрейд своего — гарнизон строит сам, корабль не нужен
       cands.push({ score: 14 * (underSiege ? 0.4 : 1), action: { type: 'outpost', islandId: ii } });
       return;
