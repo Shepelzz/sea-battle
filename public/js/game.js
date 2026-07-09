@@ -180,8 +180,13 @@ socket.on('state', s => {
 });
 
 // иконка и заголовок вкладки сигналят, чей ход (видно из соседней вкладки)
+let tabKey = '';
 function updateTab() {
   if (!state) return;
+  // favicon-канвас перерисовывать только на смену статуса/хода, а не на каждый broadcast (в RT — 4 раза/с)
+  const key = state.status + '|' + (state.turn?.idx ?? '') + '|' + (state.rt ? 'rt' : '');
+  if (key === tabKey) return;
+  tabKey = key;
   if (state.status === 'lobby') {
     setFavicon('lobby'); document.title = '⏳ Лобби — Морской бой';
   } else if (state.status === 'finished') {
@@ -228,6 +233,9 @@ function bezAng(e, t) {
 }
 
 function animTick(now) {
+  // 120Гц-дисплеи (ProMotion/новые телефоны): rAF стучит чаще, чем нужно — держим ~60 кадров/с.
+  // Полкадра CPU/GC в подарок, а глазу разницы нет: движение и так сглаживание 4Гц-снапшотов.
+  if (now - lastFrameT < 15) { requestAnimationFrame(animTick); return; }
   const dt = Math.min(0.05, (now - lastFrameT) / 1000); lastFrameT = now;
   // ⚡ реалтайм: корабли скользят к серверным позициям и ПЛАВНО доворачивают нос
   // (стейт ~4 Гц → экспоненциальное сглаживание координат и угла)
@@ -1031,7 +1039,12 @@ function fogResetMem() {
   for (const k in fogLastSeen) delete fogLastSeen[k];
   fogFade = [];
 }
+let visMemo = null, visMemoT = 0;
 function visionCircles() {
+  // мемо на кадр: зовётся из рендера, штурвала, огня баз — по 3-4 раза за кадр 60 раз/с;
+  // без кэша это лишние массивы каждый вызов (GC-дрожь). 8мс — внутри одного кадра.
+  const nowT = performance.now();
+  if (visMemo && nowT - visMemoT < 8) return visMemo;
   const me = myIdx(), circles = [], m = state.map;
   const base = m.bases[me];
   if (base) circles.push({ x: base.x, y: base.y, r: base.radius + FOG_BASE_EXTRA });
@@ -1051,13 +1064,21 @@ function visionCircles() {
   for (const isl of state.map.lootIslands || []) {
     if (isl.outpost?.owner === me) circles.push({ x: isl.x, y: isl.y, r: state.outposts?.radius || 240 });
   }
+  visMemo = circles; visMemoT = nowT;
   return circles;
 }
 const fogVisible = (x, y, circles) => circles.some(c => Math.hypot(x - c.x, y - c.y) <= c.r);
 const fogExploredAt = (x, y) => fogCells.has(((x / FOG_CELL) | 0) + ',' + ((y / FOG_CELL) | 0));
 
+let fogUpdT = 0;
 function fogUpdate(circles) {
   if (fogGameId !== state.id) { fogGameId = state.id; fogResetMem(); } // новая игра — забыть разведанное
+  // память разведки — не чаще ~7 раз/с: клеточный проход по кругам обзора со строковыми ключами
+  // на каждом кадре давал тысячи временных строк в секунду (GC-дрожь), а корабли за 150мс
+  // проходят пару пикселей — разведка не отстаёт.
+  const nowT = performance.now();
+  if (nowT - fogUpdT < 150) return;
+  fogUpdT = nowT;
   for (const c of circles) {                     // отметить клетки разведанными (острова/зоны остаются видны)
     for (let gx = c.x - c.r; gx <= c.x + c.r; gx += FOG_CELL)
       for (let gy = c.y - c.r; gy <= c.y + c.r; gy += FOG_CELL)
@@ -1109,8 +1130,11 @@ const rndf = (a, b) => a + Math.random() * (b - a);
 function fireTier(frac) { if (frac >= 0.8) return 0; if (frac >= 0.7) return 1; if (frac >= 0.6) return 2; return 3; }
 
 // Базы, которые сейчас должны гореть: живые, видимые (под туманом — своя или в зоне видимости), HP < 80%.
+let burnMemo = null, burnMemoT = 0;
 function burningBases() {
   if (!state?.map || state.status !== 'active') return [];
+  const nowT = performance.now();               // мемо на кадр: anyBurning/updateBaseFires/drawBaseFires зовут по 3 раза
+  if (burnMemo && nowT - burnMemoT < 8) return burnMemo;
   const fog = fogActive(), vis = fog ? visionCircles() : null, res = [];
   state.map.bases.forEach((b, i) => {
     const p = state.players[i]; if (!p || !p.alive) return;
@@ -1119,6 +1143,7 @@ function burningBases() {
     const tier = fireTier(frac); if (!tier) return;
     res.push({ i, b, tier, sev: Math.max(0, Math.min(1, (0.6 - frac) / 0.6)) });
   });
+  burnMemo = res; burnMemoT = nowT;
   return res;
 }
 function anyBurning() {
@@ -1247,9 +1272,9 @@ function render(canvasOnly) {
 
   // туман войны: круги видимости (база + мои корабли) и обновление разведанного
   const fog = fogActive();
-  const vis = fog ? visionCircles() : [];
+  let vis = fog ? visionCircles() : [];
   if (fog) fogUpdate(vis);                     // разведанное копится ТОЛЬКО от настоящего обзора
-  if (fog && tutReveal) vis.push(tutReveal);   // туториал: локально открыть зону у цели (как будто там стоит корабль), карту не разведывая
+  if (fog && tutReveal) vis = [...vis, tutReveal]; // туториал: локально открыть зону у цели — КОПИЕЙ (visionCircles мемоизирован, кэш не трогаем)
 
   // лист: фон и клетка до краёв экрана — сетка продолжается за границами карты
   ctx.fillStyle = '#fdfbf3';
@@ -1260,12 +1285,10 @@ function render(canvasOnly) {
   const gridX1 = Math.ceil(toMap(cw, ch).x / 40) * 40;
   const gridY0 = Math.floor(toMap(0, 0).y / 40) * 40;
   const gridY1 = Math.ceil(toMap(cw, ch).y / 40) * 40;
-  for (let x = gridX0; x <= gridX1; x += 40) {
-    ctx.beginPath(); ctx.moveTo(sx(x), 0); ctx.lineTo(sx(x), ch); ctx.stroke();
-  }
-  for (let y = gridY0; y <= gridY1; y += 40) {
-    ctx.beginPath(); ctx.moveTo(0, sy(y)); ctx.lineTo(cw, sy(y)); ctx.stroke();
-  }
+  ctx.beginPath(); // вся клетка ОДНИМ путём и одним stroke — не десятки отдельных
+  for (let x = gridX0; x <= gridX1; x += 40) { ctx.moveTo(sx(x), 0); ctx.lineTo(sx(x), ch); }
+  for (let y = gridY0; y <= gridY1; y += 40) { ctx.moveTo(0, sy(y)); ctx.lineTo(cw, sy(y)); }
+  ctx.stroke();
   // (граница игрового поля убрана — сетка просто продолжается за краями карты)
 
   // рыбные места
@@ -2057,7 +2080,7 @@ canvas.addEventListener('pointermove', e => {
       aim.armed = true; selectedShipId = aim.sel.id; mode = 'move'; moveDemo = null;
     }
     updateAim(p);
-    render();
+    if (!rafOn) render(); // в RT аним-цикл перерисует сам — не дублируем кадры на каждый move-эвент
     return;
   }
 
@@ -2078,7 +2101,7 @@ canvas.addEventListener('pointermove', e => {
       clampCam();
       drag.x = p.x;
       drag.y = p.y;
-      render();
+      if (!rafOn) render(); // в RT кадр и так на подходе (аним-цикл) — пан не дублирует рендер
       return;
     }
   }
@@ -2091,7 +2114,9 @@ canvas.addEventListener('pointermove', e => {
       s.owner === myIdx() && shipActed(s.id) && dist(p.x, p.y, sx(s.x), sy(s.y)) <= 28);
     if (overActed) showShipNote(sx(overActed.x), sy(overActed.y) - 16, '⚓ Уже ходил');
     else hideShipNote();
-    if (mode === 'move' || mode === 'broadside') render(); // обновляем «линейку» хода / прицел залпа за курсором
+    // «линейка» хода / прицел залпа за курсором: в RT аним-цикл и так перерисует ближайшим
+    // кадром — прямой render на каждый mousemove (до 120 Гц) там лишний, кадры удваивались
+    if ((mode === 'move' || mode === 'broadside') && !rafOn) render();
   }
 });
 
@@ -2409,39 +2434,19 @@ function wheelActions(sel) {
   const noCharges = st.repairer && (sel.repairCharges ?? repairChargesMax()) <= 0;
   const acts = [];
   // «плыть» — БЕЗ иконки: движение единым жестом на всех платформах (потяни от корабля — шлейф курса)
-  // Боевые иконки — ТОЛЬКО когда в зоне поражения есть цель (радиусы и так видны при выборе, а
-  // иконка борта, вспыхнувшая сама, читается как «враг на траверзе!»). Кулдаун при живой цели —
-  // рисуем как есть с дугой. Под туманом считаем только ВИДИМЫХ врагов (не палим спрятанных).
-  const peace = !!state.peace?.active;
-  const vis = fogActive() ? visionCircles() : null;
-  const foes = state.ships.filter(f => f.owner !== myIdx() &&
-    (f.owner === -1 || state.players[f.owner]?.alive) &&
-    (!peace || f.owner === -1) &&                       // 🕊 мир: стрелять можно только по пиратам
-    (!vis || fogVisible(f.x, f.y, vis)));
+  // Боевые иконки видны ВСЕГДА (сканов целей нет — они дёргали кадры и прятали кнопки в бою):
+  // залп — ОДНА иконка, борт выбирается наведением уже в режиме прицела.
   if (canBroadside(sel)) {
-    const dirs = broadsideDirs(sel), ha = broadsideHalfArc();
-    for (const side of ['port', 'starboard']) {
-      // цель в секторе ИМЕННО этого борта?
-      const hasTarget = foes.some(f => dist(sel.x, sel.y, f.x, f.y) <= st.fireRange &&
-        Math.abs(angNorm(Math.atan2(f.y - sel.y, f.x - sel.x) - dirs[side])) <= ha);
-      if (!hasTarget) continue;
-      const cd = rt ? cdLeft(sel, side === 'port' ? 'p' : 's') : 0;
-      const used = !rt && fired.includes(side);
-      acts.push({
-        key: 'bs_' + side, icon: '💥', label: side === 'port' ? 'левый борт' : 'правый борт',
-        anchor: side, cdMs: cd, cdMax: state.rt?.cds?.broadside || 1,
-        off: used || cd > 0, offMsg: used ? '💥 Этот борт уже стрелял в этом ходу' : null,
-        go: () => { mode = 'broadside'; render(); }
-      });
-    }
+    const cd = rt ? Math.min(cdLeft(sel, 'p'), cdLeft(sel, 's')) : 0; // готов хотя бы один борт
+    const bothUsed = !rt && fired.length >= 2;
+    acts.push({
+      key: 'broadside', icon: '💥', label: 'залп',
+      cdMs: cd, cdMax: state.rt?.cds?.broadside || 1,
+      off: bothUsed || cd > 0, offMsg: bothUsed ? '💥 Оба борта уже стреляли в этом ходу' : null,
+      go: () => { mode = 'broadside'; render(); }
+    });
   }
-  // мортира: корабль-цель в дальности, или (не в мир) вражеский порт/аванпост под обстрелом
-  const mortarTarget = foes.some(f => dist(sel.x, sel.y, f.x, f.y) <= st.fireRange) ||
-    (!peace && state.map.bases.some((b, i) => i !== myIdx() && state.players[i]?.alive &&
-      dist(sel.x, sel.y, b.x, b.y) <= st.fireRange + b.radius * 0.5)) ||
-    (!peace && (state.map.lootIslands || []).some(i => i.outpost && i.outpost.owner !== myIdx() &&
-      dist(sel.x, sel.y, i.x, i.y) <= st.fireRange + i.radius * 0.5));
-  if (canMortar(sel) && mortarTarget) acts.push({
+  if (canMortar(sel)) acts.push({
     key: 'mortar', icon: '🎯', label: 'мортира',
     cdMs: rt ? cdLeft(sel, 'm') : 0, cdMax: state.rt?.cds?.mortar || 1, off: committed || (rt && cdLeft(sel, 'm') > 0),
     offMsg: committed ? '💥 Корабль даёт залп — мортира в этом ходу закрыта' : null,
@@ -2470,13 +2475,13 @@ function wheelActions(sel) {
   return acts;
 }
 
-// Раскладка: борта — строго на бортах (heading ± 90°), прочие — по слотам вокруг, ВСЕГДА в кадре
-// (у края экрана зазор между иконками ослабляется ступенями, но иконка в кадре обязана быть).
+// Раскладка: иконки ВЕЕРОМ В ВЕРХНЕЙ ЧАСТИ кольца, НЕ зависят от курса корабля — кнопки не
+// «уплывают» при развороте, в них легко попадать в бою. Всегда в кадре: у края экрана слот
+// смещается по кольцу (зазор между иконками ослабляется ступенями, но иконка в кадре обязана быть).
 function wheelLayout(sel) {
   const pos = animPos.get(sel.id) || (state.rt && rtPos.get(sel.id)) || sel;
   const cx = sx(pos.x), cy = sy(pos.y);
   const R = wheelR(), Ic = wheelIconR();
-  const h = currentHeading(sel);
   const acts = wheelActions(sel);
   const placed = [];
   const bw = canvas.clientWidth, bh = canvas.clientHeight;
@@ -2492,16 +2497,10 @@ function wheelLayout(sel) {
     }
     return a0;
   };
-  for (const a of acts) {                          // борта первыми — их место святое
-    if (a.anchor === 'port') placed.push({ act: a, ang: clampAng(angNorm(h - Math.PI / 2)) });
-    else if (a.anchor === 'starboard') placed.push({ act: a, ang: clampAng(angNorm(h + Math.PI / 2)) });
-  }
-  const slots = [-Math.PI / 2, Math.PI, 0, Math.PI / 2, -Math.PI / 4, Math.PI * 0.75];
+  // верхняя дуга: центр, потом симметрично в стороны (экранные углы: -90° = вверх)
+  const slots = [-Math.PI / 2, -Math.PI / 2 - 0.72, -Math.PI / 2 + 0.72, -Math.PI / 2 - 1.44, -Math.PI / 2 + 1.44, Math.PI / 2];
   let si = 0;
-  for (const a of acts) {
-    if (a.anchor) continue;
-    placed.push({ act: a, ang: clampAng(slots[si++ % slots.length]) });
-  }
+  for (const a of acts) placed.push({ act: a, ang: clampAng(slots[si++ % slots.length]) });
   return { cx, cy, R, Ic, icons: placed.map(p => ({ ...p, x: cx + Math.cos(p.ang) * R, y: cy + Math.sin(p.ang) * R })) };
 }
 
@@ -2513,7 +2512,7 @@ function wheelHit(sel, px, py) {
 }
 
 // какому режиму соответствует иконка — для подсветки активного
-const WHEEL_MODE = { move: 'move', bs_port: 'broadside', bs_starboard: 'broadside', mortar: 'attack', repair: 'repair' };
+const WHEEL_MODE = { move: 'move', broadside: 'broadside', mortar: 'attack', repair: 'repair' };
 
 function drawCommandWheel() {
   if (!WHEEL_UI || !selectedShipId || !state) return;
@@ -2530,13 +2529,6 @@ function drawCommandWheel() {
   for (const w of L.icons) {
     const wx = L.cx + Math.cos(w.ang) * R, wy = L.cy + Math.sin(w.ang) * R;
     const hot = WHEEL_MODE[w.act.key] === mode && mode !== 'idle';
-    if (w.act.anchor) {                            // спица к борту: «этот борт стреляет туда»
-      ctx.strokeStyle = 'rgba(43,58,85,.3)'; ctx.lineWidth = 1.1;
-      ctx.beginPath();
-      ctx.moveTo(L.cx + Math.cos(w.ang) * 18, L.cy + Math.sin(w.ang) * 18);
-      ctx.lineTo(wx - Math.cos(w.ang) * L.Ic, wy - Math.sin(w.ang) * L.Ic);
-      ctx.stroke();
-    }
     ctx.beginPath(); ctx.arc(wx, wy, L.Ic, 0, Math.PI * 2);
     ctx.fillStyle = hot ? '#fff3c6' : w.act.off ? 'rgba(235,232,222,.92)' : 'rgba(253,251,243,.95)';
     ctx.fill();
