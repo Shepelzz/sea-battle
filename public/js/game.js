@@ -1512,9 +1512,10 @@ function render(canvasOnly) {
   }
 
   // обучающая демо-анимация жеста (тач, до первого хода) — поверх сцены, когда не целимся
-  if (moveDemo && sel && mode === 'move' && !aim) drawMoveDemo(sel);
+  if (moveDemo && sel && mode === 'idle' && !aim) drawMoveDemo(sel); // демо жеста — в покое у штурвала
 
   drawEffects();
+  drawCommandWheel(); // 🎛 штурвал выбранного корабля — поверх всего
   if (state.wind && state.status === 'active') drawWindCompass(); // 🌬 компас ветра — во всех режимах
   updateMoveHint();
 }
@@ -1569,12 +1570,11 @@ function drawWindCompass() {
 function updateMoveHint() {
   const el = $('#moveHint');
   if (!el) return;
-  const showMove = IS_COARSE && mode === 'move' && selectedShipId;
+  // единый жест: ход = потяг от корабля (подсказываем в покое), залп = тап в сторону цели
+  const showMove = IS_COARSE && mode === 'idle' && selectedShipId && !hasMovedOnce();
   const showBroad = IS_COARSE && mode === 'broadside' && selectedShipId;
-  if (showBroad) el.textContent = 'проведи от корабля в сторону борта';
-  else if (showMove) el.textContent = state?.rt
-    ? 'тапни, куда плыть — или потяни от корабля' // ⚡ реалтайм: тап-в-точку работает
-    : 'потяни корабль, чтобы выбрать курс';
+  if (showBroad) el.textContent = 'тапни в сторону цели — залп с этого борта';
+  else if (showMove) el.textContent = 'потяни от корабля, чтобы плыть';
   el.classList.toggle('hidden', !(showMove || showBroad));
 }
 
@@ -1987,37 +1987,28 @@ const evPos = e => {
 };
 
 canvas.addEventListener('pointerdown', e => {
+  // тач: без preventDefault браузер параллельно шлёт «мышиные» события-двойники и запускает
+  // выделение/long-press — в эмуляции мобилы (DevTools) жесты от этого дёргаются и «не нажимаются»
+  e.preventDefault();
+  // новый ПЕРВИЧНЫЙ палец при «забытых» указателях: pointercancel в эмуляции доходит не всегда,
+  // фантом в pointers превращает каждый одиночный жест в «пинч» (карта перестаёт двигаться) — чистим.
+  // Вместе с фантомом гасим и его прицел: иначе новый жест «дотянет» чужой aim и корабль уплывёт
+  if (e.isPrimary && pointers.size) { pointers.clear(); drag = null; pinchDist = 0; aim = null; hoverPt = null; }
   try { canvas.setPointerCapture(e.pointerId); } catch { /* синтетические события */ }
   hideShipNote(); // тап/драг убирает записку (на тапе по «якорному» кораблю покажется заново)
   pointers.set(e.pointerId, evPos(e));
   if (pointers.size === 1) {
     const p = evPos(e);
-    // 💥 ЗАЛП на тач: палец на выбранном корабле → тянем прицел борта (сектор/кольца следуют за пальцем);
-    // отпустил — залп в ту сторону. Аналог drag-aim хода, но без дистанции (важна только сторона).
-    if (e.pointerType === 'touch' && state && isMyTurn() && mode === 'broadside') {
-      const bsel = selectedShipId && state.ships.find(s => s.id === selectedShipId);
-      if (bsel && canBroadside(bsel) && firedSides(bsel.id).length < 2 &&
-          dist(p.x, p.y, sx(bsel.x), sy(bsel.y)) <= AIM_GRAB_PX) {
-        aim = { sel: bsel, broadside: true, armed: false, startX: p.x, startY: p.y };
-        return;
-      }
-    }
-    // ТАЧ-ПРИЦЕЛ: палец лёг на свой корабль → тянем луч с крестиком, а не панораму.
-    // В режиме «Плыть» по выбранному кораблю целимся сразу; иначе по любому своему кораблю
-    // «взводим» — тап просто выберет, а перетаскивание авто-активирует «Плыть». Мышь — как раньше.
-    if (e.pointerType === 'touch' && state && isMyTurn() && (mode === 'move' || mode === 'idle')) {
+    // 🎛 ЕДИНЫЙ ЖЕСТ ДВИЖЕНИЯ (мышь И тач, из ЛЮБОГО режима): указатель лёг на свой корабль →
+    // тянем шлейф курса с крестиком, а не панораму. Тап без тяги = выбор (штурвал). Тяга из режима
+    // стрельбы ОТМЕНЯЕТ её и переключает на ход. Мышке хват поуже — она точнее пальца.
+    if (state && isMyTurn()) {
+      const grabR = e.pointerType === 'touch' ? AIM_GRAB_PX : 30;
       const sel = selectedShipId && state.ships.find(s => s.id === selectedShipId);
       // корабль, уже сходивший в этом ходу, не «хватаем» прицелом (drag → панорама)
-      const onSel = sel && !shipActed(sel.id) && dist(p.x, p.y, sx(sel.x), sy(sel.y)) <= AIM_GRAB_PX;
-      if (mode === 'move' && onSel) {
-        aim = { sel, armed: true, startX: p.x, startY: p.y };
-        moveDemo = null;
-        updateAim(p);
-        render();
-        return;
-      }
+      const onSel = sel && !shipActed(sel.id) && dist(p.x, p.y, sx(sel.x), sy(sel.y)) <= grabR;
       const own = onSel ? sel
-        : state.ships.find(s => s.owner === myIdx() && !shipActed(s.id) && dist(p.x, p.y, sx(s.x), sy(s.y)) <= AIM_GRAB_PX);
+        : state.ships.find(s => s.owner === myIdx() && !shipActed(s.id) && dist(p.x, p.y, sx(s.x), sy(s.y)) <= grabR);
       if (own) { aim = { sel: own, armed: false, startX: p.x, startY: p.y }; return; }
     }
     // палец «ездит» сильнее мыши — порог тапа больше
@@ -2058,20 +2049,11 @@ canvas.addEventListener('pointermove', e => {
 
   if (pointers.has(e.pointerId)) pointers.set(e.pointerId, p);
 
-  if (aim && pointers.size === 1) { // тянем тач-прицел
-    if (aim.broadside) {            // 💥 наведение борта: hoverPt едет за пальцем, сектор/кольца следуют
-      if (!aim.armed) {
-        if (Math.hypot(p.x - aim.startX, p.y - aim.startY) <= 12) return; // ещё не потянул
-        aim.armed = true;
-      }
-      hoverPt = toMap(p.x, p.y);
-      aim.cancel = dist(hoverPt.x, hoverPt.y, aim.sel.x, aim.sel.y) < AIM_CANCEL_DIST; // палец вернулся на корабль → отмена
-      render();
-      return;
-    }
+  if (aim && pointers.size === 1) { // тянем шлейф курса (единый жест движения)
     if (!aim.armed) {
       if (Math.hypot(p.x - aim.startX, p.y - aim.startY) <= 12) return; // ещё не потянул
-      aim.armed = true; selectedShipId = aim.sel.id; mode = 'move'; moveDemo = null; // авто-«Плыть»
+      // взводим ход: тяга из режима стрельбы ОТМЕНЯЕТ её (mode='move' включает отрисовку шлейфа)
+      aim.armed = true; selectedShipId = aim.sel.id; mode = 'move'; moveDemo = null;
     }
     updateAim(p);
     render();
@@ -2116,17 +2098,12 @@ function endPointer(e) {
   // завершение тач-прицела: отпустил палец — корабль плывёт к крестику
   if (aim && e.type === 'pointerup') {
     const a = aim;
-    const finger = hoverPt;        // последняя точка наведения пальцем (для залпа)
     aim = null; hoverPt = null;
     pointers.delete(e.pointerId);
     if (pointers.size === 0) { drag = null; pinchDist = 0; }
-    if (!a.armed) { handleTap({ x: a.startX, y: a.startY }, true); return; } // не потянул → выбор/подсказка
-    if (a.cancel) { render(); return; } // вернул палец на корабль — передумал, ни хода, ни залпа
-    if (a.broadside) {             // 💥 залп бортом в ту сторону, куда тянули
-      if (finger) sendAction({ type: 'broadside', shipId: a.sel.id, tx: Math.round(finger.x), ty: Math.round(finger.y) });
-      else render();
-      return;
-    }
+    if (!a.armed) { handleTap({ x: a.startX, y: a.startY }, e.pointerType === 'touch'); return; } // не потянул → выбор/подсказка
+    mode = 'idle'; // жест завершён — из «хода» возвращаемся в покой (штурвал/прицел не залипают)
+    if (a.cancel) { deselect(); render(); return; } // вернул указатель на корабль — передумал: отмена и штурвал закрыт
     if (a.clamped) { errToast('🚫 Слишком далеко — точка вне круга хода'); return; } // вне радиуса — без хода
     if (a.dest && dist(a.sel.x, a.sel.y, a.dest.x, a.dest.y) > 4) {
       sendAction({ type: 'move', shipId: a.sel.id, x: Math.round(a.dest.x), y: Math.round(a.dest.y) });
@@ -2152,6 +2129,14 @@ function endPointer(e) {
 }
 canvas.addEventListener('pointerup', endPointer);
 canvas.addEventListener('pointercancel', endPointer);
+// ПКМ на десктопе = «отмена»: сбрасывает прицел/шлейф и закрывает штурвал.
+// Заодно глушим контекст-меню (long-press на сенсоре рвал жест).
+canvas.addEventListener('contextmenu', e => {
+  e.preventDefault();
+  if (aim) { aim = null; hoverPt = null; }
+  deselect();
+  render();
+});
 
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
@@ -2162,38 +2147,45 @@ canvas.addEventListener('wheel', e => {
 function handleTap(pos, isTouch) {
   if (!state || !state.map || state.status !== 'active') return;
   const pt = toMap(pos.x, pos.y);
-  const tapR = isTouch ? 34 : 26;
+  // радиус попадания — с гарантией в ЭКРАННЫХ px: на отзумленной карте (мобила, cover-fit)
+  // чисто мировой радиус скукоживался до ~15px — пальцем в корабль было не попасть
+  const tapR = Math.max(isTouch ? 34 : 26, (isTouch ? 30 : 16) / view.scale);
+
+  // 🎛 штурвал: тап по иконке кольца (кольцо видно только в покое — скрытые иконки тапы не ловят)
+  if (WHEEL_UI && selectedShipId && isMyTurn() && mode === 'idle') {
+    const wsel = state.ships.find(s => s.id === selectedShipId);
+    if (wsel && wsel.owner === myIdx()) {
+      const hit = wheelHit(wsel, pos.x, pos.y);
+      if (hit) {
+        if (hit.off) errToast(hit.offMsg || (hit.cdMs > 0 ? `⏳ Перезарядка: ${Math.ceil(hit.cdMs / 1000)}с` : '⚓ Сейчас недоступно'));
+        else { Sound.play('click'); hit.go(); }
+        return;
+      }
+    }
+  }
 
   const clickedShip = state.ships.find(s => dist(pt.x, pt.y, s.x, s.y) < tapR);
 
-  if (mode === 'move' && selectedShipId) {
-    // Пошагово на тач курс прокладывается только перетаскиванием от корабля (тык-в-точку убран —
-    // он путал из-за круга дальности). ⚡ В РЕАЛТАЙМЕ дальность не ограничена и промах не страшен
-    // (перетапнул — курс переложен), поэтому тап-в-точку РАБОТАЕТ: «кликай куда угодно» честно и на тач.
-    if (isTouch && !state.rt) { startMoveDemo(); return; } // напомним жест демкой (если ещё не научился)
-    sendAction({ type: 'move', shipId: selectedShipId, x: pt.x, y: pt.y });
-    return;
-  }
-
-  if (mode === 'broadside' && selectedShipId) {
-    // залп в сторону точки прицела (сервер сам определит борт и сектор)
-    const bsel = state.ships.find(s => s.id === selectedShipId);
-    if (bsel && dist(pt.x, pt.y, bsel.x, bsel.y) < 24) { // тык в сам корабль — сторона не ясна
-      if (isTouch) errToast('Проведи от корабля в сторону борта'); else errToast('Укажи сторону — кликни в стороне от корабля');
-      return;
-    }
+  if (mode === 'broadside' && selectedShipId && !(clickedShip && clickedShip.owner === myIdx())) {
+    // залп в сторону точки прицела (сервер сам определит борт и сектор); тап по СВОЕМУ кораблю
+    // проваливается ниже — перевыбор (штурвал важнее недонаведённого залпа)
     sendAction({ type: 'broadside', shipId: selectedShipId, tx: pt.x, ty: pt.y });
+    mode = 'idle'; // залп ушёл — штурвал возвращается (кулдаун виден на иконке борта)
+    render();
     return;
   }
 
-  if (mode === 'attack' && selectedShipId) {
+  if (mode === 'attack' && selectedShipId && !(clickedShip && clickedShip.owner === myIdx())) {
+    const asel = state.ships.find(s => s.id === selectedShipId);
     if (clickedShip && clickedShip.owner !== myIdx()) {
       sendAction({ type: 'attack', shipId: selectedShipId, targetType: 'ship', targetId: clickedShip.id });
+      mode = 'idle'; render();
       return;
     }
     const baseIdx = state.map.bases.findIndex(b => dist(pt.x, pt.y, b.x, b.y) < b.radius + 12);
     if (baseIdx >= 0 && baseIdx !== myIdx() && state.players[baseIdx]?.alive) {
       sendAction({ type: 'attack', shipId: selectedShipId, targetType: 'port', targetId: baseIdx });
+      mode = 'idle'; render();
       return;
     }
     // ⛺ чужой аванпост на острове — цель мортиры (только она и разрушает постройки)
@@ -2201,22 +2193,24 @@ function handleTap(pos, isTouch) {
       i.outpost && i.outpost.owner !== myIdx() && dist(pt.x, pt.y, i.x, i.y) < i.radius + 12);
     if (opIdx >= 0) {
       sendAction({ type: 'attack', shipId: selectedShipId, targetType: 'outpost', targetId: opIdx });
+      mode = 'idle'; render();
       return;
     }
-    errToast('Выбери цель: вражеский корабль, порт или аванпост');
+    // тап мимо целей (или вне радиуса) — передумал: тихо закрываем прицел и штурвал
+    deselect();
     return;
   }
 
   if (mode === 'repair' && selectedShipId) {
     if (clickedShip && clickedShip.owner === myIdx() && clickedShip.id !== selectedShipId) {
       sendAction({ type: 'repair', shipId: selectedShipId, targetId: clickedShip.id });
+      mode = 'idle'; render();
       return;
     }
-    errToast('Выбери свой подбитый корабль в радиусе ремонта');
-    return;
+    if (!clickedShip) { deselect(); return; } // мимо своих — передумал (тап по своему провалится в выбор)
   }
 
-  // выбор своего корабля
+  // выбор своего корабля — из ЛЮБОГО режима (тап по кораблю всегда открывает штурвал)
   if (clickedShip && clickedShip.owner === myIdx() && isMyTurn()) {
     if (shipActed(clickedShip.id)) { // уже ходил — показываем записку (на тач сама исчезнет)
       showShipNote(sx(clickedShip.x), sy(clickedShip.y) - 16, '⚓ Уже ходил');
@@ -2227,9 +2221,13 @@ function handleTap(pos, isTouch) {
     selectedShipId = clickedShip.id;
     mode = 'idle';
     Sound.play('click');
-    $('#shipActions').classList.remove('hidden');
-    positionActionBar(clickedShip); // панель — на противоположной кораблю половине экрана
-    $('#shipActionsTitle').textContent = ST(clickedShip.type).icon + ' ' + ST(clickedShip.type).name;
+    wheelBornAt = performance.now(); // 🎛 штурвал раскрывается вокруг корабля
+    startMoveDemo(); // сенсор, до первого хода: демка «потяни от корабля» (внутри сама решит, надо ли)
+    if (!WHEEL_UI) {
+      $('#shipActions').classList.remove('hidden');
+      positionActionBar(clickedShip); // панель — на противоположной кораблю половине экрана
+      $('#shipActionsTitle').textContent = ST(clickedShip.type).icon + ' ' + ST(clickedShip.type).name;
+    }
     updateActionButtons();
     render();
     return;
@@ -2388,6 +2386,181 @@ function updateActionButtons() {
 }
 // ⛈️ шторм: отсчёт перезарядок на кнопках выбранного корабля тикает раз в полсекунды
 setInterval(() => { if (isRT() && selectedShipId) updateActionButtons(); }, 500);
+
+// ═══════════ 🎛 ШТУРВАЛ — радиальное командное кольцо у корабля (вместо панели действий) ═══════════
+// Управление там, где взгляд: тап по своему кораблю раскрывает кольцо иконок ВОКРУГ него — не надо
+// тянуться к краю экрана, поле ничем не закрыто. Борта 💥 сидят АНАТОМИЧЕСКИ на бортах корпуса
+// (вращаются с курсом — «жми на борт, который стреляет»), перезарядка — дугой прямо на иконке,
+// контекстные действия (🏝 клад, ⛺ аванпост, 🔧 порох) появляются только когда реально доступны.
+// Реестр собирается в wheelActions() — новое действие = одна запись, кольцо раскладывает само.
+// Быстрый откат на старую нижнюю панель: WHEEL_UI = false.
+const WHEEL_UI = true;
+let wheelBornAt = 0;                              // момент раскрытия — для анимации
+const wheelR = () => (IS_COARSE ? 84 : 66);       // радиус кольца, ЭКРАННЫЕ px (не зависит от зума)
+const wheelIconR = () => (IS_COARSE ? 24 : 18);
+
+// Реестр действий выбранного корабля (доступность = та же логика, что у старых кнопок)
+function wheelActions(sel) {
+  const st = ST(sel.type);
+  const rt = isRT();
+  const fired = firedSides(sel.id);
+  const committed = !rt && fired.length > 0;      // начал залп → прочие действия хода закрыты
+  const noCharges = st.repairer && (sel.repairCharges ?? repairChargesMax()) <= 0;
+  const acts = [];
+  // «плыть» — БЕЗ иконки: движение единым жестом на всех платформах (потяни от корабля — шлейф курса)
+  // Боевые иконки — ТОЛЬКО когда в зоне поражения есть цель (радиусы и так видны при выборе, а
+  // иконка борта, вспыхнувшая сама, читается как «враг на траверзе!»). Кулдаун при живой цели —
+  // рисуем как есть с дугой. Под туманом считаем только ВИДИМЫХ врагов (не палим спрятанных).
+  const peace = !!state.peace?.active;
+  const vis = fogActive() ? visionCircles() : null;
+  const foes = state.ships.filter(f => f.owner !== myIdx() &&
+    (f.owner === -1 || state.players[f.owner]?.alive) &&
+    (!peace || f.owner === -1) &&                       // 🕊 мир: стрелять можно только по пиратам
+    (!vis || fogVisible(f.x, f.y, vis)));
+  if (canBroadside(sel)) {
+    const dirs = broadsideDirs(sel), ha = broadsideHalfArc();
+    for (const side of ['port', 'starboard']) {
+      // цель в секторе ИМЕННО этого борта?
+      const hasTarget = foes.some(f => dist(sel.x, sel.y, f.x, f.y) <= st.fireRange &&
+        Math.abs(angNorm(Math.atan2(f.y - sel.y, f.x - sel.x) - dirs[side])) <= ha);
+      if (!hasTarget) continue;
+      const cd = rt ? cdLeft(sel, side === 'port' ? 'p' : 's') : 0;
+      const used = !rt && fired.includes(side);
+      acts.push({
+        key: 'bs_' + side, icon: '💥', label: side === 'port' ? 'левый борт' : 'правый борт',
+        anchor: side, cdMs: cd, cdMax: state.rt?.cds?.broadside || 1,
+        off: used || cd > 0, offMsg: used ? '💥 Этот борт уже стрелял в этом ходу' : null,
+        go: () => { mode = 'broadside'; render(); }
+      });
+    }
+  }
+  // мортира: корабль-цель в дальности, или (не в мир) вражеский порт/аванпост под обстрелом
+  const mortarTarget = foes.some(f => dist(sel.x, sel.y, f.x, f.y) <= st.fireRange) ||
+    (!peace && state.map.bases.some((b, i) => i !== myIdx() && state.players[i]?.alive &&
+      dist(sel.x, sel.y, b.x, b.y) <= st.fireRange + b.radius * 0.5)) ||
+    (!peace && (state.map.lootIslands || []).some(i => i.outpost && i.outpost.owner !== myIdx() &&
+      dist(sel.x, sel.y, i.x, i.y) <= st.fireRange + i.radius * 0.5));
+  if (canMortar(sel) && mortarTarget) acts.push({
+    key: 'mortar', icon: '🎯', label: 'мортира',
+    cdMs: rt ? cdLeft(sel, 'm') : 0, cdMax: state.rt?.cds?.mortar || 1, off: committed || (rt && cdLeft(sel, 'm') > 0),
+    offMsg: committed ? '💥 Корабль даёт залп — мортира в этом ходу закрыта' : null,
+    go: () => { mode = 'attack'; render(); }
+  });
+  if (st.repairer) acts.push({
+    key: 'repair', icon: '🛟', label: noCharges ? 'нет материалов' : 'чинить',
+    cdMs: rt ? cdLeft(sel, 'r') : 0, cdMax: state.rt?.cds?.repair || 1,
+    off: committed || noCharges || (rt && cdLeft(sel, 'r') > 0),
+    offMsg: noCharges ? '🔧 Материалы кончились — пополни у своей базы' : null,
+    go: () => { mode = 'repair'; render(); }
+  });
+  if (canShipCollect(sel)) acts.push({ key: 'collect', icon: '💰', label: 'собрать', off: committed,
+    go: () => sendAction({ type: 'collect' }) });
+  const opIdx = outpostIslandAt(sel);
+  if (opIdx >= 0) {
+    const isl = state.map.lootIslands[opIdx];
+    const def = (state.outposts?.levels || [])[isl.outpost?.level || 0];
+    const gold = state.players[myIdx()]?.gold ?? 0;
+    acts.push({ key: 'outpost', icon: def.icon, label: `${def.name} · ${def.price}`,
+      off: committed || gold < def.price, offMsg: gold < def.price ? `Не хватает золота (нужно ${def.price})` : null,
+      go: () => sendAction({ type: 'outpost', shipId: sel.id, islandId: opIdx }) });
+  }
+  if (canShipRecharge(sel)) acts.push({ key: 'recharge', icon: '🔧', label: 'порох', off: committed,
+    go: () => sendAction({ type: 'recharge', shipId: sel.id }) });
+  return acts;
+}
+
+// Раскладка: борта — строго на бортах (heading ± 90°), прочие — по слотам вокруг, ВСЕГДА в кадре
+// (у края экрана зазор между иконками ослабляется ступенями, но иконка в кадре обязана быть).
+function wheelLayout(sel) {
+  const pos = animPos.get(sel.id) || (state.rt && rtPos.get(sel.id)) || sel;
+  const cx = sx(pos.x), cy = sy(pos.y);
+  const R = wheelR(), Ic = wheelIconR();
+  const h = currentHeading(sel);
+  const acts = wheelActions(sel);
+  const placed = [];
+  const bw = canvas.clientWidth, bh = canvas.clientHeight;
+  const clampAng = a0 => {
+    for (const sep of [0.85, 0.6, 0.4, 0.22]) {
+      for (let k = 0; k <= 20; k++) for (const sgn of [1, -1]) {
+        const a = a0 + sgn * k * 0.26;
+        const x = cx + Math.cos(a) * R, y = cy + Math.sin(a) * R;
+        const m = Ic + 12;
+        if (x > m && x < bw - m && y > m && y < bh - m &&
+            !placed.some(p => Math.abs(angNorm(p.ang - a)) < sep)) return a;
+      }
+    }
+    return a0;
+  };
+  for (const a of acts) {                          // борта первыми — их место святое
+    if (a.anchor === 'port') placed.push({ act: a, ang: clampAng(angNorm(h - Math.PI / 2)) });
+    else if (a.anchor === 'starboard') placed.push({ act: a, ang: clampAng(angNorm(h + Math.PI / 2)) });
+  }
+  const slots = [-Math.PI / 2, Math.PI, 0, Math.PI / 2, -Math.PI / 4, Math.PI * 0.75];
+  let si = 0;
+  for (const a of acts) {
+    if (a.anchor) continue;
+    placed.push({ act: a, ang: clampAng(slots[si++ % slots.length]) });
+  }
+  return { cx, cy, R, Ic, icons: placed.map(p => ({ ...p, x: cx + Math.cos(p.ang) * R, y: cy + Math.sin(p.ang) * R })) };
+}
+
+// иконка кольца под экранной точкой (px, py — экранные координаты тапа)
+function wheelHit(sel, px, py) {
+  const L = wheelLayout(sel);
+  const w = L.icons.find(i => Math.hypot(px - i.x, py - i.y) <= L.Ic + 8);
+  return w ? { ...w.act } : null;
+}
+
+// какому режиму соответствует иконка — для подсветки активного
+const WHEEL_MODE = { move: 'move', bs_port: 'broadside', bs_starboard: 'broadside', mortar: 'attack', repair: 'repair' };
+
+function drawCommandWheel() {
+  if (!WHEEL_UI || !selectedShipId || !state) return;
+  if (mode !== 'idle') return;                     // выбрал борт/мортиру/ремонт → кольцо прячется, не мешает прицелу
+  const sel = state.ships.find(s => s.id === selectedShipId);
+  if (!sel || sel.owner !== myIdx() || !isMyTurn()) return;
+  if (aim && aim.armed) return;                    // ведём шлейф хода — кольцо не мешает
+  const k = Math.min(1, (performance.now() - wheelBornAt) / 130);
+  const L = wheelLayout(sel);
+  const R = L.R * (0.7 + 0.3 * k);
+  ctx.save();
+  ctx.globalAlpha = k;
+  // само кольцо НЕ рисуем — вокруг корабля и так круги хода/стрельбы, пунктир перегружал область
+  for (const w of L.icons) {
+    const wx = L.cx + Math.cos(w.ang) * R, wy = L.cy + Math.sin(w.ang) * R;
+    const hot = WHEEL_MODE[w.act.key] === mode && mode !== 'idle';
+    if (w.act.anchor) {                            // спица к борту: «этот борт стреляет туда»
+      ctx.strokeStyle = 'rgba(43,58,85,.3)'; ctx.lineWidth = 1.1;
+      ctx.beginPath();
+      ctx.moveTo(L.cx + Math.cos(w.ang) * 18, L.cy + Math.sin(w.ang) * 18);
+      ctx.lineTo(wx - Math.cos(w.ang) * L.Ic, wy - Math.sin(w.ang) * L.Ic);
+      ctx.stroke();
+    }
+    ctx.beginPath(); ctx.arc(wx, wy, L.Ic, 0, Math.PI * 2);
+    ctx.fillStyle = hot ? '#fff3c6' : w.act.off ? 'rgba(235,232,222,.92)' : 'rgba(253,251,243,.95)';
+    ctx.fill();
+    ctx.strokeStyle = hot ? '#8a7a45' : '#2b3a55'; ctx.lineWidth = hot ? 2.4 : 1.5; ctx.stroke();
+    if (w.act.cdMs > 0) {                          // «пузо» перезарядки на кнопке
+      const frac = 1 - w.act.cdMs / w.act.cdMax;
+      ctx.beginPath(); ctx.moveTo(wx, wy);
+      ctx.arc(wx, wy, L.Ic - 2, -Math.PI / 2, -Math.PI / 2 + Math.max(0.05, frac) * Math.PI * 2);
+      ctx.closePath(); ctx.fillStyle = 'rgba(46,125,91,.22)'; ctx.fill();
+    }
+    ctx.font = `${Math.round(L.Ic * 1.05)}px serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.globalAlpha = w.act.off ? k * 0.45 : k;
+    ctx.fillText(w.act.icon, wx, wy + 1);
+    ctx.globalAlpha = k;
+    // подпись — радиально снаружи (или секунды перезарядки)
+    ctx.font = 'bold 11px Neucha, cursive'; ctx.fillStyle = 'rgba(43,58,85,.8)';
+    const lx = wx + Math.cos(w.ang) * (L.Ic + 12), ly = wy + Math.sin(w.ang) * (L.Ic + 12) + 4;
+    ctx.fillText(w.act.cdMs > 0 ? `${Math.ceil(w.act.cdMs / 1000)}с` : w.act.label, lx, ly);
+    ctx.textBaseline = 'alphabetic';
+  }
+  ctx.restore();
+  // раскрытие: в пошаговом режиме нет anim-цикла — догоним анимацию парой кадров
+  if (k < 1 && !state.rt) requestAnimationFrame(() => render());
+}
 
 // ─── Прицел бортового залпа ───
 const angNorm = a => Math.atan2(Math.sin(a), Math.cos(a));

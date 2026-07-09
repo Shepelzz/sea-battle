@@ -54,7 +54,9 @@ export function createGame(id, config) {
     config: {
       maxPlayers: Math.min(4, Math.max(2, config.maxPlayers || 2)),
       turnTimer: [0, 60, 120, 300].includes(config.turnTimer) ? config.turnTimer : 0,
-      seed: (Math.random() * 2 ** 31) | 0
+      // переданный seed уважаем (тесты годами слали seed:7, а получали СЛУЧАЙНУЮ карту — флаки);
+      // реальные партии seed не шлют → случайный, как и было
+      seed: Number.isInteger(config.seed) ? config.seed : (Math.random() * 2 ** 31) | 0
     },
     map: null,
     players: [], // {id, nick, color, gold, portHp, alive, placement, stats, votedSkip}

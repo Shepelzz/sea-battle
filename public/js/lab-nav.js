@@ -9,6 +9,7 @@
     ['/ship-lab.html',   '⚓', 'Корабли'],
     ['/races-lab.html',  '⛵', 'Расы'],
     ['/move-lab.html',   '🧭', 'Ход'],
+    ['/control-lab.html','🎛', 'Штурвал'],
     ['/fort-lab.html',   '🏰', 'Форт'],
     ['/draft-fire.html', '🔥', 'Горящая база'],
   ];

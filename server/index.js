@@ -35,7 +35,12 @@ const io = new Server(server);
 const PORT = process.env.PORT || 3456;
 
 app.use(express.json());
-app.use(express.static(path.join(__dirname, '..', 'public')));
+// no-cache ≠ «не кэшировать»: браузер хранит файл, но ПЕРЕПРОВЕРЯЕТ перед использованием (304 если
+// не менялся). Без этого заголовка браузеры кэшируют по эвристике и после апдейта игры днями
+// показывают СТАРЫЙ клиент (старую отрисовку/логику) — «фантомные» баги, которых нет в коде.
+app.use(express.static(path.join(__dirname, '..', 'public'), {
+  setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache')
+}));
 
 // --- Google Sign-In (опционально) ---
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || null;

@@ -132,9 +132,11 @@ export function tickWind(game, now, dt) {
 // Прямо по курсу суша → доворачиваем на ближайший свободный угол (обход островов).
 // Пираты плывут той же физикой (их мозг в tickPirates лишь ставит dest).
 const shipStats = s => (s.owner === -1 ? PIRATE : SHIP_TYPES[s.type]);
-// луч свободен, если чисто ВБЛИЗИ (первые метры — иначе при касательном заходе длинный луч
-// «перескакивает» кромку, а шаг упирается), на полпути и в конце
-const rayFree = (game, s, ang, look) =>
+// луч свободен, если чисто на ФАКТИЧЕСКОМ ШАГЕ тика (у самой кромки касательный луч «ныряет»
+// в сушу на доли пикселя и выходит до пробы в 10px — луч «чист», а шаг упирается: вечный клин),
+// ВБЛИЗИ (первые метры), на полпути и в конце
+const rayFree = (game, s, ang, look, step) =>
+  !terrainBlocked(game, s.x + Math.cos(ang) * step, s.y + Math.sin(ang) * step) &&
   !terrainBlocked(game, s.x + Math.cos(ang) * 10, s.y + Math.sin(ang) * 10) &&
   !terrainBlocked(game, s.x + Math.cos(ang) * look * 0.5, s.y + Math.sin(ang) * look * 0.5) &&
   !terrainBlocked(game, s.x + Math.cos(ang) * look, s.y + Math.sin(ang) * look);
@@ -153,13 +155,14 @@ export function tickMovement(game, dt) {
     // (s.avoid): выбрав, куда огибать остров, держимся её — иначе корабль мечется у берега.
     const cruise = (st.move / RT.MOVE_SECONDS) * windMult(game, s.heading);
     const look = Math.max(48, cruise * 1.2);
-    if (!rayFree(game, s, want, look)) {
+    const probe = cruise * dt / 1000; // длина шага этого тика: одобренный угол гарантирует движение
+    if (!rayFree(game, s, want, look, probe)) {
       s.avoidHold = 0;
       const side = s.avoid || 1;
       let free = null;
       for (const da of [0.45, 0.9, 1.35, 1.8, 2.2, 2.6]) {
-        if (rayFree(game, s, want + side * da, look)) { free = want + side * da; s.avoid = side; break; }
-        if (rayFree(game, s, want - side * da, look)) { free = want - side * da; s.avoid = -side; break; }
+        if (rayFree(game, s, want + side * da, look, probe)) { free = want + side * da; s.avoid = side; break; }
+        if (rayFree(game, s, want - side * da, look, probe)) { free = want - side * da; s.avoid = -side; break; }
       }
       if (free == null) { delete s.dest; s.avoid = 0; continue; } // земля со всех сторон — отбой приказа
       want = free;
