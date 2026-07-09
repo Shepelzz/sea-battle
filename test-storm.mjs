@@ -453,14 +453,14 @@ check('реалтайм доступен во ВСЕХ режимах', ['classi
 
 // ═══════════════ ⚡ Экономика реалтайма: доход раз в «раунд», лут скромнее ═══════════════
 {
-  check('доход/рыба/лут — раз в «раунд» (≈MOVE_SECONDS)',
-    RT.INCOME_MS === 15000 && RT.FISH_MS === 15000, `${RT.INCOME_MS}/${RT.FISH_MS}`);
+  check('доход/рыба — раунд-темп +30% (12с, фидбек «катки предрешаются»)',
+    RT.INCOME_MS === 12000 && RT.FISH_MS === 12000, `${RT.INCOME_MS}/${RT.FISH_MS}`);
   // лут с обломков: RT 30% (война не окупается), пошагово прежние 50%
   const rtG = newGame({ realtime: true });
   const rtVictim = put(rtG, 1, 'brig', 500, 500);
   const gold1 = rtG.players[0].gold;
   sinkShip(rtG, rtVictim, rtG.players[0]);
-  check('реалтайм: лут с обломков 30% цены',
+  check(`реалтайм: лут с обломков ${RT.WRECK_LOOT_FRAC * 100}% цены (война всё ещё в убыток)`,
     rtG.players[0].gold - gold1 === Math.round(SHIP_TYPES.brig.price * RT.WRECK_LOOT_FRAC),
     `+${rtG.players[0].gold - gold1}`);
   const tG = newGame();
