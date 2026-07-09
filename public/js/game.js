@@ -1349,8 +1349,9 @@ function render(canvasOnly) {
       if (mode === 'repair' || mode === 'idle') dashedCircle(sel.x, sel.y, st.fireRange, 'rgba(244,194,10,.85)', 1.6);
     } else if (mode === 'broadside' && canBroadside(sel)) {
       drawBroadsideSectors(sel);                 // 💥 сектора-трапеции бортов (наводимый — красный)
-    } else if (mode === 'attack' || mode === 'idle') {
-      dashedCircle(sel.x, sel.y, st.fireRange, 'rgba(192,57,43,.75)', 1.6); // радиус мортиры/подсказка
+    } else if ((mode === 'attack' || mode === 'idle') && (canBroadside(sel) || canMortar(sel))) {
+      // радиус мортиры/подсказка — только у тех, кто вообще умеет стрелять (баркас — нет)
+      dashedCircle(sel.x, sel.y, st.fireRange, 'rgba(192,57,43,.75)', 1.6);
     }
   }
 
