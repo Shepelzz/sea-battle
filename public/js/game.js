@@ -1094,6 +1094,7 @@ function fogUpdate(circles) {
 }
 
 function drawFogOverlay(circles) {
+  if (!canvas.width || !canvas.height) return; // вкладка в фоне: канвас 0×0 — drawImage упадёт
   const cw = canvas.clientWidth, ch = canvas.clientHeight, m = state.map;
   const dpr = window.devicePixelRatio || 1;
   if (!fogLayer || fogLayer.width !== canvas.width || fogLayer.height !== canvas.height) {
