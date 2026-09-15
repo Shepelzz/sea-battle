@@ -128,6 +128,8 @@ async function onGoogleCredential(resp) {
     const cfg = await (await fetch('/api/config')).json();
     CHEATS_ON = cfg.cheats === true;
     GOOGLE_ID = cfg.googleClientId || null;
+    // 🧠 ИИ-соперник в лобби — только если он настроен на сервере (ключ туда не уходит)
+    if (cfg.ai) { const opt = document.getElementById('botLevelSelAi'); if (opt) opt.hidden = false; }
     if (state) render();                        // конфиг пришёл асинхронно — обновить (кнопка чата)
     if (GOOGLE_ID) {
       initGoogle();

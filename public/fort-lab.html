@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Форт-лаб — варианты порта</title>
+<link rel="stylesheet" href="/css/style.css">
+<style>
+  body { padding: 18px 16px 60px; }
+  h1 { font-family: var(--font-title); margin: 0 0 4px; }
+  .sub { color: var(--ink-light); margin: 0 0 16px; max-width: 760px; }
+  .controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 18px;
+    background: var(--paper-dark); border: 1.6px solid var(--ink); border-radius: 12px; padding: 10px 14px; }
+  .swatches { display: flex; gap: 6px; }
+  .sw { width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--ink); cursor: pointer; opacity: .55; }
+  .sw.on { opacity: 1; box-shadow: 0 0 0 3px rgba(43,58,85,.18); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; }
+  .card { background: var(--paper); border: 1.8px solid var(--ink); border-radius: 14px 6px 14px 8px;
+    box-shadow: 3px 4px 0 rgba(43,58,85,.18); padding: 12px; text-align: center; }
+  .card h3 { margin: 0 0 2px; font-size: 18px; }
+  .card p { margin: 0 0 8px; color: var(--ink-light); font-size: 14px; min-height: 34px; }
+  canvas { width: 230px; height: 230px; display: block; margin: 0 auto;
+    background:
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 28px 28px; border-radius: 10px; }
+  .hint { margin-top: 22px; color: var(--ink-light); font-size: 14px; }
+</style>
+</head>
+<body>
+  <h1>🏰 Порт-форт — пятиугольные варианты</h1>
+  <p class="sub">Силуэт — <b>пятиугольник с бастионами по углам и прямыми стенами-куртинами</b> (а не звезда).
+     Цвет игрока — флаг и кант. Переключи цвет ниже и скажи номер варианта (можно с правками) — впишу в <code>drawBase</code>.</p>
+
+  <div class="controls">
+    <span>Цвет игрока:</span>
+    <div class="swatches" id="swatches"></div>
+  </div>
+
+  <div class="grid" id="grid"></div>
+
+  <p class="hint">Размер ≈ как в игре (радиус базы 105). Сетка под фортом — игровая «клетка» 28px.</p>
+
+<script>
+const PALETTE = ['#c0392b', '#2980b9', '#27ae60', '#8e44ad', '#e67e22', '#16a085', '#d4ac0d', '#cb3e8f'];
+let accent = PALETTE[0];
+const INK = '#2b3a55';
+const STONE = { wall: '#d8c89e', top: '#ece0bb', court: '#f1e9cf', edge: '#8a7a45' };
+const GREEN = { wall: '#7ea863', top: '#9cc47e', court: '#dbe8c4', edge: '#4f7a3e' };
+
+// ── Бастионный ПЯТИУГОЛЬНИК: 5 углов-бастионов (наконечники наружу) + ПРЯМЫЕ куртины между ними.
+//    depth — насколько бастион выступает за радиус, flank — какую долю стены занимает основание бастиона.
+function fortPath(cx, cy, R, { rot = -Math.PI / 2, depth = 0.18, flank = 0.3, N = 5 } = {}) {
+  const step = Math.PI * 2 / N;
+  const V = k => [cx + Math.cos(rot + k * step) * R, cy + Math.sin(rot + k * step) * R];
+  const tip = k => [cx + Math.cos(rot + k * step) * R * (1 + depth), cy + Math.sin(rot + k * step) * R * (1 + depth)];
+  const lerp = (a, b, t) => ({ x: a[0] + (b[0] - a[0]) * t, y: a[1] + (b[1] - a[1]) * t });
+  const pts = [];
+  for (let k = 0; k < N; k++) {
+    const vk = V(k), vp = V((k - 1 + N) % N), vn = V((k + 1) % N);
+    pts.push(lerp(vk, vp, flank));        // плечо к предыдущему углу
+    const t = tip(k); pts.push({ x: t[0], y: t[1] }); // остриё бастиона (наружу)
+    pts.push(lerp(vk, vn, flank));        // плечо к следующему углу — далее ПРЯМАЯ куртина
+  }
+  return pts;
+}
+function regPent(cx, cy, R, rot = -Math.PI / 2, N = 5) {
+  const step = Math.PI * 2 / N, pts = [];
+  for (let k = 0; k < N; k++) pts.push({ x: cx + Math.cos(rot + k * step) * R, y: cy + Math.sin(rot + k * step) * R });
+  return pts;
+}
+function poly(ctx, pts) { ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath(); }
+function fillStroke(ctx, pts, fill, edge, w = 3) {
+  poly(ctx, pts); ctx.fillStyle = fill; ctx.fill();
+  poly(ctx, pts); ctx.strokeStyle = edge; ctx.lineWidth = w; ctx.lineJoin = 'round'; ctx.stroke();
+  poly(ctx, pts); ctx.strokeStyle = INK; ctx.lineWidth = 1.4; ctx.stroke();
+}
+function shadow(ctx, pts) { ctx.save(); ctx.translate(3, 6); poly(ctx, pts); ctx.fillStyle = 'rgba(43,58,85,.16)'; ctx.fill(); ctx.restore(); }
+function flag(ctx, cx, cy, h = 30) {
+  ctx.strokeStyle = INK; ctx.lineWidth = 2.4; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(cx, cy + 6); ctx.lineTo(cx, cy - h); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx, cy - h); ctx.lineTo(cx + 20, cy - h + 7); ctx.lineTo(cx, cy - h + 14); ctx.closePath();
+  ctx.fillStyle = accent; ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 1; ctx.stroke();
+}
+function cannons(ctx, cx, cy, R, opt) {                 // точки-пушки на остриях бастионов
+  const { rot = -Math.PI / 2, depth = 0.18, N = 5 } = opt; const step = Math.PI * 2 / N;
+  ctx.fillStyle = INK;
+  for (let k = 0; k < N; k++) { const a = rot + k * step, r = R * (1 + depth) * 0.9; ctx.beginPath(); ctx.arc(cx + Math.cos(a) * r, cy + Math.sin(a) * r, 2.4, 0, Math.PI * 2); ctx.fill(); }
+}
+// зубцы-мерлоны вдоль КУРТИН (прямых участков стены между бастионами)
+function merlons(ctx, cx, cy, R, opt, pal) {
+  const { rot = -Math.PI / 2, flank = 0.3, N = 5 } = opt; const step = Math.PI * 2 / N;
+  const V = k => [cx + Math.cos(rot + k * step) * R, cy + Math.sin(rot + k * step) * R];
+  const lerp = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+  ctx.fillStyle = pal.edge;
+  for (let k = 0; k < N; k++) {
+    const A = lerp(V(k), V((k + 1) % N), flank);            // конец бастиона k
+    const B = lerp(V((k + 1) % N), V(k), flank);            // начало бастиона k+1
+    const seg = 5;
+    for (let s = 0; s <= seg; s++) {
+      if (s % 2) continue;
+      const p = lerp(A, B, s / seg);
+      ctx.fillRect(p[0] - 2.2, p[1] - 2.2, 4.4, 4.4);
+    }
+  }
+}
+
+// базовый пятиугольный форт: вал-кольцо (бастионы) + двор + бруствер + пушки + флаг
+function fort(ctx, cx, cy, R, pal, opt = {}) {
+  const outer = fortPath(cx, cy, R, opt);
+  shadow(ctx, outer);
+  fillStroke(ctx, outer, pal.wall, pal.edge);
+  // бруствер — тонкий внутренний кант того же контура (намёк на толщину вала)
+  poly(ctx, fortPath(cx, cy, R * 0.84, opt)); ctx.strokeStyle = pal.edge; ctx.globalAlpha = .5; ctx.lineWidth = 1.2; ctx.stroke(); ctx.globalAlpha = 1;
+  // двор — ровный пятиугольник (плац)
+  const court = regPent(cx, cy, R * 0.5, opt.rot ?? -Math.PI / 2);
+  poly(ctx, court); ctx.fillStyle = pal.court; ctx.fill(); poly(ctx, court); ctx.strokeStyle = pal.edge; ctx.lineWidth = 1.3; ctx.stroke();
+  cannons(ctx, cx, cy, R, opt);
+  flag(ctx, cx, cy - R * 0.04);
+}
+
+const VARIANTS = [
+  { name: '1 · Пятиугольный форт', desc: 'Пятиугольник, 5 угловых бастионов, прямые стены. Чистый и читаемый.',
+    draw: (c, x, y, R) => fort(c, x, y, R, STONE) },
+
+  { name: '2 · С зубцами (батлменты)', desc: 'Тот же форт, но по стенам — зубцы-мерлоны. Более «крепостной».',
+    draw: (c, x, y, R) => { const o = {}; fort(c, x, y, R, STONE, o); merlons(c, x, y, R, o, STONE); } },
+
+  { name: '3 · Земляной (зелёный)', desc: 'Пятиугольный вал в земляном зелёном — как на твоём референсе.',
+    draw: (c, x, y, R) => fort(c, x, y, R, GREEN) },
+
+  { name: '4 · С цитаделью', desc: 'Внешний вал + внутренняя цитадель-пятиугольник с домиками. Детальный.',
+    draw: (c, x, y, R) => citadel(c, x, y, R) },
+];
+
+function citadel(ctx, cx, cy, R) {
+  const pal = STONE, opt = {};
+  const outer = fortPath(cx, cy, R, opt);
+  shadow(ctx, outer);
+  fillStroke(ctx, outer, pal.wall, pal.edge);
+  const court = regPent(cx, cy, R * 0.66, -Math.PI / 2);
+  poly(ctx, court); ctx.fillStyle = pal.court; ctx.fill(); poly(ctx, court); ctx.strokeStyle = pal.edge; ctx.lineWidth = 1.2; ctx.stroke();
+  // домики во дворе
+  ctx.fillStyle = pal.edge;
+  for (const [dx, dy] of [[-0.4, 0.12], [0.4, 0.12], [-0.26, 0.4], [0.26, 0.4]]) {
+    ctx.save(); ctx.translate(cx + dx * R, cy + dy * R); ctx.fillRect(-6, -4, 12, 8); ctx.restore();
+  }
+  // внутренняя цитадель — маленький пятиугольный форт
+  const cit = fortPath(cx, cy, R * 0.34, { depth: 0.22, flank: 0.28 });
+  poly(ctx, cit); ctx.fillStyle = pal.top; ctx.fill(); poly(ctx, cit); ctx.strokeStyle = INK; ctx.lineWidth = 1.2; ctx.stroke();
+  cannons(ctx, cx, cy, R, opt);
+  flag(ctx, cx, cy - R * 0.02);
+}
+
+function renderAll() {
+  document.querySelectorAll('.card canvas').forEach(cv => {
+    const dpr = window.devicePixelRatio || 1, S = 230;
+    cv.width = S * dpr; cv.height = S * dpr;
+    const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, S, S);
+    VARIANTS[+cv.dataset.i].draw(ctx, S / 2, S / 2 + 2, 88);
+    ctx.font = 'bold 15px Neucha, cursive'; ctx.fillStyle = INK; ctx.textAlign = 'center';
+    ctx.fillText('Капитан', S / 2, S - 20);
+    ctx.fillStyle = 'rgba(43,58,85,.18)'; ctx.fillRect(S / 2 - 30, S - 14, 60, 6);
+    ctx.fillStyle = '#27ae60'; ctx.fillRect(S / 2 - 30, S - 14, 46, 6);
+  });
+}
+
+const grid = document.getElementById('grid');
+VARIANTS.forEach((v, i) => {
+  const card = document.createElement('div'); card.className = 'card';
+  card.innerHTML = `<h3>${v.name}</h3><p>${v.desc}</p><canvas data-i="${i}"></canvas>`;
+  grid.appendChild(card);
+});
+const sw = document.getElementById('swatches');
+PALETTE.forEach((c, i) => {
+  const b = document.createElement('div'); b.className = 'sw' + (i === 0 ? ' on' : ''); b.style.background = c;
+  b.onclick = () => { accent = c; document.querySelectorAll('.sw').forEach(s => s.classList.remove('on')); b.classList.add('on'); renderAll(); };
+  sw.appendChild(b);
+});
+renderAll();
+window.addEventListener('resize', renderAll);
+</script>
+  <script src="/js/lab-nav.js"></script>
+</body>
+</html>

@@ -21,11 +21,19 @@ import {
   buildSetCookie, buildClearCookie, createSessionStore, newSessionToken
 } from './auth.js';
 import { chooseBotAction, BOT_NAMES, duelFleetPlan } from './bot.js';
+import { aiAvailable, isAiLevel, AI_LEVELS } from './ai/config.js';
+import { playAiTurn } from './ai/captain.js';
 import { applyCheat } from './cheats.js';
 import { rtStart, rtStop } from './rt.js';
 import { CHEATS_ENABLED, GAME_MODES, enabledModes, DEFAULT_MODE, isDuel, isRealtime, realtimeAllowed } from './config.js';
 // валидируем игровой режим из запроса (classic/deathmatch/develop) — только из включённых
 const pickMode = m => enabledModes().includes(m) ? m : DEFAULT_MODE;
+// 🧠 уровни ИИ обслуживает server/ai/captain.js. Там, где зовётся СТАРАЯ эвристика
+// (доигровка сдавшейся партии, закупка флота в дуэли), уровень 'ai' подменяем на 'hard'.
+const heuristicLevel = lvl => isAiLevel(lvl) ? 'hard' : (lvl || 'mid');
+// уровень бота из запроса: эвристики — всегда, ИИ — только если он настроен
+const pickBotLevel = lvl => (['easy', 'mid', 'hard'].includes(lvl) ? lvl
+  : (isAiLevel(lvl) && aiAvailable()) ? lvl : 'mid');
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -126,7 +134,7 @@ function maybeBotBuy(game) {
   if (game?.phase !== 'buy') return;
   for (let i = 0; i < game.players.length; i++) {
     const p = game.players[i];
-    if (p.isBot && !p.ready) applyAction(game, p.id, { type: 'buyFleet', ships: duelFleetPlan(game, i, p.botLevel || 'mid') });
+    if (p.isBot && !p.ready) applyAction(game, p.id, { type: 'buyFleet', ships: duelFleetPlan(game, i, heuristicLevel(p.botLevel)) });
   }
 }
 
@@ -185,17 +193,31 @@ function maybeBotTurn(game) {
   const stepKey = game.turn.idx + ':' + game.turn.number;
   const delay = botStep.get(game.id) === stepKey ? BOT_FOLLOWUP_MS : BOT_DELAY_MS;
   botStep.set(game.id, stepKey);
-  botTimers.set(game.id, setTimeout(() => {
+  botTimers.set(game.id, setTimeout(async () => {
     botTimers.delete(game.id);
     const g = getGame(game.id);
     if (!g || g.status !== 'active') return;
     const bot = g.players[g.turn.idx];
     if (!bot?.isBot) return;
-    let action;
-    try { action = chooseBotAction(g, g.turn.idx, bot.botLevel); }
-    catch (e) { console.error('bot:', e.message); action = { type: 'skip' }; }
-    let r = applyAction(g, bot.id, action);
-    if (!r.ok) r = applyAction(g, bot.id, { type: 'skip' }); // страховка от невалидного хода
+    const idx = g.turn.idx;
+    if (isAiLevel(bot.botLevel)) {
+      // 🧠 ИИ отыгрывает ХОД ЦЕЛИКОМ за один вызов модели (до трёх действий + завершение),
+      // поэтому повторный таймер ему не нужен. Внутри всё обёрнуто в фолбэк на эвристику —
+      // бросить он не может, но страхуемся и здесь: партия не должна вставать никогда.
+      let res = null;
+      try { res = await playAiTurn(g, idx); }
+      catch (e) {
+        console.error('ai:', e.message);
+        if (g.status === 'active' && g.turn.idx === idx) applyAction(g, bot.id, { type: 'skip' });
+      }
+      if (res?.taunt) io.to('game:' + g.id).emit('chat', { author: bot.nick, text: res.taunt });
+    } else {
+      let action;
+      try { action = chooseBotAction(g, idx, bot.botLevel); }
+      catch (e) { console.error('bot:', e.message); action = { type: 'skip' }; }
+      let r = applyAction(g, bot.id, action);
+      if (!r.ok) r = applyAction(g, bot.id, { type: 'skip' }); // страховка от невалидного хода
+    }
     if (g.status === 'finished' && isRanked(g)) db.saveResults(g); // в лидерборд — только онлайн
     persistAndBroadcast(g);
   }, delay));
@@ -224,6 +246,8 @@ function maybeAutoFinish(game) {
 
 app.get('/api/config', (_req, res) => res.json({
   googleClientId: GOOGLE_CLIENT_ID, palette: PALETTE, cheats: CHEATS_ENABLED,
+  // 🧠 настроен ли ИИ-соперник (сам ключ на сервере и наружу не уходит — как коды читов)
+  ai: aiAvailable(), aiLevels: aiAvailable() ? AI_LEVELS : [],
   // доступные игровые режимы (для селектора при создании игры)
   modes: enabledModes().map(k => ({ key: k, name: GAME_MODES[k].name, desc: GAME_MODES[k].desc }))
 }));
@@ -301,7 +325,9 @@ app.post('/api/games', (req, res) => {
 
   // против компьютера: человек + 1-3 бота, старт сразу
   if (mode === 'bot') {
-    const level = ['easy', 'mid', 'hard'].includes(req.body.level) ? req.body.level : 'mid';
+    if (isAiLevel(req.body.level) && !aiAvailable())
+      return res.status(400).json({ error: '🧠 ИИ-соперник не настроен на сервере (нет ключа модели)' });
+    const level = pickBotLevel(req.body.level);
     const gmode = pickMode(req.body.gameMode);
     const duel = !!GAME_MODES[gmode]?.duel;
     const botCount = duel ? 1 : Math.min(3, Math.max(1, +req.body.bots || 1)); // дуэль — ровно 1 бот (1на1)
@@ -465,7 +491,8 @@ io.on('connection', socket => {
     if (game.status !== 'lobby') return ack?.({ ok: false, error: 'Игра уже идёт' });
     if (isDuel(game)) return ack?.({ ok: false, error: 'Дуэль — это 1 на 1 с живым игроком. Для игры с ботом выбери «Против компьютера».' });
     if (game.players[0]?.id !== myPid) return ack?.({ ok: false, error: 'Ботов добавляет только создатель' });
-    const lvl = ['easy', 'mid', 'hard'].includes(level) ? level : 'mid';
+    if (isAiLevel(level) && !aiAvailable()) return ack?.({ ok: false, error: '🧠 ИИ-соперник не настроен на сервере' });
+    const lvl = pickBotLevel(level);
     const botCount = game.players.filter(p => p.isBot).length;
     const limit = Math.floor(game.config.maxPlayers / 2); // боты — максимум половина слотов
     if (botCount >= limit) return ack?.({ ok: false, error: `Ботов не больше ${limit} (половина мест — за людьми)` });

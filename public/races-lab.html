@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Расы-лаб — дизайны флота</title>
+<link rel="stylesheet" href="/css/style.css">
+<style>
+  body { padding: 18px 16px 60px; }
+  h1 { font-family: var(--font-title); margin: 0 0 4px; }
+  .sub { color: var(--ink-light); margin: 0 0 16px; max-width: 820px; }
+  .controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 18px;
+    background: var(--paper-dark); border: 1.6px solid var(--ink); border-radius: 12px; padding: 10px 14px; }
+  .swatches { display: flex; gap: 6px; }
+  .sw { width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--ink); cursor: pointer; opacity: .55; }
+  .sw.on { opacity: 1; box-shadow: 0 0 0 3px rgba(43,58,85,.18); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 16px; }
+  .card { background: var(--paper); border: 1.8px solid var(--ink); border-radius: 14px 6px 14px 8px;
+    box-shadow: 3px 4px 0 rgba(43,58,85,.18); padding: 12px 14px; }
+  .card h3 { margin: 0 0 2px; font-size: 19px; }
+  .card p { margin: 0 0 8px; color: var(--ink-light); font-size: 14px; min-height: 36px; }
+  canvas { width: 100%; height: 180px; display: block;
+    background: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 28px 28px; border-radius: 10px; }
+  .hint { margin-top: 22px; color: var(--ink-light); font-size: 14px; max-width: 820px; }
+  .cap { font-size: 12px; color: var(--ink-light); text-align: center; }
+</style>
+</head>
+<body>
+  <h1>⛵ Расы флота — черновые дизайны</h1>
+  <p class="sub">Вид сверху, как в игре. В каждой карточке — <b>боевой корабль</b> (слева) и <b>флагман/линкор</b> (справа).
+     Цвет — команда игрока (переключи ниже), раса — форма корпуса и оснастка. Скажи, какие расы и детали заходят — доведём и впишем в игру.</p>
+
+  <div class="controls"><span>Цвет команды:</span><div class="swatches" id="swatches"></div></div>
+  <div class="grid" id="grid"></div>
+
+  <p class="hint">Это только эскизы силуэтов (важно, что расы РАЗНЫЕ на глаз). Финальные детали/пропорции подкрутим по твоим
+     правкам. В игре раса выбирается при создании (как цвет), на статы НЕ влияет — чистый скин.</p>
+
+<script>
+const PALETTE = ['#c0392b', '#2980b9', '#27ae60', '#8e44ad', '#e67e22', '#16a085', '#d4ac0d', '#cb3e8f'];
+let accent = PALETTE[0];
+const INK = '#2b3a55', DECK = '#e8d9a8', SAIL = '#efe6c8', WOOD = '#a9763f';
+
+// рисуем корабль носом ВПРАВО (+x), центр в (0,0)
+function P(ctx) { return ctx; }
+function strokeInk(ctx, w = 1.6) { ctx.strokeStyle = INK; ctx.lineWidth = w; ctx.stroke(); }
+
+// ─── ЕВРОПА: галеон — широкий остроносый корпус, поперечные реи, кормовой вымпел ───
+function europe(ctx, L, big, color) {
+  const W = L * 0.34;
+  ctx.beginPath();
+  ctx.moveTo(-L / 2, -W / 2);
+  ctx.lineTo(L * 0.28, -W / 2);
+  ctx.quadraticCurveTo(L * 0.46, -W / 2, L / 2 + L * 0.06, 0);
+  ctx.quadraticCurveTo(L * 0.46, W / 2, L * 0.28, W / 2);
+  ctx.lineTo(-L / 2, W / 2);
+  ctx.quadraticCurveTo(-L / 2 - L * 0.05, 0, -L / 2, -W / 2);
+  ctx.closePath();
+  ctx.fillStyle = color; ctx.fill(); strokeInk(ctx);
+  // палуба
+  ctx.beginPath(); ctx.ellipse(0, 0, L * 0.34, W * 0.32, 0, 0, Math.PI * 2); ctx.fillStyle = DECK; ctx.fill(); strokeInk(ctx, 1);
+  // поперечные реи (мачты сверху) + парус-намёк
+  const masts = big ? [-L * 0.26, 0, L * 0.24] : [-L * 0.16, L * 0.14];
+  for (const mx of masts) {
+    ctx.fillStyle = SAIL; ctx.fillRect(mx - L * 0.05, -W * 0.6, L * 0.1, W * 1.2); ctx.strokeStyle = INK; ctx.lineWidth = 1; ctx.strokeRect(mx - L * 0.05, -W * 0.6, L * 0.1, W * 1.2);
+    ctx.beginPath(); ctx.moveTo(mx, -W * 0.66); ctx.lineTo(mx, W * 0.66); strokeInk(ctx, 1.6);
+    ctx.beginPath(); ctx.arc(mx, 0, Math.max(2, W * 0.12), 0, Math.PI * 2); ctx.fillStyle = INK; ctx.fill();
+  }
+  // кормовой вымпел
+  ctx.beginPath(); ctx.moveTo(-L / 2, 0); ctx.lineTo(-L / 2 - L * 0.16, -W * 0.22); ctx.lineTo(-L / 2 - L * 0.16, W * 0.22); ctx.closePath(); ctx.fillStyle = color; ctx.fill();
+}
+
+// ─── РИМ: галера — узкий корпус, ТАРАН на носу, ряды ВЁСЕЛ, одна рея ───
+function rome(ctx, L, big, color) {
+  const W = L * 0.24;
+  // вёсла (под корпусом — рисуем первыми)
+  ctx.strokeStyle = INK; ctx.lineWidth = 1.4; ctx.lineCap = 'round';
+  const oars = big ? 8 : 6;
+  for (let s = -1; s <= 1; s += 2) for (let i = 0; i < oars; i++) {
+    const ox = -L * 0.36 + i * (L * 0.66 / (oars - 1));
+    ctx.beginPath(); ctx.moveTo(ox, s * W / 2); ctx.lineTo(ox - L * 0.06, s * (W / 2 + W * 0.9)); ctx.stroke();
+  }
+  ctx.lineCap = 'butt';
+  // корпус узкий, острый
+  ctx.beginPath();
+  ctx.moveTo(-L / 2, 0); ctx.quadraticCurveTo(-L * 0.4, -W / 2, 0, -W / 2);
+  ctx.quadraticCurveTo(L * 0.4, -W / 2, L * 0.46, 0);
+  ctx.quadraticCurveTo(L * 0.4, W / 2, 0, W / 2);
+  ctx.quadraticCurveTo(-L * 0.4, W / 2, -L / 2, 0); ctx.closePath();
+  ctx.fillStyle = color; ctx.fill(); strokeInk(ctx);
+  // ТАРАН (острый клин на носу)
+  ctx.beginPath(); ctx.moveTo(L * 0.42, -W * 0.18); ctx.lineTo(L / 2 + L * 0.16, 0); ctx.lineTo(L * 0.42, W * 0.18); ctx.closePath();
+  ctx.fillStyle = WOOD; ctx.fill(); strokeInk(ctx, 1.2);
+  // загнутый кормовой штевень (аплюстр)
+  ctx.beginPath(); ctx.arc(-L / 2, -W * 0.3, W * 0.32, 0.4, Math.PI * 1.3); strokeInk(ctx, 2);
+  // одна рея + парус-намёк
+  ctx.fillStyle = SAIL; ctx.fillRect(L * 0.02 - L * 0.06, -W * 0.7, L * 0.12, W * 1.4); ctx.strokeStyle = INK; ctx.lineWidth = 1; ctx.strokeRect(L * 0.02 - L * 0.06, -W * 0.7, L * 0.12, W * 1.4);
+  ctx.beginPath(); ctx.moveTo(L * 0.02, -W * 0.78); ctx.lineTo(L * 0.02, W * 0.78); strokeInk(ctx, 1.6);
+}
+
+// ─── АЗИЯ: джонка — широкий корпус, квадратная корма, БАТЕННЫЕ паруса (полосатые) ───
+function asia(ctx, L, big, color) {
+  const W = L * 0.36;
+  ctx.beginPath();
+  ctx.moveTo(-L * 0.46, -W * 0.6);                    // высокая квадратная корма
+  ctx.lineTo(-L * 0.46, W * 0.6);
+  ctx.lineTo(-L * 0.3, W / 2);
+  ctx.quadraticCurveTo(L * 0.3, W / 2, L / 2, 0);     // нос тупее
+  ctx.quadraticCurveTo(L * 0.3, -W / 2, -L * 0.3, -W / 2);
+  ctx.closePath();
+  ctx.fillStyle = color; ctx.fill(); strokeInk(ctx);
+  // приподнятая кормовая надстройка
+  ctx.fillStyle = WOOD; ctx.fillRect(-L * 0.46, -W * 0.34, L * 0.14, W * 0.68); ctx.strokeStyle = INK; ctx.lineWidth = 1; ctx.strokeRect(-L * 0.46, -W * 0.34, L * 0.14, W * 0.68);
+  // батенные паруса: «лесенка» из параллельных рей (несколько полос) поперёк
+  const sails = big ? [-L * 0.12, L * 0.18] : [L * 0.02];
+  for (const sxp of sails) {
+    ctx.fillStyle = SAIL; ctx.fillRect(sxp - L * 0.07, -W * 0.72, L * 0.14, W * 1.44); ctx.strokeStyle = INK; ctx.lineWidth = 1; ctx.strokeRect(sxp - L * 0.07, -W * 0.72, L * 0.14, W * 1.44);
+    ctx.strokeStyle = color; ctx.lineWidth = 2;                 // батены — цветные полосы
+    for (let r = -2; r <= 2; r++) { ctx.beginPath(); ctx.moveTo(sxp - L * 0.07, r * W * 0.3); ctx.lineTo(sxp + L * 0.07, r * W * 0.3); ctx.stroke(); }
+    ctx.beginPath(); ctx.moveTo(sxp, -W * 0.78); ctx.lineTo(sxp, W * 0.78); strokeInk(ctx, 2);
+  }
+}
+
+// ─── ВИКИНГИ: драккар — узкий корпус, ГОЛОВА ДРАКОНА, ряд ЩИТОВ, полосатый парус ───
+function viking(ctx, L, big, color) {
+  const W = L * 0.24;
+  ctx.beginPath();
+  ctx.moveTo(-L / 2, 0); ctx.quadraticCurveTo(-L * 0.36, -W / 2, 0, -W / 2);
+  ctx.quadraticCurveTo(L * 0.4, -W / 2, L * 0.46, 0);
+  ctx.quadraticCurveTo(L * 0.4, W / 2, 0, W / 2);
+  ctx.quadraticCurveTo(-L * 0.36, W / 2, -L / 2, 0); ctx.closePath();
+  ctx.fillStyle = color; ctx.fill(); strokeInk(ctx);
+  // голова дракона — спираль на носу
+  ctx.beginPath(); ctx.arc(L / 2 + L * 0.02, -W * 0.1, W * 0.34, Math.PI * 1.1, Math.PI * 2.7); strokeInk(ctx, 2.2);
+  // изогнутая корма
+  ctx.beginPath(); ctx.arc(-L / 2, -W * 0.1, W * 0.3, 0.2, Math.PI * 1.2); strokeInk(ctx, 2);
+  // щиты по бортам (круги, через один — цвет)
+  const sh = big ? 8 : 6;
+  for (let i = 0; i < sh; i++) {
+    const ox = -L * 0.32 + i * (L * 0.6 / (sh - 1));
+    for (const s of [-1, 1]) { ctx.beginPath(); ctx.arc(ox, s * W * 0.5, W * 0.16, 0, Math.PI * 2); ctx.fillStyle = i % 2 ? color : SAIL; ctx.fill(); strokeInk(ctx, 1); }
+  }
+  // полосатый квадратный парус
+  ctx.fillStyle = SAIL; ctx.fillRect(-L * 0.06, -W * 0.72, L * 0.12, W * 1.44); ctx.strokeStyle = INK; ctx.lineWidth = 1; ctx.strokeRect(-L * 0.06, -W * 0.72, L * 0.12, W * 1.44);
+  ctx.fillStyle = color; ctx.fillRect(-L * 0.06, -W * 0.72, L * 0.04, W * 1.44); ctx.fillRect(L * 0.02, -W * 0.72, L * 0.04, W * 1.44);
+  ctx.beginPath(); ctx.moveTo(0, -W * 0.78); ctx.lineTo(0, W * 0.78); strokeInk(ctx, 1.8);
+}
+
+// ─── АРАБЫ: доу — косой ЛАТИНСКИЙ парус (диагональная рея), высокая изогнутая корма ───
+function arab(ctx, L, big, color) {
+  const W = L * 0.3;
+  ctx.beginPath();
+  ctx.moveTo(-L / 2 - L * 0.04, -W * 0.4);            // высокая корма
+  ctx.quadraticCurveTo(-L * 0.3, -W / 2, L * 0.1, -W / 2);
+  ctx.quadraticCurveTo(L * 0.44, -W * 0.4, L / 2 + L * 0.04, 0);
+  ctx.quadraticCurveTo(L * 0.44, W * 0.4, L * 0.1, W / 2);
+  ctx.quadraticCurveTo(-L * 0.3, W / 2, -L / 2 - L * 0.04, W * 0.4);
+  ctx.closePath();
+  ctx.fillStyle = color; ctx.fill(); strokeInk(ctx);
+  ctx.beginPath(); ctx.ellipse(0, 0, L * 0.3, W * 0.3, 0, 0, Math.PI * 2); ctx.fillStyle = DECK; ctx.fill(); strokeInk(ctx, 1);
+  // ЛАТИНСКИЙ парус: длинная диагональная рея + треугольный парус
+  ctx.save();
+  ctx.beginPath(); ctx.moveTo(-L * 0.34, W * 0.5); ctx.lineTo(L * 0.34, -W * 0.7); strokeInk(ctx, 2.4); // рея по диагонали
+  ctx.beginPath(); ctx.moveTo(-L * 0.3, W * 0.46); ctx.lineTo(L * 0.3, -W * 0.62); ctx.lineTo(-L * 0.06, -W * 0.2); ctx.closePath();
+  ctx.fillStyle = SAIL; ctx.fill(); ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke();
+  ctx.restore();
+  // мачта-узел
+  ctx.beginPath(); ctx.arc(0, 0, Math.max(2, W * 0.12), 0, Math.PI * 2); ctx.fillStyle = INK; ctx.fill();
+}
+
+const RACES = [
+  { name: '🏰 Европа', desc: 'Галеон: широкий остроносый корпус, 2–3 поперечные реи, кормовой вымпел.', draw: europe },
+  { name: '🏛 Рим', desc: 'Галера: узкий длинный корпус, таран на носу, ряды вёсел по бортам.', draw: rome },
+  { name: '🐉 Азия', desc: 'Джонка: широкий корпус, квадратная корма-надстройка, батенные (полосатые) паруса.', draw: asia },
+  { name: '⚔️ Викинги', desc: 'Драккар: узкий корпус, голова дракона на носу, ряд круглых щитов, полосатый парус.', draw: viking },
+  { name: '🕌 Арабы', desc: 'Доу: косой латинский парус (диагональная рея), высокая изогнутая корма.', draw: arab },
+];
+
+function renderAll() {
+  document.querySelectorAll('.card canvas').forEach(cv => {
+    const dpr = window.devicePixelRatio || 1;
+    const w = cv.clientWidth, h = cv.clientHeight;
+    cv.width = w * dpr; cv.height = h * dpr;
+    const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    const r = RACES[+cv.dataset.i];
+    ctx.save(); ctx.translate(w * 0.28, h * 0.5); r.draw(ctx, 92, false, accent); ctx.restore();   // боевой
+    ctx.save(); ctx.translate(w * 0.7, h * 0.5); r.draw(ctx, 128, true, accent); ctx.restore();    // флагман
+  });
+}
+
+const grid = document.getElementById('grid');
+RACES.forEach((r, i) => {
+  const c = document.createElement('div'); c.className = 'card';
+  c.innerHTML = `<h3>${r.name}</h3><p>${r.desc}</p><canvas data-i="${i}"></canvas><div class="cap">боевой · флагман</div>`;
+  grid.appendChild(c);
+});
+const sw = document.getElementById('swatches');
+PALETTE.forEach((col, i) => {
+  const b = document.createElement('div'); b.className = 'sw' + (i ? '' : ' on'); b.style.background = col;
+  b.onclick = () => { accent = col; document.querySelectorAll('.sw').forEach(s => s.classList.remove('on')); b.classList.add('on'); renderAll(); };
+  sw.appendChild(b);
+});
+renderAll();
+window.addEventListener('resize', renderAll);
+</script>
+  <script src="/js/lab-nav.js"></script>
+</body>
+</html>

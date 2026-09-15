@@ -9,7 +9,10 @@ const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
 export const BOT_NAMES = {
   easy: ['Юнга Билли', 'Юнга Том', 'Юнга Чарли'],
   mid: ['Боцман Сэм', 'Боцман Дрейк', 'Боцман Луи'],
-  hard: ['Адмирал Грей', 'Адмирал Шторм', 'Адмирал Кроу']
+  hard: ['Адмирал Грей', 'Адмирал Шторм', 'Адмирал Кроу'],
+  // 🧠 уровни на языковой модели (server/ai/*): думают текстом, ходят через тот же applyAction
+  ai: ['🧠 Капитан Немо', '🧠 Капитан Ахав', '🧠 Капитан Флинт'],
+  'ai-fast': ['🧠 Штурман Ло', '🧠 Штурман Кид', '🧠 Штурман Эш']
 };
 
 // шаг к цели с объездом препятствий (как «по линейке»)
@@ -183,12 +186,12 @@ export function chooseBotAction(game, pIdx, level = 'mid') {
     const price = OUTPOST_LEVELS[(isl.outpost?.level || 0)].price;
     if (me.gold < price + 120) return; // строим только с запасом на корабли (апгрейд окупается доходом)
     if (isl.outpost) { // апгрейд своего — гарнизон строит сам, корабль не нужен
-      cands.push({ score: 14 * (underSiege ? 0.4 : 1), action: { type: 'outpost', islandId: ii } });
+      cands.push({ score: 17 * (underSiege ? 0.4 : 1), action: { type: 'outpost', islandId: ii } });
       return;
     }
     const builder = myShips.find(s => !acted.has(s.id) && dist(s.x, s.y, isl.x, isl.y) <= isl.radius + OUTPOST_BUILD_REACH);
     if (builder) cands.push({
-      score: 18 * (underSiege ? 0.4 : 1), // первая постройка ценнее апгрейда
+      score: 20 * (underSiege ? 0.4 : 1), // первая постройка ценнее апгрейда (доход + дозор + ремонт на всю партию)
       action: { type: 'outpost', shipId: builder.id, islandId: ii }
     });
   });
@@ -279,6 +282,24 @@ export function chooseBotAction(game, pIdx, level = 'mid') {
         foeFighters.filter(f => dist(f.x, f.y, fz.x, fz.y) <= SHIP_TYPES[f.type].fireRange + 120),
         f => [f.x, f.y]);
       if (enemy) addMove(ship, enemy.x, enemy.y, 31); // чуть ниже обороны базы (35), выше лута/охоты
+    }
+
+    // ⛺ к залутанному острову под стройку: без этого мотива аванпосты не строились ВООБЩЕ —
+    // корабль после сбора клада уплывал, и условие «свой корабль вплотную + есть золото»
+    // не совпадало ни разу за партию (замер: 0 аванпостов на партию у всех уровней).
+    // Строителем шлём НЕ последний боевой корабль: экономика не должна оголять фронт.
+    // Условия нарочно жёсткие: A/B показал, что «строить при первой возможности» делает бота
+    // СЛАБЕЕ (3 победы против 9) — отвлечённый корабль и потраченные 150 зол. стоят дороже,
+    // чем +3 золота в ход за остаток партии. Строим только с лишними деньгами, лишним флотом
+    // и по дороге (дальний крюк ради аванпоста не окупается).
+    if (level !== 'easy' && me.gold >= OUTPOST_LEVELS[0].price + 450 && !underSiege &&
+        (st.fishing > 0 || myFighters.length > 3)) {
+      const free = game.map.lootIslands.filter(i => i.looted && !i.outpost);
+      const spot = nearest(ship, free, ii => [ii.x, ii.y]);
+      const d = spot ? dist(ship.x, ship.y, spot.x, spot.y) : Infinity;
+      if (spot && d > spot.radius + OUTPOST_BUILD_REACH && d <= st.move * 2) {
+        addMove(ship, spot.x, spot.y, 16 - Math.ceil(d / st.move) * 3);
+      }
     }
 
     // к ближайшему кладу — лут важнее бесконечной рыбалки

@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Лаборатория: Штурвал 🎛 — управление кораблём</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    body { margin: 0; padding: 0; }
+    .lab-wrap { max-width: 980px; margin: 0 auto; padding: 16px; }
+    h1 { margin: 4px 0 2px; }
+    .hint { color: #6b6f76; margin: 0 0 12px; line-height: 1.55; }
+    .hint b { color: #2b3a55; }
+    .stage {
+      position: relative; width: 100%; aspect-ratio: 4 / 3;
+      background: #fdfcf7; border: 2px solid #2b3a55; border-radius: 10px;
+      overflow: hidden; touch-action: none;
+      box-shadow: 0 6px 22px rgba(0,0,0,.12);
+    }
+    .stage canvas { display: block; width: 100%; height: 100%; }
+    .controls {
+      display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center;
+      margin: 14px 0; padding: 12px 14px; background: #fff; border-radius: 10px;
+      border: 1px dashed #c7c3b6; font-size: 14px;
+    }
+    .controls label { display: inline-flex; align-items: center; gap: 7px; }
+    .pill { display: inline-block; padding: 1px 7px; border-radius: 20px; background: #eef; font-size: 12px; }
+    .readout { font-size: 13.5px; color: #2b3a55; margin: 8px 2px 0; min-height: 38px; line-height: 1.45; }
+    .legend { font-size: 13px; color: #6b6f76; margin-top: 10px; line-height: 1.7; }
+    .legend b { color: #2b3a55; }
+    input[type=range] { vertical-align: middle; width: 110px; }
+  </style>
+</head>
+<body>
+  <div class="lab-wrap">
+    <h1>🎛 «Штурвал» — командное кольцо у корабля</h1>
+    <p class="hint">
+      Идея: панель действий больше <b>не живёт на краю экрана</b> — команды появляются <b>кольцом вокруг корабля</b>,
+      там, куда и так смотришь. <b>Тап по кораблю</b> → кольцо. <b>Борта 💥 сидят на бортах</b> (крутятся вместе с корпусом —
+      жмёшь на тот борт, который стреляет). <b>Тап по иконке</b> → прицеливание → тап/потяг по цели.
+      <b>Потяни от корабля мимо кольца</b> — это «Плыть» (как сейчас). А для быстрого боя — <b>росчерк</b>:
+      зажал корабль → провёл ЧЕРЕЗ иконку борта → продолжил к цели → отпустил = залп одним движением.
+    </p>
+
+    <div class="stage"><canvas id="cv"></canvas></div>
+
+    <div class="controls">
+      <label>Радиус кольца <input type="range" id="rRing" min="52" max="110" step="2" value="72"> <span class="pill" id="rRingVal">72</span></label>
+      <label>Иконки <input type="range" id="rIcon" min="14" max="30" step="1" value="19"> <span class="pill" id="rIconVal">19</span></label>
+      <label><input type="checkbox" id="oneGesture" checked> росчерк (один жест)</label>
+      <label><input type="checkbox" id="labels" checked> подписи</label>
+      <label><input type="checkbox" id="mobile"> 📱 мобильные размеры</label>
+      <label><input type="checkbox" id="fastCd"> быстрые перезарядки</label>
+    </div>
+    <div class="readout" id="log">Выбери свой корабль (синие) — вокруг раскроется штурвал.</div>
+
+    <div class="legend">
+      <b>Мишени</b> — красные, плавают сами, их можно топить (возрождаются). <b>Контекст:</b> подведи шхуну к острову
+      с кладом — в кольце появится 🏝 «Собрать»; у ремонтника вместо пушек — 🛟 «Чинить». Перезарядка рисуется
+      <b>дугой прямо на иконке</b>. Кольцо само перекладывает иконки, если корабль у края экрана.
+      <b>Расширяемость:</b> действия — это реестр; новое действие = одна запись, кольцо разложит само.
+    </div>
+  </div>
+
+  <script src="/js/lab-nav.js"></script>
+  <script>
+  'use strict';
+  // ═══════════════════ Мир лаборатории (упрощённая RT-песочница) ═══════════════════
+  const cv = document.getElementById('cv');
+  const ctx = cv.getContext('2d');
+  const W = 1200, H = 900;                       // логические координаты мира
+  let scale = 1, dpr = 1;
+  function resize() {
+    dpr = window.devicePixelRatio || 1;
+    const r = cv.getBoundingClientRect();
+    cv.width = r.width * dpr; cv.height = r.height * dpr;
+    scale = r.width / W;
+    ctx.setTransform(dpr * scale, 0, 0, dpr * scale, 0, 0);
+  }
+  window.addEventListener('resize', resize);
+
+  const INK = '#2b3a55', PAPER = '#fdfcf7';
+  const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
+  const norm = a => Math.atan2(Math.sin(a), Math.cos(a));
+  const now = () => performance.now();
+
+  // настройки (панель снизу)
+  const cfg = {
+    ring: 72, icon: 19, oneGesture: true, labels: true, mobile: false, fastCd: false,
+    get R() { return this.ring * (this.mobile ? 1.22 : 1); },
+    get I() { return this.icon * (this.mobile ? 1.35 : 1); }
+  };
+
+  // ─── Корабли ───
+  const CLASSES = {
+    shkhuna: { len: 46, speed: 34, hp: 60,  boards: true,  turn: 1.5 },
+    fregat:  { len: 62, speed: 26, hp: 170, boards: true,  mortar: true, turn: 0.95 },
+    linkor:  { len: 76, speed: 20, hp: 280, boards: true,  mortar: true, turn: 0.65 },
+    repair:  { len: 52, speed: 28, hp: 130, repair: true,  turn: 1.2 },
+    enemy:   { len: 52, speed: 16, hp: 80,  boards: true,  turn: 1.1 }
+  };
+  let idSeq = 1;
+  function ship(type, x, y, heading, mine) {
+    return { id: idSeq++, type, x, y, heading, mine, hp: CLASSES[type].hp, cd: {}, dest: null };
+  }
+  const ships = [
+    ship('linkor', 380, 420, 0.4, true),
+    ship('fregat', 300, 620, -0.3, true),
+    ship('shkhuna', 560, 300, 1.2, true),
+    ship('repair', 250, 480, 0.1, true),
+    ship('enemy', 850, 350, 2.6, false),
+    ship('enemy', 900, 640, 3.6, false)
+  ];
+  const island = { x: 640, y: 720, r: 52, loot: 180, looted: false };
+  const CD_MS = { board_l: 6000, board_r: 6000, mortar: 9000, repair: 5000 };
+
+  // ═══════════════════ РЕЕСТР ДЕЙСТВИЙ ШТУРВАЛА ═══════════════════
+  // Новое действие = одна запись: кольцо само найдёт место. anchor:'side' сажает иконку на борт
+  // (лево/право корпуса, вращается с курсом); остальные раскладываются по свободной дуге.
+  const ACTIONS = [
+    { key: 'board_l', icon: '💥', label: 'левый борт', kind: 'aim', anchor: 'side', side: -1,
+      avail: s => CLASSES[s.type].boards },
+    { key: 'board_r', icon: '💥', label: 'правый борт', kind: 'aim', anchor: 'side', side: 1,
+      avail: s => CLASSES[s.type].boards },
+    { key: 'mortar', icon: '🎯', label: 'мортира', kind: 'aim',
+      avail: s => CLASSES[s.type].mortar },
+    { key: 'repair', icon: '🛟', label: 'чинить', kind: 'aim',
+      avail: s => CLASSES[s.type].repair },
+    { key: 'collect', icon: '🏝', label: 'собрать', kind: 'instant',
+      avail: s => !island.looted && dist(s.x, s.y, island.x, island.y) < island.r + 90 }
+    // ← примеры на будущее: {key:'outpost', icon:'⛺', ...}, {key:'recharge', icon:'🔧', ...}
+  ];
+
+  // раскладка иконок вокруг корабля: борта — на бортах, прочие — по «библиотечным» слотам,
+  // с автофлипом от краёв экрана (иконка всегда в кадре)
+  function layoutWheel(s) {
+    const acts = ACTIONS.filter(a => a.avail(s));
+    const R = cfg.R;
+    const placed = [];
+    const clampAng = a0 => { // подвинуть слот: в кадре и не липнуть к соседям (место и под подпись).
+      // В углу экрана простора мало — зазор ослабляем ступенями, но В КАДРЕ иконка будет всегда.
+      for (const sep of [0.85, 0.6, 0.4, 0.22]) {
+        for (let k = 0; k <= 20; k++) for (const sgn of [1, -1]) {
+          const a = a0 + sgn * k * 0.26;
+          const x = s.x + Math.cos(a) * R, y = s.y + Math.sin(a) * R;
+          const m = cfg.I + 14;
+          if (x > m && x < W - m && y > m && y < H - m &&
+              !placed.some(p => Math.abs(norm(p.ang - a)) < sep)) return a;
+        }
+      }
+      return a0;
+    };
+    for (const a of acts) {                       // сперва борта — их место святое
+      if (a.anchor !== 'side') continue;
+      placed.push({ act: a, ang: clampAng(s.heading + a.side * Math.PI / 2) });
+    }
+    const slots = [-Math.PI / 2, Math.PI, 0, Math.PI / 2, -Math.PI / 4]; // верх, лево, право, низ…
+    let si = 0;
+    for (const a of acts) {
+      if (a.anchor === 'side') continue;
+      placed.push({ act: a, ang: clampAng(slots[si++ % slots.length]) });
+    }
+    return placed.map(p => ({ ...p, x: s.x + Math.cos(p.ang) * R, y: s.y + Math.sin(p.ang) * R }));
+  }
+
+  // ═══════════════════ Состояние взаимодействия ═══════════════════
+  // idle → (тап по своему) selected → [pressShip: палец ещё зажат] → aim(action) | moveAim → order
+  let sel = null;            // выбранный корабль
+  let wheel = [];            // раскладка иконок (пересчитывается каждый кадр — корабль плывёт)
+  let wheelBorn = 0;         // для анимации раскрытия
+  let press = null;          // {x,y, armed: action|null, moved} — палец зажат на корабле
+  let aim = null;            // {act, x, y} — режим прицеливания (липкий или в росчерке)
+  const logEl = document.getElementById('log');
+  const say = t => { logEl.innerHTML = t; };
+
+  function select(s) { sel = s; wheelBorn = now(); aim = null; }
+  function deselect() { sel = null; aim = null; press = null; }
+
+  // ─── эффекты: ядра, всплывающие циферки, вспышки ───
+  const fx = [];
+  function shoot(from, tx, ty, n, spread) {
+    for (let i = 0; i < n; i++) {
+      const t0 = now() + i * 110 * Math.random() * 2;
+      const a = Math.atan2(ty - from.y, tx - from.x) + (Math.random() - 0.5) * spread;
+      const d = dist(from.x, from.y, tx, ty);
+      fx.push({ kind: 'ball', x0: from.x, y0: from.y, a, d, t0, dur: Math.max(260, d * 1.1) });
+    }
+  }
+  const pop = (x, y, text, col) => fx.push({ kind: 'pop', x, y, text, col, t0: now(), dur: 900 });
+
+  function execute(act, tx, ty) {
+    const c = CD_MS[act.key] * (cfg.fastCd ? 0.35 : 1);
+    if ((sel.cd[act.key] || 0) > now()) { pop(sel.x, sel.y - 40, '⏳ перезарядка', '#8a7a45'); return; }
+    if (act.key === 'collect') {
+      island.looted = true;
+      pop(island.x, island.y - 30, `+${island.loot} 💰`, '#8a7a45');
+      say('🏝 Клад собран! (+180) — остров через 6с «восстановится» для новых проб');
+      setTimeout(() => { island.looted = false; }, 6000);
+      return;
+    }
+    if (act.key.startsWith('board')) {
+      // проверим, что цель в секторе выбранного борта (интуитивная честность «жми на борт»)
+      const sideAng = sel.heading + act.side * Math.PI / 2;
+      const to = Math.atan2(ty - sel.y, tx - sel.x);
+      if (Math.abs(norm(to - sideAng)) > 1.15) { pop(sel.x, sel.y - 40, '🚫 не тот борт', '#c0392b'); return; }
+      sel.cd[act.key] = now() + c;
+      shoot(sel, tx, ty, sel.type === 'linkor' ? 6 : sel.type === 'fregat' ? 4 : 3, 0.16);
+      hitAt(tx, ty, sel.type === 'linkor' ? 34 : 22);
+      say(`💥 Залп (${act.side < 0 ? 'левый' : 'правый'} борт) — перезарядка дугой на иконке`);
+    } else if (act.key === 'mortar') {
+      sel.cd[act.key] = now() + c;
+      shoot(sel, tx, ty, 1, 0.02);
+      hitAt(tx, ty, 42);
+      say('🎯 Мортира ушла — «пузо» перезарядки на иконке');
+    } else if (act.key === 'repair') {
+      const ally = ships.find(s => s.mine && s !== sel && dist(s.x, s.y, tx, ty) < 40);
+      if (!ally) { pop(tx, ty, '🚫 не по кому', '#c0392b'); return; }
+      sel.cd[act.key] = now() + c;
+      ally.hp = Math.min(CLASSES[ally.type].hp, ally.hp + 30);
+      pop(ally.x, ally.y - 34, '+30 🛟', '#2e7d5b');
+      say('🛟 Подлатали союзника');
+    }
+  }
+  function hitAt(tx, ty, dmg) {
+    setTimeout(() => {
+      const t = ships.find(s => !s.mine && dist(s.x, s.y, tx, ty) < 46);
+      if (!t) { pop(tx, ty, 'плюх 💦', '#7d9fc0'); return; }
+      t.hp -= dmg;
+      pop(t.x, t.y - 34, `−${dmg}`, '#c0392b');
+      if (t.hp <= 0) {
+        pop(t.x, t.y, '💥', '#c0392b');
+        t.hp = CLASSES.enemy.hp;                      // возрождение для бесконечных проб
+        t.x = 750 + Math.random() * 350; t.y = 200 + Math.random() * 550;
+      }
+    }, 320);
+  }
+
+  // ═══════════════════ Указатель: тапы, росчерки, прицеливание ═══════════════════
+  function evPos(e) {
+    const r = cv.getBoundingClientRect();
+    return { x: (e.clientX - r.left) / scale, y: (e.clientY - r.top) / scale };
+  }
+  const shipAt = (x, y, mineOnly) =>
+    ships.find(s => (!mineOnly || s.mine) && dist(x, y, s.x, s.y) < Math.max(34, CLASSES[s.type].len * 0.7));
+  const iconAt = (x, y) => sel && wheel.find(w => dist(x, y, w.x, w.y) < cfg.I + 10);
+
+  cv.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    const p = evPos(e);
+    if (aim && aim.sticky) { aim.x = p.x; aim.y = p.y; aim.dragging = true; return; } // липкий прицел: наводим
+    const ic = iconAt(p.x, p.y);
+    if (ic) { // тап по иконке кольца
+      if (ic.act.kind === 'instant') { execute(ic.act, ic.x, ic.y); }
+      else { aim = { act: ic.act, x: p.x, y: p.y, sticky: true, dragging: false }; say(`${ic.act.icon} Прицеливание: тапни или потяни по цели`); }
+      return;
+    }
+    const s = shipAt(p.x, p.y, true);
+    if (s) { select(s); press = { x: p.x, y: p.y, armed: null, moved: false }; return; }
+    if (sel) { deselect(); say('Штурвал закрыт. Выбери корабль.'); }
+  });
+
+  cv.addEventListener('pointermove', e => {
+    const p = evPos(e);
+    if (aim && (aim.dragging || !aim.sticky)) { aim.x = p.x; aim.y = p.y; return; }
+    if (!press || !sel) return;
+    press.moved = press.moved || dist(p.x, p.y, press.x, press.y) > 8;
+    const d = dist(p.x, p.y, sel.x, sel.y);
+    if (d < cfg.R * 1.45) {                    // внутри кольца: взводим иконку под пальцем
+      const ic = iconAt(p.x, p.y);
+      press.armed = ic ? ic.act : press.armed && d > cfg.R * 0.55 ? press.armed : null;
+    } else if (cfg.oneGesture) {               // вылетели за кольцо — РОСЧЕРК
+      if (press.armed && press.armed.kind === 'aim') {
+        aim = { act: press.armed, x: p.x, y: p.y, sticky: false }; press = null;
+      } else {                                  // мимо иконок = «плыть»
+        aim = { act: { key: 'move', icon: '🧭', label: 'плыть', kind: 'aim' }, x: p.x, y: p.y, sticky: false };
+        press = null;
+      }
+    }
+  });
+
+  cv.addEventListener('pointerup', e => {
+    const p = evPos(e);
+    if (aim) {
+      if (aim.sticky && !aim.dragging) return;  // липкий прицел ждёт своего тапа
+      if (aim.act.key === 'move') { sel.dest = { x: p.x, y: p.y }; say('🧭 Плывём. (Потяг от корабля мимо кольца — всегда «плыть»)'); }
+      else execute(aim.act, p.x, p.y);
+      aim = null;
+      return;
+    }
+    if (press && press.armed) {                 // отпустил палец НА иконке — взводим её
+      if (press.armed.kind === 'instant') execute(press.armed, p.x, p.y);
+      else { aim = { act: press.armed, x: p.x, y: p.y, sticky: true, dragging: false }; say(`${press.armed.icon} Прицеливание: тапни или потяни по цели`); }
+      press = null;
+      return;
+    }
+    if (press && !press.moved) say('Штурвал открыт: борта 💥 — на бортах, тап по иконке = прицел, потяг мимо кольца = плыть.');
+    press = null;
+  });
+
+  // ═══════════════════ Тик мира ═══════════════════
+  let last = now();
+  function tick() {
+    const t = now(), dt = Math.min(50, t - last) / 1000; last = t;
+    for (const s of ships) {
+      if (!s.mine && !s.dest) s.dest = { x: 700 + Math.random() * 420, y: 180 + Math.random() * 620 };
+      if (s.dest) {
+        const d = dist(s.x, s.y, s.dest.x, s.dest.y);
+        if (d < 6) { s.dest = null; continue; }
+        const want = Math.atan2(s.dest.y - s.y, s.dest.x - s.x);
+        const dh = norm(want - s.heading);
+        const mt = CLASSES[s.type].turn * dt;
+        s.heading = norm(s.heading + Math.max(-mt, Math.min(mt, dh)));
+        const slow = Math.abs(dh) > 1.4 ? 0.4 : 1;
+        s.x += Math.cos(s.heading) * CLASSES[s.type].speed * slow * dt;
+        s.y += Math.sin(s.heading) * CLASSES[s.type].speed * slow * dt;
+      }
+    }
+    if (sel) wheel = layoutWheel(sel);
+    draw(t);
+    requestAnimationFrame(tick);
+  }
+
+  // ═══════════════════ Отрисовка (карандашный стиль игры) ═══════════════════
+  function grid() {
+    ctx.fillStyle = PAPER; ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = 'rgba(120,150,190,.16)'; ctx.lineWidth = 1;
+    for (let x = 0; x < W; x += 40) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+    for (let y = 0; y < H; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+  }
+  function drawShipBody(s) {
+    const L = CLASSES[s.type].len, Wd = L * 0.36;
+    ctx.save(); ctx.translate(s.x, s.y); ctx.rotate(s.heading);
+    ctx.beginPath();
+    ctx.moveTo(-L / 2, 0);
+    ctx.quadraticCurveTo(-L / 2 + L * 0.12, -Wd / 2, 0, -Wd / 2);
+    ctx.quadraticCurveTo(L / 2 - L * 0.06, -Wd / 2 + 2, L / 2 + L * 0.11, 0);
+    ctx.quadraticCurveTo(L / 2 - L * 0.06, Wd / 2 - 2, 0, Wd / 2);
+    ctx.quadraticCurveTo(-L / 2 + L * 0.12, Wd / 2, -L / 2, 0);
+    ctx.closePath();
+    ctx.fillStyle = s.mine ? '#2980b9' : '#c0392b';
+    ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 1.6; ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-L / 2 + L * 0.09, 0);
+    ctx.quadraticCurveTo(0, -Wd / 2 + Wd * 0.3, L / 2 - L * 0.03, 0);
+    ctx.quadraticCurveTo(0, Wd / 2 - Wd * 0.3, -L / 2 + L * 0.09, 0);
+    ctx.closePath(); ctx.fillStyle = '#e8d9a8'; ctx.fill(); ctx.lineWidth = 1; ctx.stroke();
+    ctx.restore();
+    // hp-полоска
+    const frac = s.hp / CLASSES[s.type].hp;
+    ctx.fillStyle = '#e5e2d6'; ctx.fillRect(s.x - 22, s.y + L * 0.55, 44, 5);
+    ctx.fillStyle = frac > 0.5 ? '#27ae60' : frac > 0.25 ? '#f4c20a' : '#c0392b';
+    ctx.fillRect(s.x - 22, s.y + L * 0.55, 44 * frac, 5);
+    ctx.strokeStyle = INK; ctx.lineWidth = 0.8; ctx.strokeRect(s.x - 22, s.y + L * 0.55, 44, 5);
+  }
+  function drawWheel(t) {
+    if (!sel) return;
+    const k = Math.min(1, (t - wheelBorn) / 130);          // раскрытие
+    const R = cfg.R * (0.65 + 0.35 * k);
+    ctx.globalAlpha = k;
+    // само кольцо — «канат» пунктиром
+    ctx.setLineDash([5, 6]); ctx.strokeStyle = 'rgba(43,58,85,.4)'; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.arc(sel.x, sel.y, R, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+    for (const w of wheel) {
+      const wx = sel.x + Math.cos(w.ang) * R, wy = sel.y + Math.sin(w.ang) * R;
+      const left = (sel.cd[w.act.key] || 0) - t;
+      const ready = left <= 0;
+      const hot = (press && press.armed === w.act) || (aim && aim.act === w.act);
+      // спица к иконке борта — показывает «этот борт стреляет туда»
+      if (w.act.anchor === 'side') {
+        ctx.strokeStyle = 'rgba(43,58,85,.35)'; ctx.lineWidth = 1.2;
+        ctx.beginPath(); ctx.moveTo(sel.x + Math.cos(w.ang) * 20, sel.y + Math.sin(w.ang) * 20);
+        ctx.lineTo(wx - Math.cos(w.ang) * cfg.I, wy - Math.sin(w.ang) * cfg.I); ctx.stroke();
+      }
+      // кнопка
+      ctx.beginPath(); ctx.arc(wx, wy, cfg.I, 0, Math.PI * 2);
+      ctx.fillStyle = hot ? '#fff3c6' : ready ? 'rgba(253,251,243,.95)' : 'rgba(235,232,222,.9)';
+      ctx.fill();
+      ctx.strokeStyle = hot ? '#8a7a45' : INK; ctx.lineWidth = hot ? 2.4 : 1.6; ctx.stroke();
+      if (!ready) {                                        // дуга перезарядки
+        const frac = 1 - left / (CD_MS[w.act.key] * (cfg.fastCd ? 0.35 : 1));
+        ctx.beginPath(); ctx.moveTo(wx, wy);
+        ctx.arc(wx, wy, cfg.I - 2, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2);
+        ctx.closePath(); ctx.fillStyle = 'rgba(46,125,91,.25)'; ctx.fill();
+      }
+      ctx.font = `${cfg.I * 1.05}px serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.globalAlpha = ready ? k : k * 0.55;
+      ctx.fillText(w.act.icon, wx, wy + 1);
+      ctx.globalAlpha = k;
+      if (cfg.labels) { // подпись — радиально СНАРУЖИ кольца (не наезжает на соседей и корабль)
+        ctx.font = '11px sans-serif'; ctx.fillStyle = 'rgba(43,58,85,.75)';
+        const lx = wx + Math.cos(w.ang) * (cfg.I + 13), ly = wy + Math.sin(w.ang) * (cfg.I + 13) + 4;
+        ctx.fillText(ready ? w.act.label : `${Math.ceil(left / 1000)}с`, lx, ly);
+      }
+      ctx.textBaseline = 'alphabetic';
+    }
+    ctx.globalAlpha = 1;
+  }
+  function drawAim(t) {
+    if (!aim || (aim.sticky && !aim.dragging)) {
+      if (aim) { // липкий прицел без пальца: подсказка-сектор борта
+        drawSector(aim.act);
+      }
+      return;
+    }
+    drawSector(aim.act);
+    // линия к цели + перекрестие
+    ctx.setLineDash([6, 5]); ctx.strokeStyle = 'rgba(43,58,85,.6)'; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.moveTo(sel.x, sel.y); ctx.lineTo(aim.x, aim.y); ctx.stroke(); ctx.setLineDash([]);
+    const col = aim.act.key === 'move' ? '#2e7d5b' : '#c0392b';
+    ctx.strokeStyle = col; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(aim.x, aim.y, 12, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(aim.x - 18, aim.y); ctx.lineTo(aim.x + 18, aim.y);
+    ctx.moveTo(aim.x, aim.y - 18); ctx.lineTo(aim.x, aim.y + 18); ctx.stroke();
+    ctx.font = '13px sans-serif'; ctx.fillStyle = col; ctx.textAlign = 'center';
+    ctx.fillText(aim.act.key === 'move' ? '🧭 отпусти — плывём' : `${aim.act.icon} отпусти — ${aim.act.label}`, aim.x, aim.y - 24);
+  }
+  function drawSector(act) {
+    if (!act.key.startsWith('board') || !sel) return;      // сектор — только для бортов
+    const a0 = sel.heading + act.side * Math.PI / 2;
+    ctx.beginPath(); ctx.moveTo(sel.x, sel.y);
+    ctx.arc(sel.x, sel.y, 190, a0 - 1.15, a0 + 1.15);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(192,57,43,.08)'; ctx.fill();
+    ctx.strokeStyle = 'rgba(192,57,43,.35)'; ctx.lineWidth = 1; ctx.stroke();
+  }
+  function drawFx(t) {
+    for (let i = fx.length - 1; i >= 0; i--) {
+      const f = fx[i];
+      const k = (t - f.t0) / f.dur;
+      if (k > 1) { fx.splice(i, 1); continue; }
+      if (k < 0) continue;
+      if (f.kind === 'ball') {
+        const d = f.d * k;
+        const x = f.x0 + Math.cos(f.a) * d, y = f.y0 + Math.sin(f.a) * d - Math.sin(k * Math.PI) * 26;
+        ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fillStyle = '#20242c'; ctx.fill();
+      } else if (f.kind === 'pop') {
+        ctx.globalAlpha = 1 - k;
+        ctx.font = 'bold 17px sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = f.col;
+        ctx.fillText(f.text, f.x, f.y - k * 26);
+        ctx.globalAlpha = 1;
+      }
+    }
+  }
+  function draw(t) {
+    grid();
+    // остров с кладом
+    ctx.beginPath(); ctx.arc(island.x, island.y, island.r, 0, Math.PI * 2);
+    ctx.fillStyle = '#e8d9a8'; ctx.fill(); ctx.strokeStyle = '#8a7a45'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.font = '22px serif'; ctx.textAlign = 'center';
+    ctx.fillText(island.looted ? '✖' : '💰', island.x, island.y + 8);
+    // курсовые линии своих (куда плывут)
+    for (const s of ships) if (s.mine && s.dest) {
+      ctx.setLineDash([3, 5]); ctx.strokeStyle = 'rgba(43,58,85,.3)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(s.dest.x, s.dest.y); ctx.stroke(); ctx.setLineDash([]);
+    }
+    for (const s of ships) drawShipBody(s);
+    if (sel) { // маркер выделения
+      ctx.setLineDash([3, 3]); ctx.strokeStyle = INK; ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.arc(sel.x, sel.y, CLASSES[sel.type].len * 0.62, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    drawWheel(t);
+    drawAim(t);
+    drawFx(t);
+  }
+
+  // ═══════════════════ Панель настроек ═══════════════════
+  const bind = (id, fn) => document.getElementById(id).addEventListener('input', fn);
+  bind('rRing', e => { cfg.ring = +e.target.value; document.getElementById('rRingVal').textContent = cfg.ring; });
+  bind('rIcon', e => { cfg.icon = +e.target.value; document.getElementById('rIconVal').textContent = cfg.icon; });
+  bind('oneGesture', e => { cfg.oneGesture = e.target.checked; });
+  bind('labels', e => { cfg.labels = e.target.checked; });
+  bind('mobile', e => { cfg.mobile = e.target.checked; });
+  bind('fastCd', e => { cfg.fastCd = e.target.checked; });
+
+  resize();
+  requestAnimationFrame(tick);
+  // отладочный хук для консоли/автотестов лабы: точные координаты кольца и мира
+  window.__lab = { ships, island, cfg, sel: () => sel, wheel: () => wheel, scale: () => scale };
+  </script>
+</body>
+</html>

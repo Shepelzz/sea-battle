@@ -291,6 +291,9 @@ $('#loginOverlay').addEventListener('click', e => { if (e.target.id === 'loginOv
     renderOnlineColor();
     renderBotColor();
     renderHotseatNames();
+    // 🧠 ИИ-соперник показываем в выборе сложности, только если он настроен на сервере
+    // (ключ модели живёт на сервере; сюда приходит лишь флаг).
+    if (cfg.ai) { const opt = $('#botLevelAi'); if (opt) opt.hidden = false; }
     // селекторы игрового режима (из включённых на сервере) + показ описания выбранного
     const modes = Array.isArray(cfg.modes) && cfg.modes.length ? cfg.modes : [{ key: 'classic', name: 'Классический', desc: '' }];
     document.querySelectorAll('.mode-dd').forEach(host => {

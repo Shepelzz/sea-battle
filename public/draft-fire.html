@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Драфт: горящая база</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    body { margin: 0; padding: 16px; }
+    .draft-wrap { max-width: 860px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+    .stage { border: 1.8px solid var(--ink); border-radius: 14px 8px 14px 8px / 8px 14px 8px 14px;
+      box-shadow: var(--shadow); overflow: hidden; background: #fdfbf3; }
+    canvas { display: block; width: 100%; height: auto; }
+    .controls { display: flex; flex-direction: column; gap: 10px; }
+    .row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+    input[type=range] { flex: 1; min-width: 220px; accent-color: var(--ink); }
+    .hpval { font-family: var(--font-title); font-size: 1.5rem; min-width: 70px; }
+    .tier { font-family: var(--font-title); font-size: 1.3rem; }
+    .tier b { color: var(--red-pen); }
+    .presets button { margin-right: 6px; }
+    .legend { font-size: 14px; color: var(--pencil); line-height: 1.5; }
+    .legend b { color: var(--ink); }
+  </style>
+</head>
+<body>
+  <div class="draft-wrap">
+    <h1 style="margin:0">🔥 Драфт: горящий порт</h1>
+    <div class="stage"><canvas id="cv" width="860" height="520"></canvas></div>
+
+    <div class="controls">
+      <div class="row">
+        <span>HP базы:</span>
+        <input type="range" id="hp" min="0" max="100" value="55">
+        <span class="hpval" id="hpval">55%</span>
+      </div>
+      <div class="row tier">Состояние: <span id="tier">—</span></div>
+      <div class="row presets">
+        <span>Пресеты:</span>
+        <button class="small" data-hp="90">90% целая</button>
+        <button class="small" data-hp="78">78% дым</button>
+        <button class="small" data-hp="66">66% 3 очага</button>
+        <button class="small" data-hp="55">55% огонь</button>
+        <button class="small" data-hp="20">20% пожар</button>
+      </div>
+      <div class="row">
+        <label class="fog-toggle"><input type="checkbox" id="fog"><span class="fog-label">🌫 Туман над базой (не разведана)</span></label>
+      </div>
+      <div class="legend">
+        Пороги (эскалация — чем меньше HP, тем сильнее; крути ползунок, поправим цифры):<br>
+        <b>&lt; 80%</b> — лёгкий дым (виден, только если туман рассеян) ·
+        <b>&lt; 70%</b> — 3 очага дыма у флага ·
+        <b>&lt; 60%</b> — огонь + дым (тем сильнее, чем ниже HP)
+      </div>
+    </div>
+  </div>
+
+<script>
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+const hpEl = document.getElementById('hp'), hpval = document.getElementById('hpval'), tierEl = document.getElementById('tier');
+const fogEl = document.getElementById('fog');
+let HP = 55;
+
+// dpr-резкость
+function fit() {
+  const dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth, h = w * 520 / 860;
+  cv.width = w * dpr; cv.height = h * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  CW = w; CH = h;
+}
+let CW = 860, CH = 520;
+
+hpEl.addEventListener('input', () => { HP = +hpEl.value; hpval.textContent = HP + '%'; });
+document.querySelectorAll('.presets button').forEach(b =>
+  b.addEventListener('click', () => { HP = +b.dataset.hp; hpEl.value = HP; hpval.textContent = HP + '%'; }));
+
+// --- геометрия базы (как остров в игре) ---
+const islandShape = (() => {
+  const pts = [], n = 13;
+  // псевдослучайная, но фиксированная форма
+  const rs = [0.95,1.05,0.88,1.02,0.9,1.08,0.92,1.0,0.86,1.04,0.96,1.1,0.9];
+  for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2; const r = 92 * rs[i]; pts.push([Math.cos(a)*r, Math.sin(a)*r]); }
+  return pts;
+})();
+const FLAG_COLOR = '#c0392b';
+
+function drawBase(cx, cy, dim) {
+  ctx.globalAlpha = dim ? 0.4 : 1;
+  // остров
+  ctx.beginPath();
+  islandShape.forEach(([dx,dy],i)=> i?ctx.lineTo(cx+dx,cy+dy):ctx.moveTo(cx+dx,cy+dy));
+  ctx.closePath();
+  ctx.fillStyle = '#e8d9a8'; ctx.fill();
+  ctx.strokeStyle = '#8a7a45'; ctx.lineWidth = 2; ctx.stroke();
+  // флагшток + флаг
+  ctx.beginPath(); ctx.moveTo(cx, cy - 42); ctx.lineTo(cx, cy + 6);
+  ctx.strokeStyle = '#2b3a55'; ctx.lineWidth = 2.4; ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx, cy - 42); ctx.lineTo(cx + 26, cy - 32); ctx.lineTo(cx, cy - 22); ctx.closePath();
+  ctx.fillStyle = FLAG_COLOR; ctx.fill();
+  // ник + hp
+  ctx.font = `bold 18px 'Neucha', cursive`; ctx.fillStyle = '#2b3a55'; ctx.textAlign = 'center';
+  ctx.fillText('Адмирал Грей', cx, cy + 112);
+  const frac = HP / 100, w = 70, bx = cx - w/2, by = cy + 120;
+  ctx.fillStyle = 'rgba(255,255,255,.75)'; ctx.fillRect(bx, by, w, 6);
+  ctx.fillStyle = frac > 0.4 ? '#27ae60' : '#c0392b'; ctx.fillRect(bx, by, w*Math.max(0,frac), 6);
+  ctx.strokeStyle = '#2b3a55'; ctx.lineWidth = 0.9; ctx.strokeRect(bx, by, w, 6);
+  ctx.globalAlpha = 1;
+}
+
+// --- частицы ---
+let smoke = [], fire = [], embers = [];
+// очаги (эмиттеры) вокруг флага — верх острова
+function emitters(cx, cy) {
+  return [ {x: cx, y: cy - 6}, {x: cx - 22, y: cy + 2}, {x: cx + 20, y: cy + 4} ];
+}
+const rnd = (a,b) => a + Math.random()*(b-a);
+
+function tierOf(hp) {
+  if (hp >= 80) return 0;
+  if (hp >= 70) return 1;   // лёгкий дым
+  if (hp >= 60) return 2;   // 3 очага
+  return 3;                 // огонь + дым
+}
+
+let smokeAcc = 0, fireAcc = 0, emberAcc = 0;
+function spawn(dt, cx, cy) {
+  const t = tierOf(HP);
+  const em = emitters(cx, cy);
+  // интенсивность огня растёт по мере падения HP ниже 60
+  const sev = Math.max(0, Math.min(1, (60 - HP) / 55)); // 0..1
+
+  if (t === 0) return;
+  const fogHide = fogEl.checked;
+
+  // ДЫМ
+  let smokeRate = 0, smokeEmitters = [em[0]];
+  if (t === 1) { smokeRate = fogHide ? 0 : 7; smokeEmitters = [em[0]]; }     // лёгкий, только если разведано
+  else if (t === 2) { smokeRate = 16; smokeEmitters = em; }                  // 3 очага
+  else { smokeRate = 22 + sev*18; smokeEmitters = em; }                      // густой над огнём
+  smokeAcc += smokeRate * dt;
+  while (smokeAcc >= 1) {
+    smokeAcc -= 1;
+    const e = smokeEmitters[(Math.random()*smokeEmitters.length)|0];
+    const life = rnd(1.6, 2.8);
+    smoke.push({ x: e.x + rnd(-5,5), y: e.y + rnd(-3,3), vx: rnd(-6,6), vy: rnd(-26,-40),
+      r0: rnd(5,9), grow: rnd(14,22), life, max: life, sway: rnd(0,6.28), swaySpd: rnd(1,2.2),
+      dark: t === 3 ? rnd(0.35,0.55) : rnd(0.18,0.32) });
+  }
+
+  // ОГОНЬ + угли — только тир 3
+  if (t === 3) {
+    fireAcc += (34 + sev*46) * dt;
+    while (fireAcc >= 1) {
+      fireAcc -= 1;
+      const e = em[(Math.random()*em.length)|0];
+      const life = rnd(0.32, 0.6);
+      fire.push({ x: e.x + rnd(-8,8), y: e.y + rnd(-2,4), vx: rnd(-10,10), vy: rnd(-55,-90),
+        r0: rnd(7,13)*(0.8+sev*0.5), life, max: life, sway: rnd(0,6.28) });
+    }
+    emberAcc += (10 + sev*22) * dt;
+    while (emberAcc >= 1) {
+      emberAcc -= 1;
+      const e = em[(Math.random()*em.length)|0];
+      const life = rnd(0.6, 1.2);
+      embers.push({ x: e.x + rnd(-10,10), y: e.y, vx: rnd(-14,14), vy: rnd(-70,-120),
+        r: rnd(1,2.2), life, max: life, sway: rnd(0,6.28) });
+    }
+  }
+}
+
+function update(arr, dt) {
+  for (const p of arr) {
+    p.life -= dt;
+    p.x += (p.vx + Math.sin(p.sway + performance.now()/1000*(p.swaySpd||3)) * 8) * dt;
+    p.y += p.vy * dt;
+    p.vy *= (1 - 0.6*dt); // замедляется к верху
+  }
+  return arr.filter(p => p.life > 0);
+}
+
+function drawFireGlow(cx, cy) {
+  const t = tierOf(HP); if (t < 3) return;
+  const sev = Math.max(0.2, Math.min(1, (60 - HP) / 55));
+  const flick = 0.85 + Math.sin(performance.now()/90)*0.1 + Math.random()*0.05;
+  const r = (60 + sev*40) * flick;
+  const g = ctx.createRadialGradient(cx, cy, 4, cx, cy, r);
+  g.addColorStop(0, `rgba(255,150,40,${0.32*sev})`);
+  g.addColorStop(1, 'rgba(255,120,30,0)');
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, r, 0, 6.29); ctx.fill();
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+function drawSmoke() {
+  for (const p of smoke) {
+    const k = p.life / p.max;            // 1→0
+    const age = 1 - k;
+    const r = p.r0 + p.grow * age;
+    const a = Math.min(1, k * 1.4) * 0.5; // плавный вход/выход
+    const shade = Math.round(70 + age*70); // темнее у огня, светлее вверху
+    const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+    g.addColorStop(0, `rgba(${shade},${shade},${shade+6},${a*p.dark*2})`);
+    g.addColorStop(1, `rgba(${shade},${shade},${shade+6},0)`);
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 6.29); ctx.fill();
+  }
+}
+
+function drawFire() {
+  ctx.globalCompositeOperation = 'lighter';
+  for (const p of fire) {
+    const k = p.life / p.max, age = 1 - k;
+    const r = p.r0 * (1 - age*0.7);
+    const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, Math.max(0.5,r));
+    g.addColorStop(0, `rgba(255,245,200,${0.9*k})`);
+    g.addColorStop(0.4, `rgba(255,170,40,${0.8*k})`);
+    g.addColorStop(1, `rgba(200,40,20,0)`);
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(0.5,r), 0, 6.29); ctx.fill();
+  }
+  for (const p of embers) {
+    const k = p.life / p.max;
+    ctx.fillStyle = `rgba(255,${180+Math.round(Math.random()*60)},80,${k})`;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.29); ctx.fill();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(0.05, (now - last)/1000); last = now;
+  const cx = CW/2, cy = CH/2 - 10;
+
+  // фон: бумага в клетку
+  ctx.clearRect(0,0,CW,CH);
+  ctx.fillStyle = '#fdfbf3'; ctx.fillRect(0,0,CW,CH);
+  ctx.strokeStyle = 'rgba(116,160,199,.30)'; ctx.lineWidth = 1;
+  for (let x=0;x<=CW;x+=34){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,CH);ctx.stroke();}
+  for (let y=0;y<=CH;y+=34){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(CW,y);ctx.stroke();}
+
+  const fogHide = fogEl.checked;
+  // лёгкий туман-вуаль над базой (превью «не разведано»)
+  drawBase(cx, cy, fogHide);
+
+  spawn(dt, cx, cy);
+  smoke = update(smoke, dt); fire = update(fire, dt); embers = update(embers, dt);
+  // под туманом эффекты не видны (как в игре: не разведано → не видишь)
+  if (!fogHide) { drawFireGlow(cx, cy); drawSmoke(); drawFire(); }
+
+  if (fogHide) { // вуаль тумана поверх
+    ctx.fillStyle = 'rgba(150,160,178,0.40)'; ctx.fillRect(cx-150, cy-120, 300, 280);
+  }
+
+  // подпись состояния
+  const names = ['🟢 целая (нет эффектов)', '💨 лёгкий дым', '🔥 3 очага дыма', '🔥🔥 пожар (огонь + дым)'];
+  tierEl.innerHTML = `<b>${names[tierOf(HP)]}</b>`;
+  requestAnimationFrame(loop);
+}
+window.addEventListener('resize', fit);
+fit(); requestAnimationFrame(loop);
+</script>
+  <script src="/js/lab-nav.js"></script>
+</body>
+</html>

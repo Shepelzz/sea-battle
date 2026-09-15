@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Верфь макетов — Морской бой</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .lab-canvas { width: 100%; border: 1.6px solid var(--ink); border-radius: 8px; background: var(--paper); touch-action: pan-y; }
+    .variant h2 { margin-top: 0; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>⚓ Макеты кораблей</h1>
+    <p class="muted">Три стиля. В каждом — баркас, шхуна, бриг, фрегат, линкор и пират. Цвета — как у игроков. Скажи, какой вариант (или миксуй: «корпуса из 2, паруса из 1»).</p>
+
+    <div class="note taped tilt-l variant">
+      <h2>Вариант 1 — «Профиль» (вид сбоку, как в учебнике истории)</h2>
+      <p class="muted">Классы различаются числом мачт и длиной корпуса: баркас с удочкой, шхуна — 1 мачта, бриг — 2, фрегат — 3, линкор — 3 + ряд пушечных портов. У пирата — чёрные паруса.</p>
+      <canvas class="lab-canvas" id="c1" height="240"></canvas>
+    </div>
+
+    <div class="note tilt-r variant">
+      <h2>Вариант 2 — «Вид сверху» (тактическая карта)</h2>
+      <p class="muted">Честный top-down: видно палубу, мачты точками, пушки по бортам. Длина корпуса растёт с классом — на карте сразу читается «кто есть кто». Логично для вида карты сверху.</p>
+      <canvas class="lab-canvas" id="c2" height="240"></canvas>
+    </div>
+
+    <div class="note taped tilt-l variant">
+      <h2>Вариант 3 — «Мультяшный» (пузатые кораблики)</h2>
+      <p class="muted">Толстенькие корпуса, огромные паруса, минимум деталей — различие через размер и число парусов. Самый «настольно-игровой» вид, хорошо читается мелким.</p>
+      <canvas class="lab-canvas" id="c3" height="240"></canvas>
+    </div>
+  </div>
+
+<script>
+const TYPES = [
+  { key: 'barkas',  name: 'Баркас', masts: 0, len: 0.62 },
+  { key: 'shkhuna', name: 'Шхуна',  masts: 1, len: 0.78 },
+  { key: 'brig',    name: 'Бриг',   masts: 2, len: 0.95 },
+  { key: 'fregat',  name: 'Фрегат', masts: 3, len: 1.12 },
+  { key: 'linkor',  name: 'Линкор', masts: 3, len: 1.35, guns: true },
+  { key: 'pirate',  name: 'Пират',  masts: 2, len: 0.95, pirate: true }
+];
+const COLORS = ['#c0392b', '#2980b9', '#27ae60', '#8e44ad'];
+const INK = '#2b3a55';
+const PAPER = '#fdfbf3';
+
+function setupCanvas(id) {
+  const c = document.getElementById(id);
+  const dpr = window.devicePixelRatio || 1;
+  const w = c.clientWidth || c.parentElement.clientWidth - 44;
+  c.width = w * dpr; c.height = 240 * dpr;
+  c.style.height = '240px';
+  const ctx = c.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  // клетка
+  ctx.fillStyle = PAPER; ctx.fillRect(0, 0, w, 240);
+  ctx.strokeStyle = 'rgba(116,160,199,.3)'; ctx.lineWidth = 1;
+  for (let x = 0; x < w; x += 28) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 240); ctx.stroke(); }
+  for (let y = 0; y < 240; y += 28) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+  return { ctx, w };
+}
+
+function labels(ctx, w) {
+  ctx.font = '15px Neucha, cursive';
+  ctx.fillStyle = INK;
+  ctx.textAlign = 'center';
+  TYPES.forEach((t, i) => {
+    ctx.fillText(t.name, (i + 0.5) * (w / TYPES.length), 228);
+  });
+}
+
+// ---------- Вариант 1: профиль ----------
+function profileShip(ctx, t, cx, cy, color) {
+  const L = 64 * t.len, H = 13 + 5 * t.len;
+  const hull = t.pirate ? '#33363c' : color;
+  // корпус
+  ctx.beginPath();
+  ctx.moveTo(cx - L / 2, cy);
+  ctx.quadraticCurveTo(cx - L / 2 + 6, cy + H, cx - L / 4, cy + H);
+  ctx.lineTo(cx + L / 4, cy + H);
+  ctx.quadraticCurveTo(cx + L / 2, cy + H, cx + L / 2 + 7, cy - 4);
+  ctx.quadraticCurveTo(cx + L / 4, cy + 2, cx - L / 2, cy);
+  ctx.closePath();
+  ctx.fillStyle = hull; ctx.fill();
+  ctx.strokeStyle = INK; ctx.lineWidth = 1.6; ctx.stroke();
+  // пушечные порты линкора
+  if (t.guns) {
+    ctx.fillStyle = PAPER;
+    for (let i = -2; i <= 2; i++) {
+      ctx.beginPath(); ctx.arc(cx + i * L / 6, cy + H / 2, 2.2, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  // баркас: удочка и поплавок
+  if (!t.masts) {
+    ctx.strokeStyle = INK; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.moveTo(cx + 4, cy - 2); ctx.lineTo(cx + L / 2 + 16, cy - 22); ctx.stroke();
+    ctx.beginPath(); ctx.setLineDash([3, 3]);
+    ctx.moveTo(cx + L / 2 + 16, cy - 22); ctx.lineTo(cx + L / 2 + 16, cy + 8);
+    ctx.stroke(); ctx.setLineDash([]);
+    ctx.font = '11px serif'; ctx.fillText('🐟', cx + L / 2 + 11, cy + 18);
+    // маленькая рубка
+    ctx.fillStyle = PAPER;
+    ctx.fillRect(cx - 12, cy - 10, 14, 10);
+    ctx.strokeRect(cx - 12, cy - 10, 14, 10);
+    return;
+  }
+  // мачты и паруса
+  const sail = t.pirate ? '#3d4046' : PAPER;
+  const mastXs = t.masts === 1 ? [0] : t.masts === 2 ? [-L / 5, L / 6] : [-L / 4, 0, L / 4];
+  const mastH = 34 + 8 * t.len;
+  for (const mx of mastXs) {
+    const x = cx + mx;
+    ctx.strokeStyle = INK; ctx.lineWidth = 1.8;
+    ctx.beginPath(); ctx.moveTo(x, cy + 1); ctx.lineTo(x, cy - mastH); ctx.stroke();
+    // прямые паруса (две «подушки»)
+    ctx.fillStyle = sail; ctx.lineWidth = 1.4;
+    for (let s = 0; s < 2; s++) {
+      const top = cy - mastH + 4 + s * (mastH / 2 - 4);
+      const sw = 13 + 5 * t.len - s * 2;
+      ctx.beginPath();
+      ctx.moveTo(x - sw, top);
+      ctx.quadraticCurveTo(x - sw - 4, top + mastH / 4 - 3, x - sw, top + mastH / 2 - 6);
+      ctx.lineTo(x + sw, top + mastH / 2 - 6);
+      ctx.quadraticCurveTo(x + sw + 4, top + mastH / 4 - 3, x + sw, top);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+    }
+  }
+  // флаг на задней мачте
+  const fx = cx + mastXs[mastXs.length - 1];
+  ctx.beginPath();
+  ctx.moveTo(fx, cy - mastH);
+  ctx.lineTo(fx + 14, cy - mastH + 4);
+  ctx.lineTo(fx, cy - mastH + 8);
+  ctx.closePath();
+  ctx.fillStyle = t.pirate ? '#111' : color;
+  ctx.fill();
+  if (t.pirate) { ctx.font = '8px serif'; ctx.fillStyle = '#fff'; ctx.fillText('☠', fx + 6, cy - mastH + 7); }
+}
+
+// ---------- Вариант 2: вид сверху ----------
+function topdownShip(ctx, t, cx, cy, color) {
+  const L = 70 * t.len, W = 16 + 6 * t.len;
+  const hull = t.pirate ? '#33363c' : color;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(-0.5); // слегка под углом, «плывёт»
+  // корпус: остроносый овал
+  ctx.beginPath();
+  ctx.moveTo(-L / 2, 0);
+  ctx.quadraticCurveTo(-L / 2 + 8, -W / 2, 0, -W / 2);
+  ctx.quadraticCurveTo(L / 2 - 4, -W / 2 + 2, L / 2 + 8, 0); // нос
+  ctx.quadraticCurveTo(L / 2 - 4, W / 2 - 2, 0, W / 2);
+  ctx.quadraticCurveTo(-L / 2 + 8, W / 2, -L / 2, 0);
+  ctx.closePath();
+  ctx.fillStyle = hull; ctx.fill();
+  ctx.strokeStyle = INK; ctx.lineWidth = 1.6; ctx.stroke();
+  // палуба
+  ctx.beginPath();
+  ctx.moveTo(-L / 2 + 6, 0);
+  ctx.quadraticCurveTo(0, -W / 2 + 5, L / 2 - 2, 0);
+  ctx.quadraticCurveTo(0, W / 2 - 5, -L / 2 + 6, 0);
+  ctx.closePath();
+  ctx.fillStyle = '#e8d9a8'; ctx.fill(); ctx.lineWidth = 1; ctx.stroke();
+  if (!t.masts) { // баркас: банки-перекладины и сеть
+    ctx.strokeStyle = INK;
+    for (let i = -1; i <= 1; i++) {
+      ctx.beginPath(); ctx.moveTo(i * L / 5, -W / 2 + 4); ctx.lineTo(i * L / 5, W / 2 - 4); ctx.stroke();
+    }
+    ctx.setLineDash([2, 3]);
+    ctx.strokeStyle = 'rgba(43,58,85,.7)';
+    ctx.beginPath(); ctx.arc(-L / 2 - 9, 5, 8, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+  } else {
+    // мачты с реями
+    const mastXs = t.masts === 1 ? [0] : t.masts === 2 ? [-L / 6, L / 6] : [-L / 4, 0, L / 4];
+    for (const mx of mastXs) {
+      ctx.strokeStyle = INK; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(mx, -W / 2 - 7); ctx.lineTo(mx, W / 2 + 7); ctx.stroke(); // рея
+      ctx.beginPath(); ctx.arc(mx, 0, 2.6, 0, Math.PI * 2);
+      ctx.fillStyle = INK; ctx.fill();
+    }
+    // пушки по бортам (для линкора больше)
+    const guns = t.guns ? 4 : t.len > 1 ? 3 : 2;
+    ctx.lineWidth = 1.6;
+    for (let i = 0; i < guns; i++) {
+      const gx = -L / 3 + (i + 0.5) * (L / 1.5 / guns);
+      ctx.beginPath(); ctx.moveTo(gx, -W / 2); ctx.lineTo(gx, -W / 2 - 5); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(gx, W / 2); ctx.lineTo(gx, W / 2 + 5); ctx.stroke();
+    }
+  }
+  // вымпел
+  ctx.beginPath();
+  ctx.moveTo(-L / 2 - 1, 0); ctx.lineTo(-L / 2 - 13, -5); ctx.lineTo(-L / 2 - 13, 5);
+  ctx.closePath();
+  ctx.fillStyle = t.pirate ? '#111' : color; ctx.fill();
+  if (t.pirate) {
+    ctx.font = '10px serif'; ctx.fillStyle = '#fff'; ctx.textAlign = 'center';
+    ctx.fillText('☠', 0, -W / 2 - 10);
+  }
+  ctx.restore();
+}
+
+// ---------- Вариант 3: мультяшный ----------
+function cartoonShip(ctx, t, cx, cy, color) {
+  const S = 22 * (0.7 + t.len * 0.45);
+  const hull = t.pirate ? '#33363c' : color;
+  // пузатый корпус-улыбка
+  ctx.beginPath();
+  ctx.moveTo(cx - S, cy - S * 0.25);
+  ctx.quadraticCurveTo(cx, cy + S * 1.05, cx + S, cy - S * 0.25);
+  ctx.lineTo(cx + S * 0.74, cy - S * 0.5);
+  ctx.lineTo(cx - S * 0.74, cy - S * 0.5);
+  ctx.closePath();
+  ctx.fillStyle = hull; ctx.fill();
+  ctx.strokeStyle = INK; ctx.lineWidth = 2; ctx.stroke();
+  // иллюминаторы
+  ctx.fillStyle = PAPER;
+  const ports = Math.max(1, t.masts);
+  for (let i = 0; i < ports; i++) {
+    const px = cx - (ports - 1) * 8 + i * 16;
+    ctx.beginPath(); ctx.arc(px, cy - S * 0.05, 3, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  }
+  if (!t.masts) { // баркас — удочка
+    ctx.beginPath(); ctx.moveTo(cx, cy - S * 0.5); ctx.lineTo(cx + S * 1.4, cy - S * 1.3); ctx.stroke();
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.moveTo(cx + S * 1.4, cy - S * 1.3); ctx.lineTo(cx + S * 1.4, cy - S * 0.1); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.font = '13px serif'; ctx.fillText('🐟', cx + S * 1.32, cy + 6);
+    return;
+  }
+  // мачта + большие надутые паруса (1-3 яруса по классу)
+  ctx.beginPath(); ctx.moveTo(cx, cy - S * 0.5); ctx.lineTo(cx, cy - S * (1.5 + t.masts * 0.32)); ctx.stroke();
+  const sail = t.pirate ? '#3d4046' : PAPER;
+  for (let s = 0; s < t.masts; s++) {
+    const top = cy - S * (1.45 + t.masts * 0.32) + s * S * 0.62;
+    const sw = S * (0.95 - s * 0.12);
+    ctx.beginPath();
+    ctx.moveTo(cx, top);
+    ctx.quadraticCurveTo(cx + sw * 1.5, top + S * 0.3, cx, top + S * 0.58);
+    ctx.closePath();
+    ctx.fillStyle = sail; ctx.fill(); ctx.lineWidth = 1.8; ctx.stroke();
+  }
+  // флажок
+  ctx.beginPath();
+  const ft = cy - S * (1.5 + t.masts * 0.32);
+  ctx.moveTo(cx, ft); ctx.lineTo(cx - 13, ft + 4); ctx.lineTo(cx, ft + 8);
+  ctx.closePath();
+  ctx.fillStyle = t.pirate ? '#111' : color; ctx.fill();
+  if (t.pirate) { ctx.font = '9px serif'; ctx.fillStyle = '#fff'; ctx.fillText('☠', cx - 6, ft + 7); }
+}
+
+function renderVariant(id, drawFn, baseY) {
+  const { ctx, w } = setupCanvas(id);
+  TYPES.forEach((t, i) => {
+    const color = t.pirate ? '#33363c' : COLORS[i % 2]; // чередуем красный/синий
+    drawFn(ctx, t, (i + 0.5) * (w / TYPES.length), baseY, color);
+  });
+  labels(ctx, w);
+}
+
+function renderAll() {
+  renderVariant('c1', profileShip, 150);
+  renderVariant('c2', topdownShip, 120);
+  renderVariant('c3', cartoonShip, 140);
+}
+renderAll();
+window.addEventListener('resize', renderAll);
+</script>
+  <script src="/js/lab-nav.js"></script>
+</body>
+</html>

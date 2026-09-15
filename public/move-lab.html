@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Лаборатория: указание движения 🧭</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    body { margin: 0; padding: 0; }
+    .lab-wrap { max-width: 920px; margin: 0 auto; padding: 16px; }
+    h1 { margin: 4px 0 2px; }
+    .hint { color: #6b6f76; margin: 0 0 12px; line-height: 1.5; }
+    .stage {
+      position: relative; width: 100%; aspect-ratio: 4 / 3;
+      background: #fdfcf7; border: 2px solid #2b3a55; border-radius: 10px;
+      overflow: hidden; touch-action: none; /* не скроллим страницу при перетаскивании */
+      box-shadow: 0 6px 22px rgba(0,0,0,.12);
+    }
+    .stage canvas { display: block; width: 100%; height: 100%; }
+    .controls {
+      display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center;
+      margin: 14px 0; padding: 12px 14px; background: #fff; border-radius: 10px;
+      border: 1px dashed #c7c3b6;
+    }
+    .controls label { display: inline-flex; align-items: center; gap: 7px; font-size: 14px; }
+    .controls .seg { display: inline-flex; border: 1px solid #2b3a55; border-radius: 8px; overflow: hidden; }
+    .controls .seg button { border: none; background: #fff; padding: 7px 12px; cursor: pointer; font: inherit; }
+    .controls .seg button.on { background: #2b3a55; color: #fff; }
+    .readout { font-size: 13px; color: #2b3a55; margin: 6px 2px 0; min-height: 18px; }
+    input[type=range] { vertical-align: middle; }
+    .legend { font-size: 13px; color: #6b6f76; margin-top: 10px; line-height: 1.6; }
+    .legend b { color: #2b3a55; }
+    .pill { display:inline-block; padding:1px 7px; border-radius: 20px; background:#eef; font-size:12px; }
+  </style>
+</head>
+<body>
+  <div class="lab-wrap">
+    <h1>🧭 Указание движения — драфт</h1>
+    <p class="hint">
+      <b>Новый способ (потяни):</b> зажми палец/мышь <b>внутри кружка корабля</b> и веди в сторону хода.
+      От корабля тянется луч с <b>крестиком</b> — это точка, куда он приплывёт. Крестик идёт на
+      <b>середине пути</b> между кораблём и пальцем, чтобы палец не закрывал цель. Всё ограничено
+      радиусом хода. Отпусти — корабль поплывёт.<br>
+      <b>Старый способ (тык):</b> просто тапни точку в радиусе — как сейчас в игре (мышкой точно до пикселя).
+    </p>
+
+    <div class="stage">
+      <canvas id="cv"></canvas>
+    </div>
+
+    <div class="controls">
+      <span>Режим:</span>
+      <div class="seg" id="modeSeg">
+        <button data-mode="drag" class="on">Потяни (новый)</button>
+        <button data-mode="tap">Тык (как сейчас)</button>
+      </div>
+
+      <label>Коэф. «середины»:
+        <input type="range" id="ratio" min="0.3" max="1" step="0.05" value="0.5">
+        <span id="ratioVal" class="pill">0.50</span>
+      </label>
+
+      <label>Дальность хода:
+        <select id="reach">
+          <option value="90">Линкор (90)</option>
+          <option value="110">Фрегат (110)</option>
+          <option value="140" selected>Баркас (140)</option>
+          <option value="170">Шхуна (170)</option>
+        </select>
+      </label>
+
+      <label><input type="checkbox" id="showFinger" checked> Показывать палец/курсор</label>
+      <button class="small" id="resetBtn">↺ Вернуть корабль в центр</button>
+    </div>
+
+    <div class="readout" id="readout">Зажми корабль и потяни…</div>
+
+    <div class="legend">
+      <b>Идея коэффициента:</b> при <span class="pill">0.50</span> корабль проходит половину того, на сколько
+      ты оттянул палец — чтобы достать до края радиуса, палец уводишь примерно вдвое дальше (точный контроль
+      у самого корабля). Можно подстроить ощущение ползунком. <br>
+      <b>Цвет луча:</b> <span style="color:#2b3a55">синий</span> — в пределах радиуса, <span style="color:#caa43a">золотой</span> — упёрся в край (дальше нельзя), <span style="color:#c0392b">красный</span> (в режиме «тык») — точка вне радиуса.<br>
+      Механику можно включить для всех устройств или только для тача — мышиный «тык до пикселя» она не отменяет.
+    </div>
+  </div>
+
+  <script>
+  const cv = document.getElementById('cv');
+  const ctx = cv.getContext('2d');
+  const CELL = 40;                 // 1 «клетка» = 40px (как в игре: 1 клетка = 40 ед.)
+  const GRAB = 40;                 // радиус зоны захвата вокруг корабля
+  let DPR = Math.min(window.devicePixelRatio || 1, 2);
+
+  // состояние
+  let ship = { x: 0, y: 0, heading: -Math.PI / 2 };
+  let reach = 140;                 // радиус хода в px
+  let ratio = 0.5;
+  let modeAim = 'drag';            // 'drag' | 'tap'
+  let showFinger = true;
+
+  let aiming = null;               // { fx, fy } позиция пальца/курсора в px (во время drag)
+  let dest = null;                 // вычисленная точка назначения {x,y,clamped}
+  let anim = null;                 // { fromX, fromY, toX, toY, t }
+
+  function resize() {
+    const r = cv.getBoundingClientRect();
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    cv.width = Math.round(r.width * DPR);
+    cv.height = Math.round(r.height * DPR);
+    if (ship.x === 0 && ship.y === 0) center();
+    draw();
+  }
+  function center() { ship.x = cv.width / DPR / 2; ship.y = cv.height / DPR / 2; ship.heading = -Math.PI / 2; }
+
+  const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
+
+  // вычислить назначение по позиции пальца (новый режим)
+  function destFromFinger(fx, fy) {
+    const d = dist(ship.x, ship.y, fx, fy);
+    if (d < 1) return { x: ship.x, y: ship.y, clamped: false, dir: ship.heading };
+    const dir = Math.atan2(fy - ship.y, fx - ship.x);
+    let len = d * ratio;                 // крестик на «середине» (по коэффициенту) пути до пальца
+    const clamped = len > reach;
+    if (clamped) len = reach;            // не дальше радиуса
+    return { x: ship.x + Math.cos(dir) * len, y: ship.y + Math.sin(dir) * len, clamped, dir };
+  }
+
+  // ---- отрисовка ----
+  function draw() {
+    const W = cv.width / DPR, H = cv.height / DPR;
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+
+    // бумага в клетку
+    ctx.strokeStyle = 'rgba(120,140,170,.18)';
+    ctx.lineWidth = 1;
+    for (let x = (ship.x % CELL); x < W; x += CELL) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+    for (let y = (ship.y % CELL); y < H; y += CELL) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+    const drawX = anim ? anim.curX : ship.x;
+    const drawY = anim ? anim.curY : ship.y;
+
+    // радиус хода — пунктир
+    ctx.beginPath();
+    ctx.setLineDash([4, 6]);
+    ctx.arc(drawX, drawY, reach, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(107,111,118,.85)';
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // зона «захвата» вокруг корабля (где можно начать тянуть)
+    if (!anim) {
+      ctx.beginPath();
+      ctx.arc(ship.x, ship.y, GRAB, 0, Math.PI * 2);
+      ctx.fillStyle = aiming ? 'rgba(46,204,113,.16)' : 'rgba(43,58,85,.07)';
+      ctx.fill();
+      ctx.strokeStyle = aiming ? 'rgba(46,204,113,.7)' : 'rgba(43,58,85,.35)';
+      ctx.lineWidth = 1.4;
+      ctx.setLineDash([3, 4]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // прицел (луч + крестик + призрак), пока тянем
+    if (aiming && dest) {
+      const col = dest.clamped ? '#caa43a' : '#2b3a55';
+      // луч от корабля до крестика
+      ctx.beginPath();
+      ctx.setLineDash([4, 5]);
+      ctx.moveTo(ship.x, ship.y);
+      ctx.lineTo(dest.x, dest.y);
+      ctx.strokeStyle = col;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // призрак корабля носом по направлению
+      drawShip(dest.x, dest.y, dest.dir, 0.4);
+
+      // крестик-цель
+      crosshair(dest.x, dest.y, col);
+
+      // подпись расстояния в клетках
+      const mx = (ship.x + dest.x) / 2, my = (ship.y + dest.y) / 2;
+      ctx.font = 'bold 14px Neucha, system-ui, sans-serif';
+      ctx.fillStyle = col;
+      ctx.textAlign = 'center';
+      ctx.fillText(`${(dist(ship.x, ship.y, dest.x, dest.y) / CELL).toFixed(1)} кл.`, mx, my - 10);
+
+      // палец/курсор и тонкая линия крестик→палец (видно «отступ»)
+      if (showFinger && aiming) {
+        ctx.beginPath();
+        ctx.setLineDash([2, 4]);
+        ctx.moveTo(dest.x, dest.y);
+        ctx.lineTo(aiming.fx, aiming.fy);
+        ctx.strokeStyle = 'rgba(43,58,85,.35)';
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.arc(aiming.fx, aiming.fy, 13, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(46,204,113,.28)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(39,174,96,.8)';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+    }
+
+    // отметка «вне радиуса» (режим «тык»)
+    if (tapMiss) crosshair(tapMiss.x, tapMiss.y, '#c0392b');
+
+    // сам корабль
+    drawShip(drawX, drawY, anim ? anim.heading : ship.heading, 1);
+  }
+
+  function crosshair(x, y, col) {
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x - 15, y); ctx.lineTo(x - 4, y);
+    ctx.moveTo(x + 4, y); ctx.lineTo(x + 15, y);
+    ctx.moveTo(x, y - 15); ctx.lineTo(x, y - 4);
+    ctx.moveTo(x, y + 4); ctx.lineTo(x, y + 15);
+    ctx.stroke();
+  }
+
+  function drawShip(x, y, heading, alpha) {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(x, y);
+    ctx.rotate(heading);
+    // корпус
+    const L = 30, Wd = 13;
+    ctx.beginPath();
+    ctx.moveTo(L, 0);                 // нос
+    ctx.quadraticCurveTo(L * 0.2, Wd, -L * 0.7, Wd);
+    ctx.lineTo(-L * 0.7, -Wd);
+    ctx.quadraticCurveTo(L * 0.2, -Wd, L, 0);
+    ctx.closePath();
+    ctx.fillStyle = '#8a5a2b';
+    ctx.fill();
+    ctx.strokeStyle = '#5b3a18';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    // парус
+    ctx.beginPath();
+    ctx.moveTo(-2, 0); ctx.lineTo(-2, -16); ctx.lineTo(12, -2); ctx.closePath();
+    ctx.fillStyle = '#f4f1e8';
+    ctx.fill();
+    ctx.strokeStyle = '#9c9684';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ---- ввод (pointer = мышь + тач) ----
+  function evPos(e) {
+    const r = cv.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  }
+
+  cv.addEventListener('pointerdown', e => {
+    if (anim) return;
+    const p = evPos(e);
+    try { cv.setPointerCapture(e.pointerId); } catch { /* синтетические события */ }
+    if (modeAim === 'drag') {
+      // начинаем тянуть, только если ткнули в зону захвата корабля
+      if (dist(p.x, p.y, ship.x, ship.y) <= GRAB) {
+        aiming = { fx: p.x, fy: p.y };
+        dest = destFromFinger(p.x, p.y);
+        updateReadout();
+        draw();
+      }
+    } else {
+      // режим «тык»: точка назначения = место тапа (клампим в радиус, но показываем красным если вне)
+      tapMove(p);
+    }
+  });
+
+  cv.addEventListener('pointermove', e => {
+    if (!aiming || modeAim !== 'drag') return;
+    const p = evPos(e);
+    aiming.fx = p.x; aiming.fy = p.y;
+    dest = destFromFinger(p.x, p.y);
+    updateReadout();
+    draw();
+  });
+
+  function endAim(e) {
+    if (modeAim === 'drag' && aiming && dest) {
+      startMove(dest.x, dest.y, dest.dir);
+    }
+    aiming = null;
+    draw();
+  }
+  cv.addEventListener('pointerup', endAim);
+  cv.addEventListener('pointercancel', () => { aiming = null; draw(); });
+
+  function tapMove(p) {
+    const d = dist(ship.x, ship.y, p.x, p.y);
+    const dir = Math.atan2(p.y - ship.y, p.x - ship.x);
+    if (d > reach) {
+      // вне радиуса — показать красным крестиком и не двигать (как «дальше линейки нельзя»)
+      readout('🚫 Точка вне радиуса хода (' + (d / CELL).toFixed(1) + ' кл. > ' + (reach / CELL).toFixed(1) + ' кл.)');
+      tapMiss = { x: p.x, y: p.y };
+      draw();
+      setTimeout(() => { tapMiss = null; draw(); }, 700);
+      return;
+    }
+    tapMiss = null;
+    startMove(p.x, p.y, dir);
+  }
+
+  let tapMiss = null; // последняя «промазавшая» точка (вне радиуса) для красной отметки
+
+  function startMove(tx, ty, dir) {
+    anim = { fromX: ship.x, fromY: ship.y, toX: tx, toY: ty, curX: ship.x, curY: ship.y, heading: dir, t: 0 };
+    ship.heading = dir;
+    dest = null;
+    requestAnimationFrame(stepAnim);
+  }
+  function stepAnim() {
+    if (!anim) return;
+    anim.t += 0.06;
+    const e = anim.t >= 1 ? 1 : 1 - Math.pow(1 - anim.t, 3); // easeOutCubic
+    anim.curX = anim.fromX + (anim.toX - anim.fromX) * e;
+    anim.curY = anim.fromY + (anim.toY - anim.fromY) * e;
+    draw();
+    if (anim.t >= 1) {
+      ship.x = anim.toX; ship.y = anim.toY;
+      anim = null;
+      updateReadout();
+      draw();
+      return;
+    }
+    requestAnimationFrame(stepAnim);
+  }
+
+  function updateReadout() {
+    if (aiming && dest) {
+      const d = (dist(ship.x, ship.y, dest.x, dest.y) / CELL).toFixed(1);
+      const fd = (dist(ship.x, ship.y, aiming.fx, aiming.fy) / CELL).toFixed(1);
+      readout(`Палец оттянут на ${fd} кл. → корабль приплывёт на ${d} кл.` + (dest.clamped ? '  (упёрся в край радиуса)' : ''));
+    } else {
+      readout(modeAim === 'drag' ? 'Зажми корабль и потяни…' : 'Тапни точку в радиусе.');
+    }
+  }
+  function readout(t) { document.getElementById('readout').textContent = t; }
+
+  // ---- контролы ----
+  document.getElementById('modeSeg').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    modeAim = b.dataset.mode;
+    [...e.currentTarget.children].forEach(x => x.classList.toggle('on', x === b));
+    aiming = null; dest = null; updateReadout(); draw();
+  });
+  document.getElementById('ratio').addEventListener('input', e => {
+    ratio = +e.target.value;
+    document.getElementById('ratioVal').textContent = ratio.toFixed(2);
+    if (aiming) { dest = destFromFinger(aiming.fx, aiming.fy); updateReadout(); }
+    draw();
+  });
+  document.getElementById('reach').addEventListener('change', e => { reach = +e.target.value; draw(); });
+  document.getElementById('showFinger').addEventListener('change', e => { showFinger = e.target.checked; draw(); });
+  document.getElementById('resetBtn').addEventListener('click', () => { anim = null; center(); updateReadout(); draw(); });
+
+  window.addEventListener('resize', resize);
+  resize();
+  </script>
+  <script src="/js/lab-nav.js"></script>
+</body>
+</html>

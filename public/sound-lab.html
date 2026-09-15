@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Звуковая лаборатория v2 — Морской бой</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .snd-group { margin-bottom: 8px; }
+    .btn-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 4px; }
+    .btn-row button { font-size: 16px; }
+    .cur { opacity: .75; }
+    .chosen { border-color: #27ae60 !important; color: #1d7a44; }
+    .slider-row { display: flex; align-items: center; gap: 10px; max-width: 360px; }
+    .slider-row input { flex: 1; accent-color: #2b3a55; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>🎙 Звуковая лаборатория v2</h1>
+    <p class="muted">Выстрел и крушение уже выбраны и вшиты в игру (можно переслушать). Остальные четыре — новые подходы к синтезу, по три варианта. Пиши: «попадание 1, монета 2, покупка 3, плеск 2».</p>
+    <div class="slider-row note" style="padding:10px 16px">
+      <label style="margin:0">Громкость</label>
+      <input type="range" id="vol" min="0" max="1" step="0.05" value="0.6">
+    </div>
+    <div id="groups"></div>
+    <p><a class="btn" href="/fx-lab.html">🧪 В лабораторию анимаций</a> <a class="btn" href="/">🏠 На главную</a></p>
+  </div>
+
+  <script src="/js/audio.js"></script>
+<script>
+// ===== движок =====
+let ctx = null, master = null, punch = null;
+function ac() {
+  if (!ctx) {
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    master = ctx.createGain();
+    master.gain.value = +document.getElementById('vol').value;
+    master.connect(ctx.destination);
+  }
+  if (ctx.state === 'suspended') ctx.resume();
+  return ctx;
+}
+document.getElementById('vol').addEventListener('input', e => {
+  if (master) master.gain.value = +e.target.value;
+});
+
+// шина «удара»: мягкий перегруз для мощи попаданий
+function punchBus() {
+  if (punch) return punch;
+  const ws = ctx.createWaveShaper();
+  const curve = new Float32Array(1024);
+  for (let i = 0; i < 1024; i++) { const x = i / 512 - 1; curve[i] = Math.tanh(2.6 * x); }
+  ws.curve = curve;
+  const g = ctx.createGain();
+  g.gain.value = 0.85;
+  ws.connect(g).connect(master);
+  punch = ws;
+  return punch;
+}
+
+function noiseBuffer(dur, brown = false) {
+  const n = Math.max(1, ctx.sampleRate * dur) | 0;
+  const b = ctx.createBuffer(1, n, ctx.sampleRate);
+  const d = b.getChannelData(0);
+  let last = 0;
+  for (let i = 0; i < n; i++) {
+    const w = Math.random() * 2 - 1;
+    if (brown) { last = (last + 0.02 * w) / 1.02; d[i] = last * 3.5; }
+    else d[i] = w;
+  }
+  return b;
+}
+
+function noise({ dur = 0.3, brown = false, type = 'lowpass', f0 = 1000, f1 = null, q = 1, vol = 0.5, at = 0.003, delay = 0, hard = false }) {
+  const t = ctx.currentTime + delay;
+  const src = ctx.createBufferSource();
+  src.buffer = noiseBuffer(dur, brown);
+  const f = ctx.createBiquadFilter();
+  f.type = type; f.Q.value = q;
+  f.frequency.setValueAtTime(f0, t);
+  if (f1) f.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(vol, t + at);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  src.connect(f).connect(g).connect(hard ? punchBus() : master);
+  src.start(t); src.stop(t + dur + 0.05);
+}
+
+function tone({ freq, dur = 0.3, type = 'sine', vol = 0.3, delay = 0, slide = null, at = 0.005, hard = false }) {
+  const t = ctx.currentTime + delay;
+  const o = ctx.createOscillator();
+  o.type = type;
+  o.frequency.setValueAtTime(freq, t);
+  if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(20, slide), t + dur);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(vol, t + at);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g).connect(hard ? punchBus() : master);
+  o.start(t); o.stop(t + dur + 0.05);
+}
+
+// «цок» монеты: импульс шума через высокодобротные резонаторы металла
+function clink({ base = 1, vol = 0.3, dur = 0.11, delay = 0 }) {
+  const t = ctx.currentTime + delay;
+  const src = ctx.createBufferSource();
+  src.buffer = noiseBuffer(0.005);
+  const drive = ctx.createGain();
+  drive.gain.value = 16 * vol;
+  src.connect(drive);
+  [6300, 9100, 12100].forEach((f0, i) => {
+    const f = f0 * base * (1 + (Math.random() - 0.5) * 0.06);
+    if (f > 15500) return;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = 30;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(1 / (i + 1), t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur + i * 0.03);
+    drive.connect(bp).connect(g).connect(master);
+  });
+  // тик касания
+  noise({ dur: 0.006, type: 'highpass', f0: 4500, vol: vol * 0.5, at: 0.001, delay });
+  src.start(t);
+}
+
+// брызги: россыпь крошечных шумовых зёрен
+function spray(n, { fmin = 2000, fmax = 6000, t0 = 0.05, t1 = 0.55, vmin = 0.02, vmax = 0.08 }) {
+  for (let i = 0; i < n; i++) {
+    noise({
+      dur: 0.008 + Math.random() * 0.014,
+      type: 'highpass',
+      f0: fmin + Math.random() * (fmax - fmin),
+      vol: vmin + Math.random() * (vmax - vmin),
+      at: 0.001,
+      delay: t0 + Math.random() * (t1 - t0)
+    });
+  }
+}
+
+// «лакание» волны: шум с тремоло
+function lapping({ dur = 1.2, vol = 0.25, delay = 0, lfoHz = 5.5 }) {
+  const t = ctx.currentTime + delay;
+  const src = ctx.createBufferSource();
+  src.buffer = noiseBuffer(dur);
+  const f = ctx.createBiquadFilter();
+  f.type = 'lowpass'; f.frequency.value = 550;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(vol, t + 0.2);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  const lfo = ctx.createOscillator();
+  lfo.frequency.value = lfoHz;
+  const lg = ctx.createGain();
+  lg.gain.value = vol * 0.5;
+  lfo.connect(lg).connect(g.gain);
+  src.connect(f).connect(g).connect(master);
+  src.start(t); lfo.start(t);
+  src.stop(t + dur + 0.05); lfo.stop(t + dur);
+}
+
+function crackW({ f = 2000, dur = 0.05, vol = 0.5, delay = 0, hard = false }) {
+  noise({ dur, type: 'bandpass', f0: f, q: 5, vol, at: 0.001, delay, hard });
+}
+
+const rnd = (a, b) => a + Math.random() * (b - a);
+
+// ===== варианты =====
+const VARIANTS = {
+  shot: {
+    title: '🔥 Выстрел из пушки',
+    chosen: 'Дальняя канонада — уже в игре',
+    current: 'shot',
+    list: []
+  },
+  hit: {
+    title: '💢 Попадание ядра в древесину (теперь с мощью)',
+    chosen: 'Вариант 2 «Борт раскалывается» — уже в игре',
+    current: 'hit',
+    list: [
+      ['Таран — максимум низа', () => {
+        noise({ dur: 0.012, type: 'highpass', f0: 800, vol: 1, at: 0.001, hard: true });   // щелчок удара
+        tone({ freq: 70, slide: 26, dur: 0.6, vol: 1, at: 0.002, hard: true });            // саб-удар
+        noise({ dur: 0.14, f0: 5000, f1: 700, vol: 0.9, at: 0.001, hard: true });          // широкий крак
+        for (let i = 0; i < 6; i++) crackW({ f: rnd(1800, 4500), dur: rnd(0.02, 0.045), vol: rnd(0.2, 0.45), delay: rnd(0.02, 0.35) });
+        noise({ dur: 0.8, brown: true, f0: 250, f1: 60, vol: 0.5, at: 0.01 });             // дрожь корпуса
+      }],
+      ['Борт раскалывается (двойной треск)', () => {
+        tone({ freq: 90, slide: 35, dur: 0.35, vol: 0.85, at: 0.002, hard: true });
+        noise({ dur: 0.1, f0: 4200, f1: 900, vol: 1, at: 0.001, hard: true });
+        noise({ dur: 0.12, f0: 3400, f1: 600, vol: 0.9, at: 0.001, delay: 0.09, hard: true });
+        for (let i = 0; i < 9; i++) crackW({ f: rnd(1500, 4800), dur: rnd(0.02, 0.05), vol: rnd(0.15, 0.4), delay: rnd(0.05, 0.4) });
+        tone({ freq: 95, slide: 70, dur: 0.35, type: 'sawtooth', vol: 0.07, at: 0.08, delay: 0.15 }); // скрип
+      }],
+      ['Сквозное — обломки разлетаются', () => {
+        noise({ dur: 0.012, type: 'highpass', f0: 900, vol: 0.9, at: 0.001, hard: true });
+        tone({ freq: 80, slide: 30, dur: 0.5, vol: 0.95, at: 0.002, hard: true });
+        noise({ dur: 0.12, f0: 4600, f1: 800, vol: 0.85, at: 0.001, hard: true });
+        // обломки стучат по палубе
+        [[180, 0.25], [140, 0.38], [220, 0.5]].forEach(([f, d]) =>
+          tone({ freq: f, dur: 0.07, type: 'triangle', vol: 0.3, at: 0.002, delay: d }));
+        for (let i = 0; i < 5; i++) crackW({ f: rnd(2000, 5000), dur: rnd(0.015, 0.03), vol: rnd(0.1, 0.3), delay: rnd(0.2, 0.55) });
+      }]
+    ]
+  },
+  wreck: {
+    title: '🪵 Крушение',
+    chosen: 'Пар + волна + пузыри (без бума) — уже в игре',
+    current: 'wreck',
+    list: []
+  },
+  coin: {
+    title: '💰 Монета — теперь «цок», а не колокол',
+    chosen: 'Вариант 1 «Цок одной монеты» — уже в игре',
+    current: 'coin',
+    list: [
+      ['Цок одной монеты', () => {
+        clink({ vol: 0.35, dur: 0.12 });
+      }],
+      ['Звяк пары монет', () => {
+        clink({ vol: 0.3, dur: 0.1 });
+        clink({ base: 0.85, vol: 0.26, dur: 0.11, delay: 0.06 });
+      }],
+      ['Монета докрутилась на столе', () => {
+        clink({ vol: 0.32, dur: 0.12 });
+        // дребезг с учащением — монета ложится
+        [0.14, 0.24, 0.32, 0.38, 0.42, 0.45].forEach((d, i) =>
+          clink({ base: rnd(0.9, 1.1), vol: 0.2 * (1 - i * 0.13), dur: 0.05, delay: d }));
+      }]
+    ]
+  },
+  coins: {
+    title: '🪙 Покупка (горсть монет)',
+    chosen: 'Вариант 1 «Горсть на стол» — уже в игре',
+    current: 'coins',
+    list: [
+      ['Горсть на стол', () => {
+        tone({ freq: 150, slide: 75, dur: 0.1, vol: 0.35, at: 0.003 });   // кошель шлёпнулся
+        noise({ dur: 0.08, f0: 350, vol: 0.3, at: 0.005 });
+        for (let i = 0; i < 9; i++) clink({ base: rnd(0.8, 1.2), vol: rnd(0.08, 0.22), dur: rnd(0.05, 0.1), delay: rnd(0.02, 0.4) * (0.3 + i / 9) });
+      }],
+      ['Отсчёт по одной (раз-два-три-четыре-пять)', () => {
+        [0, 0.14, 0.28, 0.42, 0.56].forEach((d, i) =>
+          clink({ base: 0.85 + i * 0.08, vol: 0.26, dur: 0.1, delay: d }));
+      }],
+      ['Высыпать весь кошель (каскад)', () => {
+        noise({ dur: 0.15, type: 'bandpass', f0: 900, vol: 0.15, at: 0.02 }); // ткань
+        for (let i = 0; i < 16; i++) clink({ base: rnd(0.75, 1.25), vol: rnd(0.05, 0.18), dur: rnd(0.04, 0.09), delay: rnd(0, 0.7) });
+        clink({ base: 0.7, vol: 0.22, dur: 0.12, delay: 0.78 }); // последняя тяжёлая
+      }]
+    ]
+  },
+  move: {
+    title: '🌊 Плеск хода — настоящая вода',
+    chosen: 'Вариант 1 «Гребок с брызгами» — уже в игре',
+    current: 'move',
+    list: [
+      ['Гребок с брызгами', () => {
+        noise({ dur: 0.5, type: 'bandpass', f0: 400, f1: 1700, q: 1.4, vol: 0.5, at: 0.08 });
+        noise({ dur: 0.35, type: 'bandpass', f0: 1500, f1: 450, q: 1.4, vol: 0.35, at: 0.05, delay: 0.28 });
+        spray(22, { t0: 0.05, t1: 0.55 });
+      }],
+      ['Корабль идёт по волне (лакающий плеск)', () => {
+        noise({ dur: 1.3, f0: 800, f1: 180, vol: 0.4, at: 0.25 });
+        lapping({ dur: 1.2, vol: 0.28, delay: 0.05 });
+        noise({ dur: 0.8, type: 'highpass', f0: 3000, f1: 1500, vol: 0.1, at: 0.15, delay: 0.1 }); // пена шипит
+        spray(7, { t0: 0.2, t1: 0.9, vmin: 0.015, vmax: 0.05 });
+      }],
+      ['Плюх с каплями', () => {
+        tone({ freq: 380, slide: 95, dur: 0.16, vol: 0.3, at: 0.004 });   // блюп
+        noise({ dur: 0.12, type: 'bandpass', f0: 700, q: 3, vol: 0.6, at: 0.005 });
+        noise({ dur: 0.9, f0: 1300, f1: 200, vol: 0.4, at: 0.06, delay: 0.08 });
+        spray(12, { t0: 0.2, t1: 0.8 });
+      }]
+    ]
+  }
+};
+
+// ===== UI =====
+const groupsBox = document.getElementById('groups');
+let tilt = true;
+for (const [key, g] of Object.entries(VARIANTS)) {
+  const note = document.createElement('div');
+  note.className = 'note snd-group ' + (tilt ? 'tilt-l' : 'tilt-r');
+  tilt = !tilt;
+  note.innerHTML = `<h2>${g.title}</h2><div class="btn-row"></div>`;
+  const row = note.querySelector('.btn-row');
+  if (g.chosen) {
+    const b = document.createElement('button');
+    b.className = 'chosen';
+    b.textContent = `✔ ${g.chosen}`;
+    b.addEventListener('click', () => Sound.play(g.current));
+    row.appendChild(b);
+  }
+  g.list.forEach(([name, fn], i) => {
+    const b = document.createElement('button');
+    b.textContent = `▶ ${i + 1}. ${name}`;
+    b.addEventListener('click', () => { ac(); fn(); });
+    row.appendChild(b);
+  });
+  if (!g.chosen) {
+    const cur = document.createElement('button');
+    cur.className = 'small cur';
+    cur.textContent = '🔁 как сейчас в игре';
+    cur.addEventListener('click', () => Sound.play(g.current));
+    row.appendChild(cur);
+  }
+  groupsBox.appendChild(note);
+}
+</script>
+  <script src="/js/lab-nav.js"></script>
+</body>
+</html>

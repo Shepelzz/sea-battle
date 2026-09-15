@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🎵 Прослушка мелодий — Морской бой</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .track { display: flex; align-items: center; gap: 14px; }
+    .track h2 { margin: 0; flex: 1; }
+    .track .desc { color: var(--pencil); font-size: 15px; margin: 4px 0 0; }
+    .track button.play { min-width: 110px; font-size: 20px; }
+    .track.playing { background: var(--sea-hl); }
+    #vol { width: 160px; accent-color: var(--ink); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>🎵 Выбор мелодии</h1>
+    <p class="muted">Жми ▶ и слушай. Играет по кругу, как будет в игре. Громкость: <input type="range" id="vol" min="0" max="100" value="60"></p>
+    <div class="ruler"></div>
+
+    <div class="note tilt-l track" data-v="0">
+      <div>
+        <h2>1. «Туманное море»</h2>
+        <p class="desc">Тихая подложка и редкие колокольчики с эхом. Самый «Secunda из Скайрима» вариант.</p>
+      </div>
+      <button class="play">▶</button>
+    </div>
+
+    <div class="note tilt-r track" data-v="1">
+      <div>
+        <h2>2. «Старая гавань»</h2>
+        <p class="desc">Северный дрон на квинте и медленная «флейта» с лёгким вибрато. Сурово и спокойно.</p>
+      </div>
+      <button class="play">▶</button>
+    </div>
+
+    <div class="note tilt-l track" data-v="2">
+      <div>
+        <h2>3. «Дрейф»</h2>
+        <p class="desc">Гипнотическое арпеджио, как волны о борт. Без мелодии — чистый фон, не надоедает.</p>
+      </div>
+      <button class="play">▶</button>
+    </div>
+
+    <div class="note tilt-r track" data-v="3">
+      <div>
+        <h2>4. «Колыбельная матроса»</h2>
+        <p class="desc">Тот же «Пьяный матрос», но в 2 раза медленнее, мягкий и с эхом — узнаваемо, но релаксово.</p>
+      </div>
+      <button class="play">▶</button>
+    </div>
+
+    <div class="ruler"></div>
+    <p class="muted" style="margin:6px 0 0">№5 «Отлив» теперь играет в самой игре. Ниже — в тех же тонах (та же арфа + эхо), но с <b>другими мотивами</b>: иной рисунок и ритм, а не арпеджио «Дрейфа».</p>
+
+    <div class="note tilt-l track" data-v="4">
+      <div>
+        <h2>5. «Отлив» <span class="muted" style="font-size:14px">— сейчас в игре</span></h2>
+        <p class="desc">«Дрейф» в ре-миноре — мягче и теплее, будто волна откатывает с песка. (Эталон-тон для вариантов ниже.)</p>
+      </div>
+      <button class="play">▶</button>
+    </div>
+
+    <div class="note tilt-r track" data-v="5">
+      <div>
+        <h2>6. «Прибой»</h2>
+        <p class="desc">Нисходящие каскады — ноты скатываются вниз, как разбивающаяся и откатывающая волна. Совсем другой рисунок.</p>
+      </div>
+      <button class="play">▶</button>
+    </div>
+
+    <div class="note tilt-l track" data-v="6">
+      <div>
+        <h2>7. «Маяк»</h2>
+        <p class="desc">Редкий зов и эхо-ответ с большими паузами — много воздуха между фразами. Минимализм.</p>
+      </div>
+      <button class="play">▶</button>
+    </div>
+
+    <div class="note tilt-r track" data-v="7">
+      <div>
+        <h2>8. «Зыбь»</h2>
+        <p class="desc">Восходящие секвенции — мелодия взбирается на гребень и опадает, как длинная пологая волна.</p>
+      </div>
+      <button class="play">▶</button>
+    </div>
+
+    <p class="muted">Когда выберешь — скажи номер, и я поставлю её в игру.</p>
+  </div>
+
+<script>
+// Мини-движок эмбиента: пады с медленной атакой, «арфа»/«колокольчики» с эхом.
+const NOTE = n => 440 * Math.pow(2, (n - 69) / 12);
+const M = {};
+['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'].forEach((n, i) => {
+  for (let o = 1; o <= 6; o++) M[n + o] = 12 * (o + 1) + i;
+});
+
+let ctx = null, master = null, echo = null, current = null, timers = [];
+
+function ensure() {
+  if (!ctx) {
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    master = ctx.createGain();
+    master.gain.value = 0.6;
+    master.connect(ctx.destination);
+    // простое «пространство»: задержка с обратной связью
+    echo = ctx.createDelay(2);
+    echo.delayTime.value = 0.45;
+    const fb = ctx.createGain(); fb.gain.value = 0.38;
+    const wet = ctx.createGain(); wet.gain.value = 0.35;
+    echo.connect(fb).connect(echo);
+    echo.connect(wet).connect(master);
+  }
+  if (ctx.state === 'suspended') ctx.resume();
+}
+
+function pad(notes, t, dur, vol = 0.05, type = 'sine') {
+  for (const n of notes) {
+    const o = ctx.createOscillator();
+    o.type = type;
+    o.frequency.value = NOTE(M[n]);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(vol, t + dur * 0.35);
+    g.gain.linearRampToValueAtTime(vol * 0.7, t + dur * 0.8);
+    g.gain.linearRampToValueAtTime(0.0001, t + dur);
+    const f = ctx.createBiquadFilter();
+    f.type = 'lowpass'; f.frequency.value = 900;
+    o.connect(g).connect(f).connect(master);
+    g.connect(echo);
+    o.start(t); o.stop(t + dur + 0.1);
+  }
+}
+
+function bell(note, t, vol = 0.16, decay = 2.4) {
+  const o = ctx.createOscillator();
+  o.type = 'sine';
+  o.frequency.value = NOTE(M[note]);
+  const o2 = ctx.createOscillator(); // обертон для «стеклянности»
+  o2.type = 'sine';
+  o2.frequency.value = NOTE(M[note]) * 2.01;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(vol, t + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + decay);
+  const g2 = ctx.createGain(); g2.gain.value = 0.35;
+  o.connect(g); o2.connect(g2).connect(g);
+  g.connect(master); g.connect(echo);
+  o.start(t); o.stop(t + decay + 0.1);
+  o2.start(t); o2.stop(t + decay + 0.1);
+}
+
+function flute(note, t, dur, vol = 0.09) {
+  const o = ctx.createOscillator();
+  o.type = 'triangle';
+  o.frequency.value = NOTE(M[note]);
+  const lfo = ctx.createOscillator(); lfo.frequency.value = 4.5;
+  const lg = ctx.createGain(); lg.gain.value = 2.2; // лёгкое вибрато
+  lfo.connect(lg).connect(o.frequency);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(vol, t + Math.min(0.4, dur * 0.3));
+  g.gain.setValueAtTime(vol, t + dur - 0.3);
+  g.gain.linearRampToValueAtTime(0.0001, t + dur);
+  o.connect(g).connect(master);
+  g.connect(echo);
+  o.start(t); o.stop(t + dur + 0.1);
+  lfo.start(t); lfo.stop(t + dur + 0.1);
+}
+
+function harp(note, t, vol = 0.12) {
+  const o = ctx.createOscillator();
+  o.type = 'triangle';
+  o.frequency.value = NOTE(M[note]);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(vol, t + 0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 1.4);
+  o.connect(g).connect(master);
+  g.connect(echo);
+  o.start(t); o.stop(t + 1.5);
+}
+
+// --- 4 варианта: каждый — функция, которая планирует один проход цикла и возвращает его длительность ---
+
+// 1. «Туманное море»: пад Dm и редкие колокольчики (Secunda-вайб)
+function v0(t0) {
+  const chords = [['D3','A3','F4'], ['A2','E3','C4'], ['A#2','F3','D4'], ['D3','A3','F4']];
+  chords.forEach((c, i) => pad(c, t0 + i * 8, 8.5, 0.045));
+  const bells = [
+    [0,'D5'],[2.4,'A4'],[4.2,'F5'],[7,'E5'],
+    [9.5,'C5'],[12,'A4'],[14.5,'D5'],
+  [17,'F5'],[19,'D5'],[21.5,'A5'],[24.5,'G5'],[27,'F5'],[29.5,'D5']];
+  for (const [dt, n] of bells) bell(n, t0 + dt, 0.13, 3);
+  return 32;
+}
+
+// 2. «Старая гавань»: дрон D+A и медленная дорийская «флейта»
+function v1(t0) {
+  pad(['D2','A2','D3'], t0, 16, 0.06, 'triangle');
+  pad(['C2','G2','C3'], t0 + 16, 16, 0.055, 'triangle');
+  const line = [
+    ['D4',2],['F4',2],['E4',1.5],['D4',2.5],
+    ['A4',2],['G4',2],['F4',1.5],['E4',2.5],
+    ['D4',2],['C4',2],['D4',1.5],['E4',2.5],
+    ['F4',2],['E4',2],['D4',4]];
+  let t = t0 + 1;
+  for (const [n, d] of line) { flute(n, t, d - 0.15); t += d; }
+  return 32;
+}
+
+// 3. «Дрейф»: арпеджио Am(add9), как волны
+function v2(t0) {
+  const arp = ['A2','E3','A3','B3','C4','E4','C4','B3'];
+  const arp2 = ['F2','C3','F3','G3','A3','C4','A3','G3'];
+  const step = 0.42;
+  for (let r = 0; r < 4; r++) {
+    const seq = (r === 2) ? arp2 : arp;
+    seq.forEach((n, i) => harp(n, t0 + r * arp.length * step + i * step, 0.1));
+  }
+  pad(['A2','E3'], t0, arp.length * step * 2, 0.035);
+  pad(['F2','C3'], t0 + arp.length * step * 2, arp.length * step * 2, 0.035);
+  return arp.length * step * 4;
+}
+
+// 4. «Колыбельная матроса»: Drunken Sailor вдвое медленнее, мягко
+function v3(t0) {
+  const BEAT = 60 / 63; // вдвое медленнее исходных 126 BPM
+  const LEAD = [
+    ['A4',.5],['A4',.5],['A4',.5],['A4',.5],['A4',.5],['A4',.5],['A4',1],['D4',.5],['F4',.5],
+    ['A4',1],['A4',1],['A4',2],
+    ['G4',.5],['G4',.5],['G4',.5],['G4',.5],['G4',.5],['G4',.5],['G4',1],['C4',.5],['E4',.5],
+    ['G4',1],['G4',1],['G4',2],
+    ['A4',.5],['A4',.5],['A4',.5],['A4',.5],['A4',.5],['A4',.5],['A4',1],['A4',.5],['B4',.5],
+    ['C5',1],['B4',1],['A4',1],['G4',1],
+    ['A4',1],['E4',1],['F4',1],['D4',1],['A4',1.5],[null,.5],['A3',2]];
+  let t = t0;
+  for (const [n, d] of LEAD) { if (n) flute(n, t, d * BEAT * 0.95, 0.075); t += d * BEAT; }
+  const chords = [['D3','A3'],['D3','A3'],['C3','G3'],['C3','G3'],['D3','A3'],['D3','F3'],['D3','A3'],['D2','A2']];
+  chords.forEach((c, i) => pad(c, t0 + i * 4 * BEAT, 4.2 * BEAT, 0.04));
+  return (t - t0);
+}
+
+// --- варианты в стиле «Дрейфа» (v2): 8-нотное арпеджио × 4 круга (3-й — на другой ступени) + пады ---
+// общий каркас, чтобы все звучали роднёй; различаются тональностью, рисунком и темпом (step).
+function driftLike(t0, arp, arp2, padA, padB, step) {
+  for (let r = 0; r < 4; r++) {
+    const seq = (r === 2) ? arp2 : arp;
+    seq.forEach((n, i) => harp(n, t0 + r * arp.length * step + i * step, 0.1));
+  }
+  pad(padA, t0, arp.length * step * 2, 0.035);
+  pad(padB, t0 + arp.length * step * 2, arp.length * step * 2, 0.035);
+  return arp.length * step * 4;
+}
+
+// 5. «Отлив» — Dm(add9), мягче и теплее
+function v4(t0) {
+  return driftLike(t0,
+    ['D3','A3','D4','E4','F4','A4','F4','E4'],
+    ['A#2','F3','A#3','C4','D4','F4','D4','C4'],
+    ['D3','A3'], ['A#2','F3'], 0.44);
+}
+// --- ДРУГИЕ МОТИВЫ в тех же тонах: та же «арфа»+пады+эхо, что у Дрейфа/Отлива, но иной рисунок и ритм ---
+
+// 6. «Прибой» — нисходящие каскады: ноты скатываются вниз, как разбивающаяся и откатывающая волна
+function v5(t0) {
+  const S = 0.34;
+  const runs = [ // [нота, доля старта]; группы по 6 со «вдохами»-паузами между накатами
+    ['A4',0],['G4',1],['E4',2],['D4',3],['C4',4],['A3',5],
+    ['E4',8],['D4',9],['C4',10],['A3',11],['G3',12],['E3',13],
+    ['F4',16],['E4',17],['D4',18],['A3',19],['F3',20],['D3',21],
+    ['A4',24],['E4',25],['C4',26],['A3',27],['E3',28],['A2',29],
+  ];
+  runs.forEach(([n, b], k) => harp(n, t0 + b * S, k % 6 === 0 ? 0.11 : 0.075)); // первая нота наката громче
+  pad(['A2','E3'], t0, 16 * S, 0.035);
+  pad(['D3','A3'], t0 + 16 * S, 8 * S, 0.035);
+  pad(['A2','E3'], t0 + 24 * S, 8 * S, 0.035);
+  return 32 * S;
+}
+
+// 7. «Маяк» — редкий зов и эхо-ответ: фраза снизу вверх, через паузу — ответ сверху. Много воздуха.
+function v6(t0) {
+  const S = 0.5;
+  const calls = [
+    ['D3',0],['A3',1.5],['F4',3],      // зов (вверх)
+    ['A4',6],['F4',7.5],['D4',9],      // ответ (вниз, выше регистром)
+    ['C3',13],['G3',14.5],['E4',16],   // второй зов — на ступень ниже
+    ['G4',19],['E4',20.5],['C4',22],
+  ];
+  calls.forEach(([n, b]) => harp(n, t0 + b * S, 0.1));
+  pad(['D3','A3'], t0, 12 * S, 0.04);
+  pad(['C3','G3'], t0 + 12 * S, 12 * S, 0.04);
+  return 26 * S;
+}
+
+// 8. «Зыбь» — восходящие секвенции: каждая фраза взбирается выше и опадает, как длинная пологая волна
+function v7(t0) {
+  const S = 0.4;
+  const seq = [
+    ['A3',0],['C4',1],['E4',2],['D4',3],
+    ['C4',4],['E4',5],['A4',6],['G4',7],
+    ['E4',8],['A4',9],['C5',10],['B4',11],   // гребень
+    ['A4',12],['E4',13],['C4',14],['A3',15], // спад
+    ['F3',16],['A3',17],['D4',18],['C4',19],
+    ['A3',20],['D4',21],['F4',22],['E4',23],
+    ['D4',24],['A3',25],['F3',26],['D3',27], // спад в Dm
+  ];
+  seq.forEach(([n, b]) => harp(n, t0 + b * S, 0.085));
+  pad(['A2','E3'], t0, 16 * S, 0.035);
+  pad(['D3','A3'], t0 + 16 * S, 12 * S, 0.035);
+  return 28 * S;
+}
+
+const VARIANTS = [v0, v1, v2, v3, v4, v5, v6, v7];
+
+function stopAll() {
+  timers.forEach(clearTimeout);
+  timers = [];
+  if (ctx) { ctx.close(); ctx = null; } // глушим всё мгновенно
+  document.querySelectorAll('.track').forEach(el => el.classList.remove('playing'));
+  document.querySelectorAll('.play').forEach(b => b.textContent = '▶');
+  current = null;
+}
+
+function playLoop(idx) {
+  const dur = VARIANTS[idx](ctx.currentTime + 0.1);
+  timers.push(setTimeout(() => { if (current === idx) playLoop(idx); }, (dur - 0.4) * 1000));
+}
+
+document.querySelectorAll('.track').forEach(el => {
+  const idx = +el.dataset.v;
+  el.querySelector('.play').addEventListener('click', () => {
+    if (current === idx) { stopAll(); return; }
+    stopAll();
+    ensure();
+    master.gain.value = document.getElementById('vol').value / 100;
+    current = idx;
+    el.classList.add('playing');
+    el.querySelector('.play').textContent = '⏹';
+    playLoop(idx);
+  });
+});
+
+document.getElementById('vol').addEventListener('input', e => {
+  if (master) master.gain.value = e.target.value / 100;
+});
+</script>
+  <script src="/js/lab-nav.js"></script>
+</body>
+</html>
