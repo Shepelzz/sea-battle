@@ -34,6 +34,13 @@ let GOOGLE_ID = null, googleReady = false, me = { loggedIn: false };
 let authRetried = false;   // одноразовый ре-коннект сокета после входа (старое рукопожатие было без cookie)
 let bootDone = false, socketUp = false;   // авто-join только когда известны и сокет, и конфиг+аккаунт
 let CHEATS_ON = false;   // тестовый режим (читы); приходит из /api/config — иначе «/» не открывает консоль
+// 🐞 Отладка (флаг SB_DEBUG на сервере): консоль решений бота + инструменты над картой.
+let DEBUG_ON = false;
+let debugTool = null;    // null | 'move' | 'heal' | 'pirate' | 'ship' — что делает следующий клик
+let debugFog = null;     // null — как в партии, 'on' — надеть туман, 'off' — снять
+let debugEyes = false;   // рисовать «глазами бота»: обзор, угроза дому, общая цель
+let botEyes = null;      // последние мысли бота (приходят с botlog)
+let debugPick = null;    // выбранный корабль для переноса
 
 const socket = io();
 
@@ -127,6 +134,8 @@ async function onGoogleCredential(resp) {
   try {
     const cfg = await (await fetch('/api/config')).json();
     CHEATS_ON = cfg.cheats === true;
+    DEBUG_ON = cfg.debug === true;
+    if (DEBUG_ON) initDebug();
     GOOGLE_ID = cfg.googleClientId || null;
     if (state) render();                        // конфиг пришёл асинхронно — обновить (кнопка чата)
     if (GOOGLE_ID) {
@@ -1030,6 +1039,10 @@ let tutReveal = null;         // туториал: ОДИН локальный �
 const FOG_CELL = 48, FOG_SHIP_MULT = 1.3, FOG_BASE_EXTRA = 200;
 
 function fogActive() {
+  // 🐞 отладка перебивает настройку партии в обе стороны: 'off' — снять, 'on' — надеть туман
+  // даже там, где партия создавалась без него (иначе кнопку нельзя было использовать вовсе).
+  if (debugFog === 'off') return false;
+  if (debugFog === 'on') return state?.status === 'active' && state.players[myIdx()]?.alive;
   if (fogRevealed) return false; // туман снят командой
   return !!(state?.config?.fog) && !state.config.hotseat
     && state.status === 'active' && state.players[myIdx()]?.alive;
@@ -1419,6 +1432,9 @@ function render(canvasOnly) {
       drawShip({ id: e.shipId, owner: e.ship.owner, type: e.ship.type, x: e.x, y: e.y, hp: 1, bounty: e.ship.bounty, boss: e.ship.boss }, false);
     }
   }
+
+  // 🐞 ГЛАЗАМИ БОТА: что он видит и о чём думает — рисуем ДО тумана, чтобы не затянуло дымкой
+  if (DEBUG_ON && debugEyes && botEyes) drawBotEyes();
 
   // ТУМАН: затягиваем карту и проявляем вражеские базы сквозь дымку (тускло/последнее виденное)
   if (fog) {
@@ -2022,6 +2038,12 @@ canvas.addEventListener('pointerdown', e => {
   try { canvas.setPointerCapture(e.pointerId); } catch { /* синтетические события */ }
   hideShipNote(); // тап/драг убирает записку (на тапе по «якорному» кораблю покажется заново)
   pointers.set(e.pointerId, evPos(e));
+  if (DEBUG_ON && debugTool && pointers.size === 1) {   // 🐞 инструмент забирает клик себе
+    const sp = evPos(e);
+    const w = toMap(sp.x, sp.y);
+    debugClick(w.x, w.y);
+    return;
+  }
   if (pointers.size === 1) {
     const p = evPos(e);
     // 🎛 ЕДИНЫЙ ЖЕСТ ДВИЖЕНИЯ (мышь И тач, из ЛЮБОГО режима): указатель лёг на свой корабль →
@@ -2754,7 +2776,7 @@ function renderSidebar() {
 
   // приватность: чьи цифры (золото/HP порта) видно
   // онлайн/боты — только свои; хотсит — только у того, чей ход; в конце — все
-  const canSee = i => state.status === 'finished' ||
+  const canSee = i => state.status === 'finished' || DEBUG_ON ||
     (state.config?.hotseat ? i === state.turn.idx : state.players[i].id === myId);
 
   // игроки
@@ -3218,3 +3240,217 @@ $('#chatInput').addEventListener('blur', closeChatBar);
 socket.on('chat', ({ author, text }) => hudToast(`💬 ${author}: ${text}`, 4000));
 
 resize();
+
+
+// ═══════════════════════ 🐞 ОТЛАДКА ═══════════════════════
+// Включается флагом SB_DEBUG на сервере. Две вещи: консоль решений бота под картой (видно,
+// ПОЧЕМУ он сходил именно так) и инструменты над картой, чтобы воспроизводить ситуации из
+// живой партии, не переигрывая её заново.
+function initDebug() {
+  $('#debugBar').classList.remove('hidden');
+  $('#debugConsole').classList.remove('hidden');
+  document.body.classList.add('debug-on');       // поджимаем страницу, чтобы консоль не накрыла карту
+
+  // Перетаскивание верхней границы: высота живёт в CSS-переменной, её же читает padding тела.
+  const setH = px => document.documentElement.style.setProperty('--dbg-h',
+    Math.max(26, Math.min(window.innerHeight * 0.8, px)) + 'px');
+  let dragFrom = null;
+  $('#debugResize').addEventListener('pointerdown', e => {
+    dragFrom = { y: e.clientY, h: $('#debugConsole').offsetHeight };
+    e.target.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  $('#debugResize').addEventListener('pointermove', e => {
+    if (dragFrom) setH(dragFrom.h + (dragFrom.y - e.clientY));   // тянем вверх — консоль растёт
+  });
+  const stopDrag = () => { dragFrom = null; if (state) render(); };
+  $('#debugResize').addEventListener('pointerup', stopDrag);
+  $('#debugResize').addEventListener('pointercancel', stopDrag);
+
+  const tools = { dbgMove: 'move', dbgHeal: 'heal', dbgPirate: 'pirate', dbgShip: 'ship' };
+  const hints = {
+    move: 'ткни в свой или чужой корабль, затем в точку, куда его поставить',
+    heal: 'ткни в корабль — восстановит прочность',
+    pirate: 'ткни в воду — там появится пират',
+    ship: 'выбери тип и хозяина, затем ткни в воду'
+  };
+  const setTool = t => {
+    debugTool = debugTool === t ? null : t;
+    debugPick = null;
+    for (const id of Object.keys(tools)) $('#' + id).classList.toggle('armed', tools[id] === debugTool);
+    $('#dbgPirateKind').classList.toggle('hidden', debugTool !== 'pirate');   // выбор размера — только при взведённом пирате
+    $('#dbgShipType').classList.toggle('hidden', debugTool !== 'ship');
+    $('#dbgShipOwner').classList.toggle('hidden', debugTool !== 'ship');
+    if (debugTool === 'ship') fillShipPickers();
+    $('#dbgHint').textContent = debugTool ? hints[debugTool] : '';
+    render();
+  };
+  for (const [id, tool] of Object.entries(tools)) $('#' + id).addEventListener('click', () => setTool(tool));
+
+  // Туман — клиентский визуал, поэтому переключаем его целиком тут. Три состояния по кругу:
+  // «как в партии» → принудительно СНЯТЬ → принудительно НАДЕТЬ. Третье нужно для партий,
+  // созданных без тумана: раньше кнопка в них не делала ничего.
+  $('#dbgFog').addEventListener('click', () => {
+    debugFog = debugFog === null ? 'off' : debugFog === 'off' ? 'on' : null;
+    fogRevealed = false;
+    $('#dbgFog').classList.toggle('armed', debugFog !== null);
+    $('#dbgFog').textContent = debugFog === 'off' ? '🌫 туман: снят'
+      : debugFog === 'on' ? '🌫 туман: надет' : '🌫 туман';
+    debugLine('туман: ' + (debugFog === 'off' ? 'снят принудительно'
+      : debugFog === 'on' ? 'надет принудительно' : 'как в настройках партии'));
+    if (state) render();
+  });
+
+  $('#dbgEyes').addEventListener('click', () => {
+    debugEyes = !debugEyes;
+    $('#dbgEyes').classList.toggle('armed', debugEyes);
+    debugLine(debugEyes ? 'показываю глазами бота: обзор, тревога у базы, цель флота' : 'наложение снято');
+    if (state) render();
+  });
+  $('#dbgGold').addEventListener('click', () => socket.emit('debug', { kind: 'gold', amount: 500 }, r => {
+    if (!r?.ok) debugLine('❌ ' + (r?.error || 'не вышло'));
+  }));
+  $('#debugClear').addEventListener('click', () => { $('#debugLog').innerHTML = ''; debugRows = 0; $('#debugCount').textContent = ''; });
+
+  socket.on('botlog', m => { debugLine(m.text); if (m.eyes) { botEyes = m.eyes; if (debugEyes && state) render(); } });
+  debugLine('режим отладки включён (SB_DEBUG=1)');
+}
+
+// Списки для спавна: типы берём из стейта (там же, откуда их читает верфь), владельцев — из игроков.
+function fillShipPickers() {
+  const types = $('#dbgShipType'), owners = $('#dbgShipOwner');
+  if (!state) return;
+  if (!types.options.length) {
+    types.innerHTML = Object.entries(state.shipTypes || {})
+      .filter(([k, st]) => !st.npc && k !== 'pirate')
+      .map(([k, st]) => `<option value="${k}">${st.icon || ''} ${escapeHtml(st.name)}</option>`).join('');
+  }
+  const want = state.players.map((p, i) => `${i}:${p.nick}`).join('|');
+  if (owners.dataset.key !== want) {
+    owners.dataset.key = want;
+    owners.innerHTML = state.players
+      .map((p, i) => `<option value="${i}">${escapeHtml(p.nick)}${p.isBot ? ' 🤖' : ''}</option>`).join('');
+  }
+}
+
+let debugRows = 0;
+function debugLine(text) {
+  const box = $('#debugLog');
+  if (!box) return;
+  const at = new Date().toLocaleTimeString('ru-RU', { hour12: false });
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.innerHTML = `<span class="t">${at}</span>  ${escapeHtml(text)}`;
+  box.appendChild(row);
+  while (box.children.length > 400) box.removeChild(box.firstChild);   // не растим вкладку бесконечно
+  debugRows++;
+  $('#debugCount').textContent = debugRows + ' записей';
+  if ($('#debugFollow')?.checked) box.scrollTop = box.scrollHeight;
+}
+
+// Клик по карте в режиме инструмента. Корабль ищем по ближайшему к точке — как и обычный выбор.
+function debugClick(x, y) {
+  const near = (state?.ships || [])
+    .map(s => ({ s, d: Math.hypot(s.x - x, s.y - y) }))
+    .sort((a, b) => a.d - b.d)[0];
+  const hit = near && near.d < 34 ? near.s : null;
+  const send = (op, note) => socket.emit('debug', op, r => debugLine(r?.ok ? '🐞 ' + note : '❌ ' + (r?.error || 'не вышло')));
+
+  if (debugTool === 'heal') {
+    if (!hit) return debugLine('🐞 лечить: мимо корабля');
+    return send({ kind: 'heal', shipId: hit.id }, `вылечен ${ST(hit.type)?.name || hit.type}`);
+  }
+  if (debugTool === 'ship') {
+    const type = $('#dbgShipType').value, owner = +$('#dbgShipOwner').value;
+    return send({ kind: 'ship', type, owner, x, y },
+      `поставлен ${ST(type)?.name || type} игроку ${state.players[owner]?.nick}`);
+  }
+  if (debugTool === 'pirate') {
+    const boss = $('#dbgPirateKind').value === 'boss';
+    return send({ kind: 'pirate', x, y, boss }, boss ? 'подсажен БОСС' : 'подсажен пират');
+  }
+  if (debugTool === 'move') {
+    if (!debugPick) {
+      if (!hit) return debugLine('🐞 перенести: сначала ткни в корабль');
+      debugPick = hit.id;
+      $('#dbgHint').textContent = 'теперь ткни, куда его поставить';
+      return debugLine('🐞 взят ' + (ST(hit.type)?.name || hit.type));
+    }
+    const id = debugPick;
+    debugPick = null;
+    $('#dbgHint').textContent = 'ткни в корабль, затем в точку';
+    return send({ kind: 'move', shipId: id, x, y }, 'корабль перенесён');
+  }
+}
+
+
+// 🐞 Наложение «глазами бота»: круги обзора его кораблей (по тем же правилам, что у человека),
+// зона тревоги вокруг его порта с балансом «угроза против прикрытия» и цель, по которой он
+// сосредоточил огонь. Нужно, чтобы видеть не последствия решений, а их основания.
+function drawBotEyes() {
+  const e = botEyes;
+  if (!state || !e) return;
+  ctx.save();
+  ctx.setLineDash([6, 5]);
+
+  // обзор каждого корабля бота
+  ctx.strokeStyle = 'rgba(41, 128, 185, .5)';
+  ctx.lineWidth = 1.5;
+  for (const c of e.vision || []) {
+    ctx.beginPath();
+    ctx.arc(sx(c.x), sy(c.y), c.r * view.scale, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // зона тревоги у его базы: красная, если прикрытия не хватает, зелёная, если хватает
+  const base = state.map.bases?.[e.pIdx];
+  if (base && e.homeReach) {
+    const deficit = (e.homeThreat || 0) - (e.homeGuard || 0);
+    ctx.strokeStyle = deficit > 0 ? 'rgba(192, 57, 43, .85)' : 'rgba(39, 174, 96, .6)';
+    ctx.lineWidth = 2;
+    const bx = sx(base.x), by = sy(base.y);
+    ctx.beginPath();
+    ctx.arc(bx, by, e.homeReach * view.scale, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.font = 'bold 12px system-ui, sans-serif';
+    ctx.fillStyle = deficit > 0 ? '#c0392b' : '#27ae60';
+    ctx.textAlign = 'center';
+    ctx.fillText(`угроза ${e.homeThreat || 0} · прикрытие ${e.homeGuard || 0}` +
+      (e.defenceUrgency ? ` · тревога ${Math.round(e.defenceUrgency)}` : ''), bx, by - e.homeReach * view.scale - 6);
+    ctx.setLineDash([6, 5]);
+  }
+
+  // общая цель флота (сосредоточенный огонь)
+  const focus = e.focusId && state.ships.find(s => s.id === e.focusId);
+  if (focus) {
+    const fx = sx(focus.x), fy = sy(focus.y);
+    ctx.setLineDash([]);
+    ctx.strokeStyle = '#e67e22';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(fx, fy, 22 * view.scale, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = '#e67e22';
+    ctx.font = 'bold 11px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('цель флота', fx, fy - 26 * view.scale);
+  }
+
+  // кого бот выбрал жертвой (чей порт ломает)
+  const victimBase = e.victimIdx != null && state.map.bases?.[e.victimIdx];
+  if (victimBase) {
+    const vx = sx(victimBase.x), vy = sy(victimBase.y);
+    ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = '#8e44ad';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(vx, vy, (victimBase.radius + 16) * view.scale, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = '#8e44ad';
+    ctx.font = 'bold 11px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('жертва', vx, vy - (victimBase.radius + 22) * view.scale);
+  }
+  ctx.restore();
+}

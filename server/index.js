@@ -14,7 +14,7 @@ import { Server } from 'socket.io';
 import * as db from './db.js';
 import {
   createGame, addPlayer, startGame, applyAction, leaveGame, nudge,
-  timeoutTurn, publicState, setColor, randomFreeColor, forceFinish, isRanked, lobbyExpired, gameStale, myGameSummary, lobbyTags, PALETTE
+  timeoutTurn, publicState, setColor, randomFreeColor, forceFinish, isRanked, lobbyExpired, gameStale, myGameSummary, lobbyTags, PALETTE, spawnPirateAt, spawnShipAt
 } from './game.js';
 import {
   SESSION_COOKIE, pidOf, googlePid, cleanNick, resolveAccountNick, parseCookies,
@@ -23,7 +23,7 @@ import {
 import { chooseBotAction, BOT_NAMES, duelFleetPlan } from './bot.js';
 import { applyCheat } from './cheats.js';
 import { rtStart, rtStop } from './rt.js';
-import { CHEATS_ENABLED, GAME_MODES, enabledModes, DEFAULT_MODE, isDuel, isRealtime, realtimeAllowed } from './config.js';
+import { CHEATS_ENABLED, DEBUG, GAME_MODES, enabledModes, DEFAULT_MODE, isDuel, isRealtime, realtimeAllowed, SHIP_TYPES, PIRATE } from './config.js';
 // валидируем игровой режим из запроса (classic/deathmatch/develop) — только из включённых
 const pickMode = m => enabledModes().includes(m) ? m : DEFAULT_MODE;
 
@@ -177,6 +177,35 @@ const BOT_FOLLOWUP_MS = +(process.env.BOT_FOLLOWUP_MS || 650); // быстрее
 const botTimers = new Map();
 const botStep = new Map(); // gameId -> "idx:number" последней суб-акции (для распознавания продолжения хода)
 
+// 🐞 ОТЛАДКА: решение бота одной строкой — что сделал, из чего выбирал, сколько в казне.
+// Без этого «почему он так сходил» можно только гадать по последствиям.
+function botDecisionLine(game, d) {
+  const name = id => {
+    const sh = game.ships.find(s => s.id === id);
+    return sh ? (SHIP_TYPES[sh.type]?.name || sh.type) : id;
+  };
+  const brief = a => {
+    switch (a.type) {
+      case 'move': return `плыть ${name(a.shipId)} → ${Math.round(a.x)},${Math.round(a.y)}`;
+      case 'attack': return `🎯 мортира ${name(a.shipId)} → ` +
+        (a.targetType === 'port' ? `ПОРТ ${game.players[a.targetId]?.nick}` :
+         a.targetType === 'outpost' ? `аванпост #${a.targetId}` : name(a.targetId));
+      case 'broadside': return `💥 залп ${name(a.shipId)}`;
+      case 'buy': return `🛠 верфь: ${(a.ships || []).map(t => SHIP_TYPES[t]?.name || t).join(', ')}`;
+      case 'collect': return '💰 собрать клад';
+      case 'outpost': return `⛺ аванпост на острове #${a.islandId}`;
+      case 'repair': return `🛟 чинить ${name(a.targetId)}`;
+      case 'recharge': return '🔧 пополнить материалы';
+      case 'skip': return '⏭ пропуск';
+      default: return a.type;
+    }
+  };
+  const alt = d.top.slice(1, 4).map(c => `${brief(c.action)} (${c.score})`).join(' · ');
+  return `ход ${d.turn} · ${game.players[d.pIdx]?.nick} [${d.level}] 💰${d.gold} · флот ${d.fleet.length} · оценка ${d.value}` +
+    `\n   ➜ ${brief(d.chosen.action)} (эвристика ${Math.round(d.chosen.score)}${d.planned ? ', выбран планировщиком' : ''})` +
+    (alt ? `\n   иначе: ${alt}` : '');
+}
+
 function maybeBotTurn(game) {
   if (game.status !== 'active') return;
   const cur = game.players[game.turn.idx];
@@ -192,7 +221,10 @@ function maybeBotTurn(game) {
     const bot = g.players[g.turn.idx];
     if (!bot?.isBot) return;
     let action;
-    try { action = chooseBotAction(g, g.turn.idx, bot.botLevel); }
+    const log = DEBUG
+      ? d => io.to('game:' + g.id).emit('botlog', { text: botDecisionLine(g, d), eyes: d.meta || null })
+      : null;
+    try { action = chooseBotAction(g, g.turn.idx, bot.botLevel, log); }
     catch (e) { console.error('bot:', e.message); action = { type: 'skip' }; }
     let r = applyAction(g, bot.id, action);
     if (!r.ok) r = applyAction(g, bot.id, { type: 'skip' }); // страховка от невалидного хода
@@ -224,6 +256,7 @@ function maybeAutoFinish(game) {
 
 app.get('/api/config', (_req, res) => res.json({
   googleClientId: GOOGLE_CLIENT_ID, palette: PALETTE, cheats: CHEATS_ENABLED,
+  debug: DEBUG,   // 🐞 SB_DEBUG=1: консоль решений бота под картой + инструменты над ней
   // доступные игровые режимы (для селектора при создании игры)
   modes: enabledModes().map(k => ({ key: k, name: GAME_MODES[k].name, desc: GAME_MODES[k].desc }))
 }));
@@ -609,6 +642,55 @@ io.on('connection', socket => {
 
   // отключение: лобби НЕ удаляем — оно продолжает ждать (хост мог «свернуть» и вернётся).
   // Заброшенные лобби чистит периодический сборщик по TTL (6 ч неполное / 24 ч полное укомплектованное).
+  // 🐞 ИНСТРУМЕНТЫ ОТЛАДКИ (только при SB_DEBUG=1): перенос и лечение корабля, подсадка
+  // пирата, деньги. Ровно те операции, которых не хватает, чтобы воспроизвести ситуацию из
+  // живой партии, не переигрывая её заново. В проде ручка мертва — DEBUG выключен.
+  socket.on('debug', (op = {}, ack) => {
+    if (!DEBUG) return ack?.({ ok: false, error: 'Отладка выключена' });
+    const game = joinedGameId && getGame(joinedGameId);
+    if (!game || game.status !== 'active') return ack?.({ ok: false, error: 'Нет активной игры' });
+    const ship = op.shipId ? game.ships.find(s => s.id === op.shipId) : null;
+    switch (op.kind) {
+      case 'move': {
+        if (!ship) return ack?.({ ok: false, error: 'Корабль не найден' });
+        const m = game.map;
+        ship.x = Math.min(m.w - 12, Math.max(12, Math.round(op.x)));
+        ship.y = Math.min(m.h - 12, Math.max(12, Math.round(op.y)));
+        break;
+      }
+      case 'heal': {
+        if (!ship) return ack?.({ ok: false, error: 'Корабль не найден' });
+        const def = ship.owner === -1 ? PIRATE : SHIP_TYPES[ship.type];
+        ship.hp = ship.maxHp || def.hp;
+        break;
+      }
+      case 'ship': {                                  // любой корабль любому игроку
+        if (!spawnShipAt(game, +op.owner, String(op.type), op.x, op.y))
+          return ack?.({ ok: false, error: 'Тут суша или неверный тип/игрок' });
+        break;
+      }
+      case 'pirate': {
+        if (!spawnPirateAt(game, op.x, op.y, !!op.boss)) return ack?.({ ok: false, error: 'Тут суша' });
+        break;
+      }
+      case 'gold': {
+        const pIdx = game.players.findIndex(p => p.id === myPid);
+        if (pIdx < 0) return ack?.({ ok: false, error: 'Вы не участник' });
+        game.players[pIdx].gold += Math.max(-9999, Math.min(9999, +op.amount || 0));
+        break;
+      }
+      case 'port': {                                  // прочность порта игрока (проверка осады)
+        const p = game.players[op.playerIdx];
+        if (!p) return ack?.({ ok: false, error: 'Игрок не найден' });
+        p.portHp = Math.max(1, Math.min(840, +op.hp || 1));
+        break;
+      }
+      default: return ack?.({ ok: false, error: 'Неизвестная операция' });
+    }
+    persistAndBroadcast(game);
+    ack?.({ ok: true });
+  });
+
   socket.on('disconnect', () => {});
 });
 

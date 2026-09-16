@@ -1,10 +1,14 @@
 // Бот: на своём ходу собирает все осмысленные действия, оценивает и берёт лучшее.
 // Уровни: easy (Юнга) — шумные оценки и случайные ходы, mid (Боцман) — лучший ход,
 // hard (Адмирал) — лучший ход + фокус раненых, удушение экономики, ранняя агрессия.
-import { SHIP_TYPES, PIRATE, LOOT_REACH, PORT_RETURN_DMG, BROADSIDE_CANNONS, BROADSIDE_HALF_ARC, MORTAR_SHIPS, MORTAR_SHIP_MULT, OUTPOST_LEVELS, OUTPOST_BUILD_REACH, modeOf, isPeace, isDuel, cheapestShipPrice, windMoveMult } from './config.js';
-import { shipPlacementBlocked } from './game.js';
+import { movesBudget, tributeFor, FISH_INCOME, FISH_ZONE_CAP, SHIP_TYPES, PIRATE, LOOT_REACH, PORT_RETURN_DMG, BROADSIDE_CANNONS, BROADSIDE_HALF_ARC, MORTAR_SHIPS, MORTAR_SHIP_MULT, OUTPOST_LEVELS, OUTPOST_BUILD_REACH, modeOf, isPeace, isDuel, cheapestShipPrice, windMoveMult } from './config.js';
+import { shipPlacementBlocked, applyAction } from './game.js';
 
 const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
+
+// Вес «бить общую цель флота» (сосредоточенный огонь, см. focusTarget). Подбирается прогоном
+// ab-bot.mjs, а не на глаз: 0 — каждый корабль снова воюет сам по себе.
+const FOCUS_W = Number(process.env.BOT_FOCUS_W ?? 25);
 
 export const BOT_NAMES = {
   easy: ['Юнга Билли', 'Юнга Том', 'Юнга Чарли'],
@@ -39,8 +43,9 @@ const nearest = (from, list, getXY) => {
   return best;
 };
 
-export function chooseBotAction(game, pIdx, level = 'mid') {
-  if (isDuel(game)) return chooseDuelBotAction(game, pIdx, level); // дуэль — своя тактика (без баз/экономики/лута)
+// Все возможные действия хода с их оценками. Вынесено отдельно, чтобы планировщик мог
+// прогонять эту же оценку на КОПИИ партии и смотреть, что останется сделать следующим ходом.
+function buildCandidates(game, pIdx, level) {
   const me = game.players[pIdx];
   const myShips = game.ships.filter(s => s.owner === pIdx);
   // режим «ход тремя судами»: корабль, уже сходивший в этом ходу, в этом ходу больше не действует.
@@ -82,6 +87,32 @@ export function chooseBotAction(game, pIdx, level = 'mid') {
     SHIP_TYPES[f.type].dmg > 0 && dist(f.x, f.y, myBase.x, myBase.y) < threatR);
   const underSiege = invaders.length > 0 && level !== 'easy';
 
+  // ── 🛡 МАСШТАБ ВТОРЖЕНИЯ ──────────────────────────────────────────────────
+  // Важен не факт «кто-то приплыл», а СИЛА того, что идёт, за вычетом того, чем я уже прикрыт.
+  // Один фрегат у пустого порта — купить равного и хватит. Два линкора на подходе — гнать домой
+  // всё боевое и брать линкора, пока есть на что. Считаем и тех, кто ещё в переходе от базы:
+  // среагировать нужно ЗАРАНЕЕ, а не когда они уже расстреливают порт.
+  const homeReach = myBase.radius + 240;
+  let homeThreat = 0, homeGuard = 0, worstAttacker = 0;
+  for (const s2 of game.ships) {
+    const sd = SHIP_TYPES[s2.type];
+    if (!sd?.dmg || s2.owner < 0) continue;
+    const d = dist(s2.x, s2.y, myBase.x, myBase.y);
+    if (s2.owner === pIdx) { if (d < homeReach) homeGuard += sd.dmg; continue; }
+    if (!game.players[s2.owner]?.alive) continue;
+    if (d < homeReach + sd.move) {                    // уже здесь или дойдёт следующим ходом
+      homeThreat += sd.dmg;
+      worstAttacker = Math.max(worstAttacker, sd.dmg);
+    }
+  }
+  // Градуированная оборона (покупка защитника по рангу нападающего + массовый отзыв флота) —
+  // умение «Адмирала». «Боцману» оставлен прежний простой перехват гостей у порта, иначе
+  // уровни сравниваются по силе: замер показал 46–52% в дуэли hard против mid, то есть верхняя
+  // ступень переставала быть верхней.
+  const homeDeficit = level === 'hard' ? Math.max(0, homeThreat - homeGuard) : 0;
+  // приоритет обороны растёт с дефицитом: одиночный налёт ≈50, флот вторжения ≈90 (выше осады)
+  const defenceUrgency = homeDeficit ? Math.min(90, 30 + homeDeficit * 0.5) * DEFENCE_W : 0;
+
   // жертва — слабейший противник; решимость меряем с НИМ, а не с суммой всех
   const foes = game.players.map((p, i) => ({ p, i })).filter(x => x.i !== pIdx && x.p.alive);
   let victim = null;
@@ -90,6 +121,28 @@ export function chooseBotAction(game, pIdx, level = 'mid') {
   const peace = isPeace(game);
   const aggressive = !peace && (modeOf(game).botAggro || turnPressure || foeShips.length === 0 ||
     (victim && myPower > powerOf(victim.i) * (level === 'hard' ? 1.1 : 1.3)));
+
+  // --- 🎯 ЕДИНАЯ ЦЕЛЬ ФЛОТА (сосредоточенный огонь) ---
+  // Раньше каждый корабль выбирал себе цель сам: флот царапал троих вместо того, чтобы добить
+  // одного. Потопленный враг перестаёт стрелять, раненый стреляет в полную силу — размазывать
+  // урон невыгодно. Договариваться кораблям не нужно: цель вычисляется ИЗ ДОСКИ по одной
+  // формуле, поэтому все приходят к ней независимо и одновременно.
+  // Приоритет: добиваемость (сколько уже снято) + опасность цели + враг у моего порога.
+  const reachable = t => myFighters.some(s2 => !acted.has(s2.id) &&
+    dist(s2.x, s2.y, t.x, t.y) <= SHIP_TYPES[s2.type].fireRange + SHIP_TYPES[s2.type].move);
+  // Сосредоточенный огонь — умение «Адмирала». Замер: он стоит +30 побед, и это как раз та
+  // разница, которой не хватало между верхней и средней ступенью (они сошлись в 50/50).
+  // «Боцман» воюет как раньше: каждый корабль выбирает цель сам.
+  let focusTarget = null, focusBest = 0;
+  if (!peace && level === 'hard') for (const t of foeFighters) {
+    if (!reachable(t)) continue;                       // до недосягаемого фокусироваться бессмысленно
+    const def = SHIP_TYPES[t.type];
+    const hurt = 1 - t.hp / (t.maxHp || def.hp);       // 0 — целёхонек, 1 — при смерти
+    const v = hurt * 55 + def.dmg * 0.35 +
+      (dist(t.x, t.y, myBase.x, myBase.y) < threatR ? 30 : 0);
+    if (v > focusBest) { focusBest = v; focusTarget = t; }
+  }
+  const isFocus = t => !!focusTarget && t.id === focusTarget.id;
 
   // --- стрельба: 🎯 МОРТИРА (фрегат/линкор) по цели/порту + 💥 БОРТОВОЙ ЗАЛП (все боевые) ---
   const cx = game.map.w / 2, cy = game.map.h / 2, norm = a => Math.atan2(Math.sin(a), Math.cos(a));
@@ -115,9 +168,16 @@ export function chooseBotAction(game, pIdx, level = 'mid') {
         const kills = t.hp <= hit;
         let score = hit * 0.8;
         if (kills) score += 30 + (t.owner === -1 ? t.bounty * 0.3 : SHIP_TYPES[t.type].price * 0.2);
-        if (t.owner === -1 && !kills && level !== 'easy') score -= 15;
+        if (t.owner === -1 && !kills && level !== 'easy') {
+          // Штраф «не трать осадный выстрел на НПС» глушил и ОТВЕТ на нападение: пират бил
+          // корабль бота, а тот молча уплывал. Добивать подранка и отвечать обидчику — нужно.
+          const angry = t.angryAt === pIdx;
+          const hurt = 1 - t.hp / (t.maxHp || PIRATE.hp);
+          score -= angry ? 4 : 15 * (1 - hurt);
+        }
         if (level !== 'easy' && t.owner >= 0 && SHIP_TYPES[t.type].dmg > 0 && dist(t.x, t.y, myBase.x, myBase.y) < threatR) score += 35;
         if (level === 'hard') { if (t.owner !== -1 && SHIP_TYPES[t.type].fishing) score += 12; score += ((t.maxHp || tdef.hp) - t.hp) * 0.12; }
+        if (isFocus(t)) score += FOCUS_W;              // добиваем то же, что и остальной флот
         cands.push({ score, action: { type: 'attack', shipId: ship.id, targetType: 'ship', targetId: t.id } });
       }
       game.players.forEach((p, i) => {
@@ -134,18 +194,25 @@ export function chooseBotAction(game, pIdx, level = 'mid') {
 
     // БОРТОВОЙ ЗАЛП — ближайший враг в секторе ЕЩЁ НЕ стрелявшего борта (целимся прямо в него; сервер посчитает урон)
     if (cannons && !peace) {
-      let tgt = null, tgtSide = null, bestD = Infinity, bestOff = 0;
+      // Раньше бралась просто БЛИЖАЙШАЯ цель в секторе. Теперь сравниваем по качеству выстрела
+      // (угол × дистанция) и добавляем вес общей цели флота — залп ложится туда же, куда бьют
+      // остальные, и подранка добивают, а не переводят на него ещё один борт вхолостую.
+      let tgt = null, tgtSide = null, bestD = Infinity, bestOff = 0, bestPick = -Infinity;
       for (const t of game.ships) {
         if (t.owner === pIdx) continue;
         if (t.owner >= 0 && !game.players[t.owner]?.alive) continue;
         const d = dist(ship.x, ship.y, t.x, t.y);
-        if (d > st.fireRange || d >= bestD) continue;
+        if (d > st.fireRange) continue;
         const ang = Math.atan2(t.y - ship.y, t.x - ship.x);
         const offP = Math.abs(norm(ang - portDir)), offS = Math.abs(norm(ang - starDir));
         const side = offP <= offS ? 'port' : 'starboard';
         const off = Math.min(offP, offS);
         if (off > BROADSIDE_HALF_ARC || firedSides.includes(side)) continue;
-        tgt = t; tgtSide = side; bestD = d; bestOff = off;
+        const def = t.owner === -1 ? PIRATE : SHIP_TYPES[t.type];
+        const q = Math.max(0, 1 - off / BROADSIDE_HALF_ARC) * Math.max(0, 1 - d / st.fireRange);
+        const pick = q * 100 + (isFocus(t) ? FOCUS_W : 0) + (t.hp <= st.dmg * q ? 25 : 0); // добить — отдельно ценно
+        if (pick <= bestPick) continue;
+        tgt = t; tgtSide = side; bestD = d; bestOff = off; bestPick = pick;
       }
       if (tgt) {
         // КАЧЕСТВО выстрела для РЕШЕНИЯ бота — крутое и НЕ зависит от флоров урона (SIDE_MIN/FALLOFF_MIN).
@@ -183,12 +250,12 @@ export function chooseBotAction(game, pIdx, level = 'mid') {
     const price = OUTPOST_LEVELS[(isl.outpost?.level || 0)].price;
     if (me.gold < price + 120) return; // строим только с запасом на корабли (апгрейд окупается доходом)
     if (isl.outpost) { // апгрейд своего — гарнизон строит сам, корабль не нужен
-      cands.push({ score: 14 * (underSiege ? 0.4 : 1), action: { type: 'outpost', islandId: ii } });
+      cands.push({ score: 17 * (underSiege ? 0.4 : 1), action: { type: 'outpost', islandId: ii } });
       return;
     }
     const builder = myShips.find(s => !acted.has(s.id) && dist(s.x, s.y, isl.x, isl.y) <= isl.radius + OUTPOST_BUILD_REACH);
     if (builder) cands.push({
-      score: 18 * (underSiege ? 0.4 : 1), // первая постройка ценнее апгрейда
+      score: 20 * (underSiege ? 0.4 : 1), // первая постройка ценнее апгрейда (доход + дозор + ремонт на всю партию)
       action: { type: 'outpost', shipId: builder.id, islandId: ii }
     });
   });
@@ -197,19 +264,36 @@ export function chooseBotAction(game, pIdx, level = 'mid') {
   const fishers = myShips.filter(s => SHIP_TYPES[s.type].fishing > 0).length;
   if (myShips.length < 8) {
     if (level !== 'easy') {
-      if (fishers === 0 && me.gold >= SHIP_TYPES.barkas.price + 60) {
-        // когда под стенами враг ИЛИ все рыбные места под огнём — не плодим баркасы на убой
-        const safeZone = game.map.fishZones.some(z => !enemyAt(z.x, z.y, 80));
-        cands.push({ score: (underSiege || !safeZone) ? 6 : 34, action: { type: 'buy', ships: ['barkas'] } });
+      // Сколько ещё рыбаков реально прокормится: свободные места в БЕЗОПАСНЫХ зонах.
+      // Жалоба с живой партии: 1300 золота, рядом рыбное место на четверых, а у бота одна
+      // лодка — потому что покупка срабатывала только при «рыбаков ноль».
+      const freeSlots = game.map.fishZones.reduce((a, z) => {
+        if (enemyAt(z.x, z.y, 80)) return a;
+        const cap = z.cap ?? FISH_ZONE_CAP;
+        return a + Math.max(0, cap - game.ships.filter(s2 => dist(s2.x, s2.y, z.x, z.y) <= z.radius).length);
+      }, 0);
+      if (fishers < freeSlots && me.gold >= SHIP_TYPES.barkas.price + 60) {
+        const score = underSiege ? 6 : (fishers === 0 ? 34 : 30 - fishers * 4);  // первый важнее всех
+        cands.push({ score, action: { type: 'buy', ships: ['barkas'] } });
       }
       const pick = level === 'hard'
         ? (me.gold >= SHIP_TYPES.linkor.price ? 'linkor' : me.gold >= 380 ? 'fregat' : me.gold >= 220 ? 'brig' : null)
         : (me.gold >= 380 ? 'fregat' : me.gold >= 220 ? 'brig' : null);
-      if (pick && (underSiege || !turnPressure)) {
-        const score = underSiege
-          ? 30 + Math.min(8, me.gold / 200) // срочно строим защитников
+      if (pick && (underSiege || homeDeficit || !turnPressure)) {
+        // ОБОРОНА ПОКУПКОЙ: новый корабль появляется у СВОЕГО порта, то есть прямо против
+        // вторжения. Берём не ниже рангом, чем сильнейший из идущих на нас (если по карману),
+        // и тем охотнее, чем больше дефицит.
+        let ships = [pick];
+        if (homeDeficit) {
+          const need = Object.entries(SHIP_TYPES)
+            .filter(([, t]) => !t.cheat && !t.fishing && t.dmg >= worstAttacker && t.price <= me.gold)
+            .sort((a, b) => a[1].price - b[1].price)[0];
+          if (need) ships = [need[0]];
+        }
+        const score = homeDeficit ? defenceUrgency
+          : underSiege ? 30 + Math.min(8, me.gold / 200)
           : (foePower >= myPower ? 26 : 14) + Math.min(8, me.gold / 200);
-        cands.push({ score, action: { type: 'buy', ships: [pick] } });
+        cands.push({ score, action: { type: 'buy', ships } });
       }
     } else if (Math.random() < 0.4) {
       // Юнга покупает наугад, НО среди вариантов есть фрегат — иначе порт не пробить (мортира только у фрегата/линкора),
@@ -271,6 +355,12 @@ export function chooseBotAction(game, pIdx, level = 'mid') {
       const inv = nearest(ship, invaders, f => [f.x, f.y]);
       if (inv) addMove(ship, inv.x, inv.y, 35);
     }
+    // ОТЗЫВ ДОМОЙ. Если у порта дефицит обороны, всё боевое гребёт назад, и тем решительнее,
+    // чем крупнее идущий флот: при серьёзном вторжении это перебивает даже осаду чужой базы.
+    // Тяжёлые возвращаются охотнее — они и решают исход у своего порога.
+    if (defenceUrgency && st.dmg > 0 && dist(ship.x, ship.y, myBase.x, myBase.y) > homeReach) {
+      addMove(ship, myBase.x, myBase.y, defenceUrgency * (MORTAR_SHIPS.includes(ship.type) ? 1 : 0.85));
+    }
 
     // ПРИКРЫТИЕ КОРМИЛИЦ: боевой корабль идёт бить врага, насевшего на наш кормящий баркас
     if (st.dmg > 0 && threatenedFishers.length) {
@@ -279,6 +369,24 @@ export function chooseBotAction(game, pIdx, level = 'mid') {
         foeFighters.filter(f => dist(f.x, f.y, fz.x, fz.y) <= SHIP_TYPES[f.type].fireRange + 120),
         f => [f.x, f.y]);
       if (enemy) addMove(ship, enemy.x, enemy.y, 31); // чуть ниже обороны базы (35), выше лута/охоты
+    }
+
+    // ⛺ к залутанному острову под стройку. Без этого мотива аванпосты не строились ВООБЩЕ:
+    // мотив «плыть к острову» работал только для НЕсобранных кладов, после сбора корабль
+    // уплывал, и условие постройки «свой корабль вплотную + хватает золота» не совпадало ни
+    // разу за партию (замер на 4 партиях: 0 аванпостов у всех уровней).
+    // Условия нарочно жёсткие: A/B показал, что «строить при первой возможности» делает бота
+    // СЛАБЕЕ (3 победы против 9) — отвлечённый корабль и потраченные 150 зол. стоят дороже,
+    // чем +3 золота в ход за остаток партии. Поэтому: только с лишними деньгами, только
+    // лишним кораблём (рыбак или когда боевых больше трёх) и только если остров по дороге.
+    if (level !== 'easy' && me.gold >= OUTPOST_LEVELS[0].price + 450 && !underSiege &&
+        (st.fishing > 0 || myFighters.length > 3)) {
+      const free = game.map.lootIslands.filter(i => i.looted && !i.outpost);
+      const spot = nearest(ship, free, ii => [ii.x, ii.y]);
+      const d = spot ? dist(ship.x, ship.y, spot.x, spot.y) : Infinity;
+      if (spot && d > spot.radius + OUTPOST_BUILD_REACH && d <= st.move * 2) {
+        addMove(ship, spot.x, spot.y, 16 - Math.ceil(d / st.move) * 3); // ниже обороны (35) и прикрытия (31)
+      }
     }
 
     // к ближайшему кладу — лут важнее бесконечной рыбалки
@@ -325,20 +433,252 @@ export function chooseBotAction(game, pIdx, level = 'mid') {
     // пиратами (иначе флот распыляется и порт не падает) — даём ей явный приоритет.
     if (victim && !peace) {
       const b = game.map.bases[victim.i];
-      // осаду ведут тяжёлые корабли (фрегат/линкор соло пробивают порт, переживая ответку),
-      // лёгкие — в хвосте. Скор выше лута(24)/пиратов(28), но ниже выстрела по порту. В группе — плотнее.
-      const siegeScore = Math.min(36, 12 + st.dmg * 0.6);
+      // РАЗДЕЛЕНИЕ РОЛЕЙ. Порт ломает только мортира (залп по базе бьёт ×0.12), причём линкор
+      // вдвое эффективнее фрегата (portBonus) и легче переживает ответку. Поэтому к базе в
+      // первую очередь тянем мортирщиков — тем охотнее, чем больнее они бьют по порту.
+      // Остальные идут в БЛОКАДУ: порт сам не стреляет (PORT_DMG_TO_SHIPS=0), стоять у него
+      // безопасно, а новые суда соперника выходят как раз оттуда — их и перехватываем.
+      // (Запереть верфь нельзя: место для спавна ищется кольцами до самой воды. Но чем плотнее
+      // блокада, тем дальше от базы вылупляется пополнение и тем позже доходит до боя.)
+      const portDmg = MORTAR_SHIPS.includes(ship.type) || st.cheat ? st.dmg * (st.portBonus || 1) : 0;
+      const siegeScore = portDmg
+        ? Math.min(40, 14 + portDmg * 0.35)     // линкор ≈40, фрегат ≈29
+        : Math.min(26, 10 + st.dmg * 0.35);     // бриг ≈20 — блокада, а не размен с портом
       addMove(ship, b.x, b.y, aggressive ? siegeScore * pack : 6);
     }
   }
 
-  // --- выбор по уровню ---
+  // 🐞 Разбор для отладки: то, что бот «держит в голове» — кого считает жертвой, по кому ведёт
+  // сосредоточенный огонь и насколько прикрыт его порт. Идёт в консоль и в наложение на карту.
+  cands.meta = {
+    pIdx,
+    focusId: focusTarget?.id || null,
+    victimIdx: victim ? victim.i : null,
+    homeThreat, homeGuard, defenceUrgency,
+    homeReach, underSiege,
+    vision: myShips.map(s2 => ({
+      x: s2.x, y: s2.y,
+      r: Math.max(SHIP_TYPES[s2.type].move, SHIP_TYPES[s2.type].fireRange) * 1.3
+    }))
+  };
+  return cands;
+}
+
+// ═══════════════ 🧩 ПЛАНИРОВАНИЕ ХОДА (просмотр на действие вперёд) ═══════════════
+// Первая попытка складывала эвристические ОЦЕНКИ действий («сделай это, потом лучшее из
+// оставшегося») — и провалилась: −4 победы против +30 без планировщика. Причина в том, что
+// приоритеты это не ценность. «Не стрелять» сохраняет лучший выстрел на следующее действие,
+// и сумма приоритетов такое поощряет — бот начинал тянуть.
+//
+// Правильный способ: сравнивать не приоритеты, а ПОЗИЦИЮ. Кандидаты по-прежнему порождаются
+// эвристикой (она отсекает бессмысленное), но ранжируются по тому, какой станет доска после
+// действия — и после лучшего продолжения. Ценность считается с моей стороны: живучесть и
+// огневая мощь флота, казна, прочность портов, аванпосты.
+const PLAN_K = Number(process.env.BOT_PLAN_K ?? 5);            // «Адмирал»: сколько кандидатов проверять (0 — выключить)
+// «Боцман» получает урезанный просмотр: замер показал, что без него средняя ступень почти не
+// отличается от «Юнги» (55% побед), то есть выбор сложности между ними ничего не менял.
+const PLAN_K_MID = Number(process.env.BOT_PLAN_K_MID ?? 3);
+// «Юнга»: из скольких случайных вариантов он выбирает. Это и есть его сложность.
+const EASY_SAMPLE = Number(process.env.BOT_EASY_SAMPLE ?? 6);
+// Вес HP порта в оценке позиции (см. boardValue). Порт — условие победы, а не мешок HP.
+const PORT_W = Number(process.env.BOT_PORT_W ?? 1);
+// Вес чужой огневой мощи у МОЕГО порта в оценке позиции: без него бот замечал вторжение,
+// только когда база уже сыпалась.
+const HOME_THREAT_W = Number(process.env.BOT_HOME_THREAT_W ?? 2.5);
+// Ценность «цель уже под бортом»: заставляет разворачиваться бортом вместо стрельбы мортирой
+// вполовину силы. Слишком большой вес — боты «танцуют» и не штурмуют, поэтому подбирается замером.
+const BROAD_READY_W = Number(process.env.BOT_BROAD_READY_W ?? 1);
+// Курс «золото → ценность». Корабль в оценке весит hp + урон×2, то есть линкор за 500 золота
+// даёт 410 — при курсе 0.25 покупка выглядела созданием ценности из воздуха, и бот сливал всю
+// казну в самое крупное железо, игнорируя экономику. Реальный курс по прайсу ≈0.7–0.8.
+const GOLD_W = Number(process.env.BOT_GOLD_W ?? 0.7);
+// Общий множитель решимости обороняться (0 — не бросать осаду ради дома вовсе).
+const DEFENCE_W = Number(process.env.BOT_DEFENCE_W ?? 1);
+const PLAN_DISCOUNT = Number(process.env.BOT_PLAN_DISCOUNT ?? 0.7); // вес продолжения
+
+export function boardValue(game, pIdx) {
+  let v = 0;
+  for (const s2 of game.ships) {
+    const st = SHIP_TYPES[s2.type] || PIRATE;
+    const w = s2.hp + st.dmg * 2;                              // живучесть + огневая мощь
+    if (s2.owner === pIdx) { v += w; continue; }
+    if (s2.owner >= 0) { if (game.players[s2.owner]?.alive) v -= w; continue; }
+    // 🏴‍☠️ ПИРАТ. Раньше НПС не попадал в оценку совсем: урон по нему стоил ноль, и
+    // планировщик не отвечал даже на прямое нападение — корабль молча терпел, а флот плыл
+    // дальше. Теперь пират это и угроза, и ДЕНЬГИ: чем он слабее, тем ближе награда.
+    const maxHp = s2.maxHp || PIRATE.hp;
+    v -= s2.hp * 0.5;                                          // добивать выгодно
+    v += (s2.bounty || 0) * 0.25 * (1 - s2.hp / maxHp);        // награда приближается с уроном
+  }
+  game.players.forEach((p, i) => {
+    if (!p.alive) { v += i === pIdx ? -400 : 400; return; }     // выбывание решает партию
+    // ПОРТ ВЕСИТ КАК КОРАБЛЬ. При весе 0.35 осада выходила убыточной по арифметике: выстрел
+    // фрегата давал +14.7, а ответка порта снимала 25 HP с весом 1.0 — планировщик отказывался
+    // от осады и водил флот кругами вокруг вражеского острова. Порт — это не «ещё немного HP»,
+    // а условие победы: снёс — соперник выбывает и отдаёт половину казны.
+    // Чем дольше тянется партия, тем дороже стоит ЧУЖОЙ порт: иначе бот бесконечно копит
+    // экономику и «улучшает позицию», а партия не кончается (замер: 283 раунда, 45% упёрлись
+    // в лимит). К середине партии осада должна перевешивать любой фарм.
+    const late = 1 + (game.turn?.number || 0) / (game.players.length * 40);
+    v += (i === pIdx ? 1 : -1) * p.portHp * PORT_W * (i === pIdx ? 1 : late);
+    // Казна: своя — это будущий флот. Чужую по номиналу считать бессмысленно — у того, кто
+    // уже не может обороняться, она обычно пуста; зато за снос его базы дают куш, зависящий
+    // от РАЗВИТИЯ (tributeFor). Его и учитываем: чем жирнее жертва, тем ценнее её добить.
+    v += i === pIdx ? p.gold * GOLD_W : tributeFor(game, i) * 0.25;
+  });
+  // Жалоба с живой партии: пока бот осаждал соперника, игрок подвёл корабли к ЕГО порту —
+  // и бот не среагировал. Причина в том, что оценка видела только текущий portHp: пока база
+  // цела, угрозы будто нет. Теперь чужая огневая мощь у моего порога вычитается сразу.
+  const home = game.map.bases?.[pIdx];
+  if (home && !home.noPort) {
+    // Считаем НЕПОКРЫТУЮ угрозу: чужая огневая мощь у порога минус своя, которая там же стоит.
+    // Так оценка не просто «боится» вторжения, а поощряет привести корабли домой — иначе
+    // штраф одинаков, где бы мой флот ни находился, и планировщику нет смысла возвращаться.
+    let threat = 0, guardv = 0;
+    for (const s2 of game.ships) {
+      const sd = SHIP_TYPES[s2.type];
+      if (!sd?.dmg || s2.owner < 0) continue;
+      if (Math.hypot(s2.x - home.x, s2.y - home.y) >= home.radius + 240) continue;
+      if (s2.owner === pIdx) guardv += sd.dmg;
+      else if (game.players[s2.owner]?.alive) threat += sd.dmg;
+    }
+    v -= Math.max(0, threat - guardv) * HOME_THREAT_W;
+  }
+
+  // ── ПОТЕНЦИАЛ: что станет доступно, если так встать ──
+  // ВАЖНО: потенциал ЗАТУХАЕТ по ходу партии. Без этого замер дал 277 раундов при 46% партий,
+  // упёршихся в лимит: бот бесконечно улучшал позицию и копил экономику вместо того, чтобы
+  // добивать. К середине партии клады и рыбалка должны весить меньше, чем чужой порт.
+  const pot = Math.max(0.25, 1 - (game.turn?.number || 0) / (game.players.length * 45));
+  const myShips = game.ships.filter(s2 => s2.owner === pIdx);
+  const near = (x, y) => {                     // 1 — рядом, 0 — на другом конце карты
+    if (!myShips.length) return 0;
+    const d = Math.min(...myShips.map(s2 => dist(s2.x, s2.y, x, y)));
+    return Math.max(0, 1 - d / 900);
+  };
+  // 🏝 НЕЗАЛУТАННЫЙ КЛАД тянет к себе: чем ближе мой корабль, тем ценнее позиция
+  for (const isl of game.map.lootIslands || [])
+    if (!isl.looted) v += isl.loot * 0.25 * near(isl.x, isl.y) * 0.8 * pot;
+  // 🐟 РЫБНОЕ МЕСТО: кормящийся баркас — доход навсегда, идущий к зоне — доход скоро
+  for (const z of game.map.fishZones || []) {
+    const cap = z.cap ?? FISH_ZONE_CAP;
+    const crew = game.ships.filter(s2 => dist(s2.x, s2.y, z.x, z.y) <= z.radius);
+    const mine = crew.filter(s2 => s2.owner === pIdx && SHIP_TYPES[s2.type]?.fishing > 0).length;
+    v += Math.min(mine, cap) * FISH_INCOME * 9 * pot;
+    const free = cap - crew.length;
+    if (free > 0) {
+      // рыбак ВНЕ зоны — это будущий доход: считаем его тем весомее, чем он ближе к воде с рыбой
+      const idle = myShips.filter(s2 => SHIP_TYPES[s2.type]?.fishing > 0 &&
+        dist(s2.x, s2.y, z.x, z.y) > z.radius);
+      for (const f of idle.slice(0, free))
+        v += FISH_INCOME * 6 * pot * Math.max(0.35, 1 - dist(f.x, f.y, z.x, z.y) / 900);
+    }
+  }
+  // 💥 ГОТОВНОСТЬ БОРТА. Жалоба: «два линкора 1 на 1, я развернулся бортом и наваливаю, а он
+  // стоит мордой и пуляет мортирой». Мортира по судам бьёт ВПОЛОВИНУ, борт — вдвое сильнее,
+  // но развернуться выгодно лишь если оценка видит, ЧТО он сможет сделать после разворота.
+  const norm2 = a => Math.atan2(Math.sin(a), Math.cos(a));
+  for (const s2 of myShips) {
+    const st = SHIP_TYPES[s2.type];
+    const cannons = BROADSIDE_CANNONS[s2.type] || 0;
+    if (!cannons || typeof s2.heading !== 'number') continue;
+    for (const t of game.ships) {
+      if (t.owner === pIdx) continue;
+      if (t.owner >= 0 && !game.players[t.owner]?.alive) continue;
+      const d = dist(s2.x, s2.y, t.x, t.y);
+      if (d > st.fireRange) continue;
+      const ang = Math.atan2(t.y - s2.y, t.x - s2.x);
+      const off = Math.min(Math.abs(norm2(ang - norm2(s2.heading - Math.PI / 2))),
+                           Math.abs(norm2(ang - norm2(s2.heading + Math.PI / 2))));
+      if (off > BROADSIDE_HALF_ARC) continue;
+      const q = (1 - off / BROADSIDE_HALF_ARC) * (1 - d / st.fireRange);
+      v += st.dmg * q * BROAD_READY_W;         // цель под бортом в упор — позиция сама по себе ценна
+    }
+  }
+
+  for (const isl of game.map.lootIslands || []) {
+    if (!isl.outpost) continue;
+    // Аванпост — это ПОТОК дохода, а не разовая трата: оцениваем его примерно в десять ходов
+    // своего дохода плюс прочность. Без этого планировщик видел только списанное золото
+    // (казна весит 0.25) и не строил вообще — тест это поймал.
+    const def = OUTPOST_LEVELS[isl.outpost.level - 1] || OUTPOST_LEVELS[0];
+    // доход на всю партию + перки: фактория чинит флот рядом, форт ещё и стреляет по врагу
+    // Доход аванпоста идёт до конца партии, а партии тут длинные: считать его «за 10 ходов»
+    // было вдвое заниженно — апгрейд выглядел тратой, и бот не прокачивал постройки вообще.
+    // Перки тоже стоят денег: фактория чинит флот рядом, форт ещё и стреляет.
+    const perks = (def.heal ? 80 : 0) + (def.gun ? def.gun * 8 : 0);
+    v += (isl.outpost.owner === pIdx ? 1 : -1) * (def.income * 25 + perks + isl.outpost.hp * 0.1);
+  }
+  return v;
+}
+
+/**
+ * Выбор хода бота.
+ * @param log — необязательный приёмник отладки (см. SB_DEBUG): получает разбор решения —
+ *   казну, флот, что выбрано и из чего выбиралось. Нужен, чтобы в игре было видно, ПОЧЕМУ
+ *   бот сделал именно этот ход, а не гадать по последствиям.
+ */
+export function chooseBotAction(game, pIdx, level = 'mid', log = null) {
+  if (isDuel(game)) return chooseDuelBotAction(game, pIdx, level); // дуэль — своя тактика (без баз/экономики/лута)
+  const cands = buildCandidates(game, pIdx, level);
+
+  // «ЮНГА»: раньше он в 70% ходов играл ПОЛНОЙ эвристикой, лишь с шумом в оценках — и потому
+  // выигрывал у «Боцмана» 43% партий, то есть выбор сложности между ними почти ничего не менял.
+  // Теперь он новичок по сути: видит не всю доску, а случайную горстку вариантов, и выбирает
+  // лучшее из НЕЁ. Размер горстки — ручка сложности: 1 — чистый рандом, много — почти Боцман.
   if (level === 'easy') {
-    if (Math.random() < 0.3) return cands[Math.floor(Math.random() * cands.length)].action;
-    for (const c of cands) c.score *= 0.7 + Math.random() * 0.6; // шумные оценки
+    const sample = [];
+    const pool = cands.slice();
+    for (let i = 0; i < EASY_SAMPLE && pool.length; i++)
+      sample.push(...pool.splice(Math.floor(Math.random() * pool.length), 1));
+    for (const c of sample) c.score *= 0.6 + Math.random() * 0.8; // и оценивает на глазок
+    sample.sort((a, b) => b.score - a.score);
+    return sample[0].action;
   }
   cands.sort((a, b) => b.score - a.score);
-  return cands[0].action;
+
+  // планируем только там, где есть что планировать: остался бюджет хода и уровень это позволяет
+  const left = movesBudget(game.config) - (game.turn?.moves || 0);
+  const k = level === 'hard' ? PLAN_K : level === 'mid' ? PLAN_K_MID : 0;
+  const report = (chosen, planned) => {
+    if (!log) return;
+    try {
+      log({
+        pIdx, level, turn: game.turn?.number || 0,
+        gold: game.players[pIdx].gold,
+        fleet: game.ships.filter(s2 => s2.owner === pIdx).map(s2 => s2.type),
+        chosen, planned,
+        top: cands.slice(0, 5).map(c => ({ score: Math.round(c.score), action: c.action })),
+        value: Math.round(boardValue(game, pIdx)),
+        meta: cands.meta || null
+      });
+    } catch { /* отладка не должна ломать ход */ }
+  };
+  if (k < 2 || left < 2 || cands.length < 2) { report(cands[0], false); return cands[0].action; }
+
+  const me = game.players[pIdx];
+  let best = cands[0], bestTotal = -Infinity;
+  for (const c of cands.slice(0, k)) {
+    let total = -Infinity;
+    try {
+      const probe = structuredClone(game);
+      if (applyAction(probe, me.id, c.action).ok) {
+        total = boardValue(probe, pIdx);
+        // осталось ещё действие — доигрываем лучшим продолжением и учитываем его со скидкой
+        if (probe.status === 'active' && probe.turn.idx === pIdx) {
+          const next = buildCandidates(probe, pIdx, level).sort((a, b) => b.score - a.score)[0];
+          if (next) {
+            const probe2 = structuredClone(probe);
+            if (applyAction(probe2, me.id, next.action).ok)
+              total += PLAN_DISCOUNT * (boardValue(probe2, pIdx) - total);
+          }
+        }
+      }
+    } catch { /* симуляция не удалась — этот кандидат просто не получает бонуса */ }
+    if (total > bestTotal) { bestTotal = total; best = c; }
+  }
+  report(best, true);
+  return best.action;
 }
 
 // ══════════════════════ ДУЭЛЬ ══════════════════════

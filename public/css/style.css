@@ -693,3 +693,43 @@ aside.panel {
   .player-row { padding: 7px 2px; }
   input[type="text"], select { font-size: 19px; padding: 8px 6px; }
 }
+
+/* ─── 🐞 Отладка (включается флагом SB_DEBUG на сервере) ─────────────────────── */
+.debug-bar {
+  position: absolute; left: 10px; top: 10px; z-index: 6;
+  display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+  padding: 6px 8px; border-radius: 10px;
+  background: rgba(253, 251, 243, .92); border: 2px solid var(--ink);
+}
+.debug-bar button.armed { background: var(--ink); color: var(--paper); }
+.debug-bar .debug-hint { font-size: 12px; color: var(--pencil); max-width: 240px; }
+.debug-bar button, .debug-bar select { width: auto; margin: 0; padding: 3px 8px; font-size: 12px; }
+.debug-bar select { max-width: 120px; }
+
+/* Консоль: закреплена у нижнего края окна, тянется за верхнюю границу.
+   Высотой рулит переменная --dbg-h (её двигает перетаскивание), тело страницы на столько же
+   поджимается снизу — иначе консоль накрыла бы нижнюю часть карты. */
+:root { --dbg-h: 50px; }
+body.debug-on { padding-bottom: var(--dbg-h); }
+.debug-console {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+  height: var(--dbg-h); min-height: 26px;
+  border-top: 2px solid var(--ink); background: #1e2430; color: #d8e0ea;
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.debug-resize {                      /* полоска-ручка: тянешь её — меняешь высоту консоли */
+  height: 6px; flex: 0 0 auto; cursor: ns-resize; background: #2c3543;
+}
+.debug-resize:hover { background: #3d4a5e; }
+.debug-console-head {
+  display: flex; gap: 10px; align-items: center; flex: 0 0 auto;
+  padding: 3px 8px; background: #161b24; border-bottom: 1px solid #2c3543;
+}
+.debug-console-head .muted { color: #8b97a8; }
+.debug-console-head button { padding: 1px 8px; font-size: 11px; }
+.debug-follow { display: flex; align-items: center; gap: 4px; color: #8b97a8; cursor: pointer; }
+.debug-log { flex: 1 1 auto; overflow: auto; padding: 4px 8px; white-space: pre-wrap; }
+.debug-log .row { padding: 2px 0; border-bottom: 1px solid #262e3a; }
+.debug-log .row:last-child { border-bottom: 0; }
+.debug-log .t { color: #6f7c8f; }

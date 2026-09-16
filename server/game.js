@@ -3,9 +3,9 @@ import { generateMap, spawnPoints, duelFleetSpots } from './mapgen.js';
 import {
   SHIP_TYPES, START_FLEET, START_GOLD, PORT_HP, PORT_RETURN_DMG, PORT_INCOME,
   PORT_RETURN_LINKOR_MULT, PORT_NO_SHIP_INCOME_MULT,
-  SHIP_COLLISION_DIST, LOOT_REACH, WRECK_LOOT_FRAC, TRIBUTE_FRAC,
+  SHIP_COLLISION_DIST, LOOT_REACH, WRECK_LOOT_FRAC, tributeFor,
   BROADSIDE_CANNONS, BROADSIDE_HALF_ARC, BROADSIDE_FALLOFF_MIN, BROADSIDE_SIDE_MIN, BROADSIDE_PORT_MULT, MORTAR_SHIPS, MORTAR_SHIP_MULT,
-  FISH_ZONE_CAP, movesBudget, SHIP_ACTIONS, CHEATS_ENABLED, DEBUG_GOLD_LOG, REPAIR_CHARGES, REPAIR_DOCK_REACH,
+  FISH_ZONE_CAP, movesBudget, SHIP_ACTIONS, CHEATS_ENABLED, DEBUG_GOLD_LOG, DEBUG, REPAIR_CHARGES, REPAIR_DOCK_REACH,
   modeStartGold, modeOf, isPeace, modePeaceRounds, isDuel, isRealtime, RT, cheapestShipPrice, GAME_MODES, DEFAULT_MODE,
   WIND_STRENGTH, WIND_TURN_STEP, WIND_STR_STEP, windMoveMult, REALTIME_NAME,
   OUTPOST_LEVELS, OUTPOST_RADIUS, OUTPOST_BUILD_REACH,
@@ -200,6 +200,46 @@ function spawnPirate(game, silent = false, allowBoss = true, slot = null) {
       ? '👑🏴‍☠️ В водах объявился ПИРАТСКИЙ БОСС с богатой добычей!'
       : '🏴‍☠️ На горизонте появился пиратский корабль!', boss ? 'battle' : 'info');
   }
+}
+
+/** 🐞 Отладка: корабль ЛЮБОГО типа любому игроку в заданной точке. Возвращает корабль или null. */
+export function spawnShipAt(game, owner, type, x, y) {
+  const st = SHIP_TYPES[type];
+  if (!st || !game.players[owner]) return null;
+  const m = game.map;
+  const px = Math.min(m.w - MAP_EDGE_MARGIN, Math.max(MAP_EDGE_MARGIN, Math.round(x)));
+  const py = Math.min(m.h - MAP_EDGE_MARGIN, Math.max(MAP_EDGE_MARGIN, Math.round(y)));
+  if (terrainBlocked(game, px, py)) return null;
+  const ship = {
+    id: 's' + (shipSeq++) + '_' + Math.random().toString(36).slice(2, 6),
+    owner, type, x: px, y: py, hp: st.hp,
+    heading: Math.atan2(m.h / 2 - py, m.w / 2 - px),
+    ...(st.repairer ? { repairCharges: REPAIR_CHARGES } : {})
+  };
+  game.ships.push(ship);
+  pushLog(game, `🐞 Отладка: ${st.name} → ${game.players[owner].nick}`, 'info');
+  return ship;
+}
+
+/** 🐞 Отладка: пират в ЗАДАННОЙ точке (обычный или босс). Возвращает корабль или null. */
+export function spawnPirateAt(game, x, y, boss = false) {
+  const m = game.map;
+  const px = Math.min(m.w - MAP_EDGE_MARGIN, Math.max(MAP_EDGE_MARGIN, Math.round(x)));
+  const py = Math.min(m.h - MAP_EDGE_MARGIN, Math.max(MAP_EDGE_MARGIN, Math.round(y)));
+  if (terrainBlocked(game, px, py)) return null;
+  const hp = boss ? PIRATE_BOSS_HP : PIRATE.hp;
+  const pir = {
+    id: 'p' + (shipSeq++) + '_' + Math.random().toString(36).slice(2, 6),
+    owner: -1, type: 'pirate', x: px, y: py, hp, maxHp: hp, boss,
+    bounty: boss
+      ? (PIRATE_BOSS_BOUNTY_MIN + Math.floor(Math.random() * PIRATE_BOSS_BOUNTY_RAND)) * PIRATE_BOSS_BOUNTY_STEP
+      : (PIRATE_BOUNTY_MIN + Math.floor(Math.random() * PIRATE_BOUNTY_RAND)) * PIRATE_BOUNTY_STEP,
+    heading: Math.random() * Math.PI * 2, angryAt: null,
+    turnSlot: game.turn?.idx ?? 0, bornTurn: game.turn?.number ?? 0
+  };
+  game.ships.push(pir);
+  pushLog(game, boss ? '🐞👑 Отладка: подсажен пиратский БОСС' : '🐞🏴‍☠️ Отладка: подсажен пират', 'info');
+  return pir;
 }
 
 // Шаг пирата вдоль курса; если по курсу занято — довернуть туда, где чисто.
@@ -582,8 +622,10 @@ function eliminatePlayer(game, victimIdx, killer) {
   victim.placement = game.players.filter(p => p.alive).length + 1;
   const duel = isDuel(game);
   if (killer) {
-    const tribute = Math.floor(victim.gold * TRIBUTE_FRAC);
-    victim.gold -= tribute;
+    // куш считается по РАЗВИТИЮ жертвы (доход + остатки казны), см. tributeFor в config.js:
+    // добивать нищего больше не бессмысленно, а разорять развитого — заметно выгоднее
+    const tribute = tributeFor(game, victimIdx);
+    victim.gold -= Math.min(victim.gold, tribute);   // в минус казну не уводим
     killer.gold += tribute;                       // дань-валюту забираем,
     killer.stats.goldCollected += tribute;
     debugGold(game, killer, tribute, `дань с игрока ${victim.nick}`);
@@ -1327,7 +1369,8 @@ export function publicState(game, viewerPid) {
     map: game.map,
     players: game.players.map(p => ({
       id: p.id, nick: p.nick, color: p.color,
-      gold: (reveal || p.id === viewerPid) ? p.gold : null,
+      // 🐞 в отладке казна видна у всех — иначе не разобрать, почему бот не покупает
+      gold: (reveal || DEBUG || p.id === viewerPid) ? p.gold : null,
       portHp: p.portHp, alive: p.alive, placement: p.placement,
       ready: p.ready || false,                 // дуэль: собрал ли флот в фазе закупки
       stats: p.stats, isBot: p.isBot || false

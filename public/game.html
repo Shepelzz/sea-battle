@@ -19,6 +19,23 @@
           <button id="pauseResumeBtn" type="button">▶️ Продолжить</button>
         </div>
       </div>
+      <!-- 🐞 инструменты отладки: появляются только при SB_DEBUG=1 на сервере -->
+      <div class="debug-bar hidden" id="debugBar">
+        <button class="small" id="dbgFog" title="Показать карту целиком">🌫 туман</button>
+        <button class="small" id="dbgMove" title="Взять любой корабль и поставить в другую точку">✋ перенести</button>
+        <button class="small" id="dbgHeal" title="Восстановить прочность корабля">❤️ лечить</button>
+        <button class="small" id="dbgPirate" title="Подсадить пирата в точку">🏴‍☠️ пират</button>
+        <select class="small hidden" id="dbgPirateKind" title="Кого подсаживать">
+          <option value="normal">обычный</option>
+          <option value="boss">босс 👑</option>
+        </select>
+        <button class="small" id="dbgShip" title="Поставить любой корабль любому игроку">⛵ корабль</button>
+        <select class="small hidden" id="dbgShipType" title="Какой корабль"></select>
+        <select class="small hidden" id="dbgShipOwner" title="Чей корабль"></select>
+        <button class="small" id="dbgEyes" title="Показать, что видит и о чём думает бот">👁 глазами бота</button>
+        <button class="small" id="dbgGold" title="+500 золота себе">💰 +500</button>
+        <span class="debug-hint" id="dbgHint"></span>
+      </div>
       <div class="toasts" id="toasts"></div>
       <div class="ship-note" id="shipNote"></div>
       <div class="chat-bar" id="chatBar">
@@ -86,6 +103,18 @@
       </div>
       </div><!-- /panelBody -->
     </aside>
+  </div>
+
+  <!-- 🐞 консоль отладки: поток решений бота. Тянется за нижний край. -->
+  <div class="debug-console hidden" id="debugConsole">
+    <div class="debug-resize" id="debugResize" title="Потяни, чтобы изменить высоту"></div>
+    <div class="debug-console-head">
+      <b>🐞 Решения бота</b>
+      <span class="muted" id="debugCount"></span>
+      <label class="debug-follow"><input type="checkbox" id="debugFollow" checked> прокручивать</label>
+      <button class="small" id="debugClear">очистить</button>
+    </div>
+    <div class="debug-log" id="debugLog"></div>
   </div>
 
   <!-- ввод ника -->
@@ -260,7 +289,7 @@
             <li>🐟 <b>Рыбные места</b> — баркас, стоящий в зоне, сам приносит золото в начале каждого твоего хода (действие не тратится). Место кормит ограниченное число судов: <b>4</b>, а крупные зоны — <b>5</b>. Синий счётчик под зоной (напр. <b>2/4</b>) показывает занято/лимит. Рыба <b>очень медленно мигрирует</b> — косяк блуждает вокруг своих мест, следи и переставляй баркасы.</li>
             <li>🏝 <b>Острова с кладом</b> — любой корабль, дотянувшийся до острова, лутает клад.</li>
             <li>💥 <b>Обломки</b> — за потопленный корабль ≈50% его цены.</li>
-            <li>🏴‍☠️ <b>Дань</b> — разбил порт: забираешь половину казны выбывшего.</li>
+            <li>🏴‍☠️ <b>Куш</b> — разбил порт: забираешь 100–1000 золота, тем больше, чем крупнее партию отыграл выбывший (заработал, навоевал, потопил).</li>
             <li>🏰 <b>Доход порта</b> — немного золота в начале каждого твоего хода. Остался <b>совсем без кораблей</b> — порт даёт на <b>50% больше</b>, чтобы было на что отстроиться.</li>
           </ul>
         </section>
