@@ -2215,13 +2215,19 @@ function handleTap(pos, isTouch) {
 
   const clickedShip = state.ships.find(s => dist(pt.x, pt.y, s.x, s.y) < tapR);
 
-  if (mode === 'broadside' && selectedShipId && !(clickedShip && clickedShip.owner === myIdx())) {
-    // залп в сторону точки прицела (сервер сам определит борт и сектор); тап по СВОЕМУ кораблю
-    // проваливается ниже — перевыбор (штурвал важнее недонаведённого залпа)
-    sendAction({ type: 'broadside', shipId: selectedShipId, tx: pt.x, ty: pt.y });
-    mode = 'idle'; // залп ушёл — штурвал возвращается (кулдаун виден на иконке борта)
-    render();
-    return;
+  if (mode === 'broadside' && selectedShipId) {
+    // Залп в сторону точки прицела (сервер сам определит борт и сектор).
+    // Тап по СВОЕМУ кораблю раньше всегда проваливался в перевыбор — и если свой корабль стоял
+    // в секторе обстрела, выстрелить туда было невозможно. Теперь внутри сектора приоритет у
+    // ВЫСТРЕЛА: прицелился — стреляй, ничто не мешает. Свои корабли в секторе залп не задевает
+    // (сервер бьёт только по чужим), а перевыбор остаётся для тапов ВНЕ сектора.
+    const bsel = state.ships.find(s => s.id === selectedShipId);
+    if (bsel && (inBroadsideArc(bsel, pt.x, pt.y) || !(clickedShip && clickedShip.owner === myIdx()))) {
+      sendAction({ type: 'broadside', shipId: selectedShipId, tx: pt.x, ty: pt.y });
+      mode = 'idle'; // залп ушёл — штурвал возвращается (кулдаун виден на иконке борта)
+      render();
+      return;
+    }
   }
 
   if (mode === 'attack' && selectedShipId && !(clickedShip && clickedShip.owner === myIdx())) {
@@ -2606,6 +2612,21 @@ function drawBroadsideSectors(sel) {
   }
 }
 // красные кольца на вражеских судах в наводимом секторе — поверх кораблей
+/**
+ * Лежит ли точка в секторе обстрела корабля (любого борта) и в радиусе огня.
+ * Нужен, чтобы в режиме залпа клик по зоне поражения всегда означал ВЫСТРЕЛ, даже если
+ * в этой точке стоит свой корабль.
+ */
+function inBroadsideArc(sel, x, y) {
+  if (!canBroadside(sel)) return false;
+  const st = ST(sel.type);
+  if (!st || dist(sel.x, sel.y, x, y) > st.fireRange) return false;
+  const dirs = broadsideDirs(sel), ha = broadsideHalfArc();
+  const ang = Math.atan2(y - sel.y, x - sel.x);
+  return ['port', 'starboard'].some(side =>
+    dirs[side] !== undefined && Math.abs(angNorm(ang - dirs[side])) <= ha);
+}
+
 function drawBroadsideTargets(sel) {
   const aimed = broadsideAimedSide(sel);
   if (!aimed) return;

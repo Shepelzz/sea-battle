@@ -737,7 +737,8 @@ body.debug-on { padding-bottom: var(--dbg-h); }
 /* ─── Подвал главной: копирайт и версия сборки ──────────────────────────────── */
 .page-footer {
   display: flex; gap: 8px; justify-content: center; align-items: center; flex-wrap: wrap;
-  margin: 28px 0 18px; padding: 0 16px;
+  /* .wrap снизу держит 60px воздуха — подтягиваем подвал в него, чтобы он не висел отдельно */
+  margin: -30px 0 22px; padding: 0 16px;
   font-size: 13px; color: var(--pencil);
 }
 .page-footer .dot-sep { opacity: .5; }
