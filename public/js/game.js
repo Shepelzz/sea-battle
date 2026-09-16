@@ -3405,6 +3405,7 @@ const Tutorial = (() => {
       ? arr.reduce((a, b) => dist(myBase.x, myBase.y, b.x, b.y) < dist(myBase.x, myBase.y, a.x, a.y) ? b : a)
       : null;
     const loot = nearestTo(state.map.lootIslands.filter(i => !i.looted));
+    const island = loot || nearestTo(state.map.lootIslands);   // для шага про аванпост годится любой остров
     const fish = nearestTo(state.map.fishZones);
     const pirate = state.ships.find(s => s.owner === -1);
 
@@ -3431,6 +3432,9 @@ const Tutorial = (() => {
                 target: { world: { x: fish.x, y: fish.y, r: fish.radius } }, reveal: true },
       loot && { text: 'А это <b>остров с кладом</b> 💰 — подведи любой корабль вплотную и жми <b>«Собрать»</b>, чтобы забрать золото.',
                 target: { world: { x: loot.x, y: loot.y, r: loot.radius } }, reveal: true },
+      // ⛺ постройки на островах: в туториале их не было вовсе, хотя это вся экономика второй половины партии
+      island && { text: '⛺ Залутанный остров — уже <b>плацдарм</b>: подведи корабль вплотную → <b>«⛺ Аванпост»</b>. Дальше кликай по постройке и улучшай: 🏪 <b>Фактория</b> чинит корабли рядом, 🏰 <b>Форт</b> ставит <b>береговую пушку</b> и даёт больше золота. Чужие постройки ломает только 🎯 <b>мортира</b>.',
+                target: { world: { x: island.x, y: island.y, r: island.radius } }, reveal: true },
       { text: 'По морю бродят <b>пираты</b> 🏴‍☠️ — потопи и забери награду. А жирный <b>👑-босс</b> несёт большой куш! Но осторожно: пираты огрызаются в ответ.',
         target: pirate ? { world: { x: pirate.x, y: pirate.y, r: 30 } } : null, reveal: true },
       { text: 'Цель — <b>разбить порт соперника</b>. Подведи флот и расстреляй его базу. Удачи, капитан! 🏴‍☠️',
