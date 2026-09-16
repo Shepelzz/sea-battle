@@ -9,7 +9,10 @@ let myId = null;
 let spectator = false;
 let hotseatOwner = false;  // режим «на одном устройстве»: ходим за всех
 let selectedShipId = null;
-let mode = 'idle';         // idle | move | attack
+let mode = 'idle';         // idle | move | attack | broadside | repair | convoy
+// ⛵ СТРОЙ (конвой): {lead, ids:[флагман, ...соседи]}. Набирается тапами в режиме 'convoy',
+// ведётся тем же единым жестом «потяни от корабля» — только от флагмана и за всех сразу.
+let convoy = null;
 let hoverPt = null;        // позиция курсора в координатах карты
 let aim = null;            // тач-прицел хода: {sel, finger:{x,y}, dest:{x,y}, clamped}
 const AIM_RATIO = 2 / 3;   // крестик на 2/3 пути от корабля до пальца (меньше тянуть пальцем на телефоне)
@@ -309,7 +312,9 @@ function playEvents(events) {
   }
   const hidden = (x, y) => fog && !fogVisible(x, y, vis);
   let delay = 0;
-  for (const ev of events) {
+  let groupShown = false;   // ⛵ хоть одно судно текущего строя показали (остальные могут быть в тумане)
+  for (let ei = 0; ei < events.length; ei++) {
+    const ev = events[ei];
     if (ev.type === 'move') {
       // изгиб пути: выходим по прошлому курсу, доворачиваем на цель
       const straight = Math.atan2(ev.ty - ev.fy, ev.tx - ev.fx);
@@ -319,13 +324,21 @@ function playEvents(events) {
       const cx = ev.fx + Math.cos(prevAng) * lead;
       const cy = ev.fy + Math.sin(prevAng) * lead;
       headings.set(ev.shipId, straight); // курс на финише = НАПРАВЛЕНИЕ ХОДА (как ship.heading на сервере — чтоб борта залпа совпадали); трекаем всегда
-      if (hidden(ev.fx, ev.fy) && hidden(ev.tx, ev.ty)) continue;
-      if (!String(ev.shipId).startsWith('p')) Sound.playAt('move', delay); // пираты — без плеска
+      // ⛵ строй (ev.group): суда идут ОДНОВРЕМЕННО — задержку двигаем один раз, на последнем в группе
+      const nxt = events[ei + 1];
+      const lastOfGroup = !(ev.group && nxt && nxt.type === 'move' && nxt.group === ev.group);
+      if (hidden(ev.fx, ev.fy) && hidden(ev.tx, ev.ty)) {   // ход в тумане не анимируем и очередь им не тормозим
+        if (lastOfGroup && groupShown) { delay += FX.sail.moveDur; groupShown = false; } // но если часть строя была видна — досчитываем
+        continue;
+      }
+      // плеск: пираты — без него; у строя — один на всю группу (три одинаковых всплеска в унисон били по ушам)
+      if (!String(ev.shipId).startsWith('p') && !(ev.group && groupShown)) Sound.playAt('move', delay);
       addEffect({
         kind: 'sail', shipId: ev.shipId, fx: ev.fx, fy: ev.fy, cx, cy, tx: ev.tx, ty: ev.ty,
         moveDur: FX.sail.moveDur, dur: FX.sail.moveDur + FX.sail.wakeFade, delay
       });
-      delay += FX.sail.moveDur; // следующие события (ход/выстрел пирата) ждут, пока лодка доплывёт
+      if (lastOfGroup) { delay += FX.sail.moveDur; groupShown = false; } // следующие события ждут, пока лодка доплывёт
+      else groupShown = true;                                             // строй идёт одним кадром — ждём последнего
     } else if (ev.type === 'shot' && ev.auto) {
       // скорострельная очередь авианосца: трассер летит ПРЯМО (без дуги), звук автомата, плотный темп
       if (hidden(ev.fx, ev.fy) && hidden(ev.tx, ev.ty)) continue;
@@ -691,6 +704,34 @@ const movesUsed = () => state?.turn?.moves || 0;              // сколько 
 const movesLeft = () => Math.max(0, movesPerTurn() - movesUsed());
 const shipActed = id => !state?.rt && (state?.turn?.actedShips || []).includes(id); // корабль уже ходил в этом ходу (в шторме ходов нет)
 
+// ── ⛵ конвой (ход строем) ──
+// Правила ОДИН В ОДИН серверные (server/config.js + applyAction case 'convoy'): строй идёт по
+// самому медленному, набирается только из соседей флагмана, не собирается в боевом контакте
+// и съедает манёвр за каждое судно. Клиент повторяет их, чтобы не гонять заведомый отказ на сервер.
+const convoyCfg = () => state?.convoy || { max: 3, pickMult: 1, costs: [0, 0, 1, 1], on: false };
+const convoyOn = () => !!convoyCfg().on && multiMoveOn();
+const shipById = id => state?.ships.find(s => s.id === id);
+// цена строя из n судов в манёврах хода — считает СЕРВЕР (config.convoyCost), клиент лишь читает
+const convoyCostOf = n => (convoyCfg().costs || [])[n] ?? n;
+// самый большой строй, который ещё влезает в остаток хода (0 — не влезает никакой)
+const convoyMax = () => {
+  for (let n = convoyCfg().max; n >= 2; n--) if (convoyCostOf(n) <= movesLeft()) return n;
+  return 0;
+};
+const convoyShips = () => (convoy ? convoy.ids.map(shipById).filter(Boolean) : []);
+// ⚔️ боевой контакт: рядом чужой корабль (или пират) на дистанции выстрела — его или своей
+const shipInContact = sh => !!state?.ships.some(o => o.owner !== sh.owner && o.id !== sh.id &&
+  dist(sh.x, sh.y, o.x, o.y) <= Math.max(ST(sh.type).fireRange, ST(o.type)?.fireRange || 0));
+// кого можно взять в строй к флагману: свои, ещё не ходившие, не начавшие залп, в радиусе набора
+const convoyMates = lead => (state?.ships || []).filter(s =>
+  s.owner === lead.owner && s.id !== lead.id && !shipActed(s.id) && !firedSides(s.id).length &&
+  dist(lead.x, lead.y, s.x, s.y) <= ST(lead.type).move * convoyCfg().pickMult);
+// дальность хода: строй идёт по САМОМУ МЕДЛЕННОМУ (линкор в конвое режет дальность всем)
+const moveRangeOf = sel => (convoy && convoy.lead === sel.id && convoyShips().length > 1)
+  ? Math.min(...convoyShips().map(s => ST(s.type).move))
+  : ST(sel.type).move;
+function cancelConvoy() { convoy = null; mode = 'idle'; render(); }
+
 // Нотифы-СТЕК сверху: новый добавляется СВЕРХУ и оттесняет прежние вниз, у каждого свой таймер
 // (не накладываются друг на друга). kind: 'err' (красный) | 'info' (бумажный).
 // Повтор того же сообщения подряд — продлеваем существующий, не плодим дубликаты.
@@ -788,7 +829,7 @@ function sendAction(action) {
   socket.emit('action', action, res => {
     if (!res.ok) errToast(res.error);
     else {
-      if (action.type === 'move') localStorage.setItem('sb_moved', '1'); // сходил — демо больше не нужно
+      if (action.type === 'move' || action.type === 'convoy') localStorage.setItem('sb_moved', '1'); // сходил — демо больше не нужно
       basket = {};
       deselect();
       $('#shopOverlay').classList.add('hidden');
@@ -804,6 +845,7 @@ function sendAction(action) {
 function deselect() {
   selectedShipId = null;
   mode = 'idle';
+  convoy = null;
   aim = null;
   hoverPt = null;
   moveDemo = null;
@@ -1380,7 +1422,7 @@ function render(canvasOnly) {
     const st = ST(sel.type);
     // ⚡ реалтайм: лимита дистанции нет — контур хода не рисуем (корабль доплывёт сам);
     // пошагово: 🌬 КАПЛЕВИДНЫЙ контур дальности — вытянут по ветру, поджат против
-    if ((mode === 'move' || mode === 'idle') && !state.rt) drawMoveContour(sel, st.move);
+    if ((mode === 'move' || mode === 'idle' || mode === 'convoy') && !state.rt) drawMoveContour(sel, moveRangeOf(sel));
     if (st.repairer) {
       // ремонтник: жёлтый радиус ремонта (чуть меньше хода), в режиме «Чинить» и при выборе
       if (mode === 'repair' || mode === 'idle') dashedCircle(sel.x, sel.y, st.fireRange, 'rgba(244,194,10,.85)', 1.6);
@@ -1495,12 +1537,15 @@ function render(canvasOnly) {
     }
   }
 
+  // ⛵ строй: набор соседей и призраки всей группы на буксире у флагмана
+  if (sel && convoy && (mode === 'convoy' || mode === 'move')) drawConvoy(sel);
+
   // «линейка» при перемещении
   if (sel && mode === 'move' && hoverPt) {
-    const st = ST(sel.type);
     const d = dist(sel.x, sel.y, hoverPt.x, hoverPt.y);
     // ⚡ реалтайм: дистанция не ограничена; пошагово — 🌬 дальность по курсу (капля ветра)
-    const ok = state.rt ? true : d <= st.move * windK(Math.atan2(hoverPt.y - sel.y, hoverPt.x - sel.x));
+    // (в строю дальность — по самому медленному судну: moveRangeOf)
+    const ok = state.rt ? true : d <= moveRangeOf(sel) * windK(Math.atan2(hoverPt.y - sel.y, hoverPt.x - sel.x));
     ctx.beginPath();
     ctx.setLineDash([4, 5]);
     ctx.moveTo(sx(sel.x), sy(sel.y));
@@ -1561,6 +1606,65 @@ function render(canvasOnly) {
   updateMoveHint();
 }
 
+// ⛵ СТРОЙ: флагман золотом, кандидаты — тонким золотым кольцом, взятые в строй — жирным
+// с номером. При тяге от флагмана рисуем призраков всей группы: видно, куда встанет каждый.
+function drawConvoy(lead) {
+  const picked = convoyShips();
+  const off = (mode === 'move' && hoverPt) ? { x: hoverPt.x - lead.x, y: hoverPt.y - lead.y } : null;
+  if (mode === 'convoy') {
+    // радиус набора соседей
+    dashedCircle(lead.x, lead.y, ST(lead.type).move * convoyCfg().pickMult, 'rgba(244,194,10,.45)', 1.4);
+    const room = picked.length < convoyMax();
+    for (const s of convoyMates(lead)) {
+      if (convoy.ids.includes(s.id)) continue;
+      dashedCircle(s.x, s.y, 20, room ? 'rgba(244,194,10,.55)' : 'rgba(154,160,168,.4)', 1.6);
+    }
+  }
+  picked.forEach((s, i) => {
+    ctx.beginPath();
+    ctx.arc(sx(s.x), sy(s.y), 20 * view.scale + 5, 0, Math.PI * 2);
+    ctx.strokeStyle = '#f4c20a';
+    ctx.lineWidth = i === 0 ? 3.5 : 2.5;
+    ctx.stroke();
+    ctx.font = `bold ${Math.max(11, 13 * view.scale)}px Neucha, cursive`;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#b8860b';
+    ctx.fillText(i === 0 ? '⚓ флагман' : String(i + 1), sx(s.x), sy(s.y) - (20 * view.scale + 10));
+    if (off && i > 0) {   // призрак спутника на новом месте (флагмана рисует общая «линейка»)
+      ctx.globalAlpha = 0.35;
+      drawShip({ ...s, x: s.x + off.x, y: s.y + off.y, _headingOverride: Math.atan2(off.y, off.x) }, false);
+      ctx.globalAlpha = 1;
+    }
+  });
+  // подсказка полоской внизу кадра: жест нестандартный, и объяснить его надо ровно один раз —
+  // прямо на карте (нижняя панель действий при штурвале скрыта, писать туда некуда)
+  if (mode === 'convoy') drawConvoyHint(picked.length < 2
+    ? `⛵ тапни соседние суда (до ${convoyMax()}), потом потяни от флагмана`
+    : `⛵ в строю ${picked.length}/${convoyMax()} — потяни от флагмана, пойдут все`);
+}
+
+function drawConvoyHint(text) {
+  ctx.save();
+  ctx.font = '14px Neucha, cursive';
+  const w = ctx.measureText(text).width + 24, h = 28;
+  // 🐞 в отладке низ кадра занимает консоль решений бота — поднимаем полоску над ней
+  const dbgH = DEBUG_ON ? (parseInt(getComputedStyle(document.documentElement).getPropertyValue('--dbg-h'), 10) || 50) : 0;
+  const x = (canvas.clientWidth - w) / 2, y = canvas.clientHeight - h - 14 - dbgH;
+  ctx.globalAlpha = 0.95;
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, 8);
+  ctx.fillStyle = '#fdfbf3';
+  ctx.fill();
+  ctx.lineWidth = 1.8;
+  ctx.strokeStyle = '#f4c20a';
+  ctx.stroke();
+  ctx.fillStyle = '#2b3a55';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, canvas.clientWidth / 2, y + h / 2 + 1);
+  ctx.restore();
+}
+
 // 🧭 Контур дальности хода с учётом ветра: r(θ) = move·windK(θ) — «капля», вытянутая по ветру.
 // При штиле (str=0) это прежний ровный круг — стиль и пунктир сохранены.
 function drawMoveContour(sel, move) {
@@ -1614,9 +1718,14 @@ function updateMoveHint() {
   // единый жест: ход = потяг от корабля (подсказываем в покое), залп = тап в сторону цели
   const showMove = IS_COARSE && mode === 'idle' && selectedShipId && !hasMovedOnce();
   const showBroad = IS_COARSE && mode === 'broadside' && selectedShipId;
-  if (showBroad) el.textContent = 'тапни в сторону цели — залп с этого борта';
+  // ⛵ строй объясняем на ЛЮБОМ экране: жест нестандартный, а подсказка снимает все вопросы
+  const showConvoy = mode === 'convoy' && convoy;
+  if (showConvoy) el.textContent = convoy.ids.length < 2
+    ? `⛵ тапни соседние суда (до ${convoyMax()}), затем потяни от флагмана`
+    : `⛵ в строю ${convoy.ids.length}/${convoyMax()} — потяни от флагмана, пойдут все`;
+  else if (showBroad) el.textContent = 'тапни в сторону цели — залп с этого борта';
   else if (showMove) el.textContent = 'потяни от корабля, чтобы плыть';
-  el.classList.toggle('hidden', !(showMove || showBroad));
+  el.classList.toggle('hidden', !(showMove || showBroad || showConvoy));
 }
 
 // демо: «палец тянет корабль» — цикл, пока игрок не сходит хоть раз
@@ -2054,7 +2163,9 @@ canvas.addEventListener('pointerdown', e => {
       const sel = selectedShipId && state.ships.find(s => s.id === selectedShipId);
       // корабль, уже сходивший в этом ходу, не «хватаем» прицелом (drag → панорама)
       const onSel = sel && !shipActed(sel.id) && dist(p.x, p.y, sx(sel.x), sy(sel.y)) <= grabR;
+      // ⛵ в строю тянуть можно ТОЛЬКО флагмана: тап по спутнику — это набор/исключение из строя
       const own = onSel ? sel
+        : convoy ? null
         : state.ships.find(s => s.owner === myIdx() && !shipActed(s.id) && dist(p.x, p.y, sx(s.x), sy(s.y)) <= grabR);
       if (own) { aim = { sel: own, armed: false, startX: p.x, startY: p.y }; return; }
     }
@@ -2076,7 +2187,7 @@ function updateAim(screenPt) {
   const dx = f.x - sel.x, dy = f.y - sel.y;
   const fd = Math.hypot(dx, dy);
   // ⚡ реалтайм: тянуть можно куда угодно; пошагово — 🌬 дальность по курсу (капля ветра)
-  const range = state?.rt ? Infinity : ST(sel.type).move * windK(Math.atan2(dy, dx));
+  const range = state?.rt ? Infinity : moveRangeOf(sel) * windK(Math.atan2(dy, dx)); // в строю — по самому медленному
   aim.cancel = fd < AIM_CANCEL_DIST;   // вернул палец почти на корабль → ход отменим (передумал)
   if (fd < 1) { aim.dest = { x: sel.x, y: sel.y }; aim.clamped = false; }
   else {
@@ -2152,12 +2263,28 @@ function endPointer(e) {
     if (pointers.size === 0) { drag = null; pinchDist = 0; }
     if (!a.armed) { handleTap({ x: a.startX, y: a.startY }, e.pointerType === 'touch'); return; } // не потянул → выбор/подсказка
     mode = 'idle'; // жест завершён — из «хода» возвращаемся в покой (штурвал/прицел не залипают)
-    if (a.cancel) { deselect(); render(); return; } // вернул указатель на корабль — передумал: отмена и штурвал закрыт
-    if (a.clamped) { errToast('🚫 Слишком далеко — точка вне круга хода'); return; } // вне радиуса — без хода
+    if (a.cancel) {                                 // вернул указатель на корабль — передумал
+      if (convoy) { mode = 'convoy'; render(); return; } // строй набран — возвращаемся к набору, не теряем его
+      deselect(); render(); return;
+    }
+    if (a.clamped) {                                // вне радиуса — без хода
+      if (convoy) { mode = 'convoy'; toast('🚫 Строй идёт по самому медленному — точка вне круга'); render(); return; }
+      errToast('🚫 Слишком далеко — точка вне круга хода');
+      return;
+    }
     if (a.dest && dist(a.sel.x, a.sel.y, a.dest.x, a.dest.y) > 4) {
-      sendAction({ type: 'move', shipId: a.sel.id, x: Math.round(a.dest.x), y: Math.round(a.dest.y) });
+      // ⛵ тяга от флагмана ведёт весь строй одним действием (одиночка — обычный ход)
+      if (convoy && convoy.lead === a.sel.id && convoy.ids.length > 1) {
+        sendAction({
+          type: 'convoy', shipId: convoy.lead, ships: convoy.ids.filter(id => id !== convoy.lead),
+          x: Math.round(a.dest.x), y: Math.round(a.dest.y)
+        });
+      } else {
+        sendAction({ type: 'move', shipId: a.sel.id, x: Math.round(a.dest.x), y: Math.round(a.dest.y) });
+      }
     } else {
-      render(); // почти не сдвинул — просто убрать прицел
+      if (convoy) mode = 'convoy'; // почти не сдвинул: строй сохраняем, возвращаемся к набору
+      render(); // просто убрать прицел
     }
     return;
   }
@@ -2214,6 +2341,37 @@ function handleTap(pos, isTouch) {
   }
 
   const clickedShip = state.ships.find(s => dist(pt.x, pt.y, s.x, s.y) < tapR);
+
+  // ⛵ НАБОР СТРОЯ: тапы по соседним судам цепляют/отцепляют их (жёлтые кольца с номерами),
+  // тап по флагману — подсказка, тап по воде — выйти. Ведём строй тягой от флагмана.
+  if (mode === 'convoy' && convoy) {
+    const lead = shipById(convoy.lead);
+    if (!lead) { cancelConvoy(); return; }
+    if (clickedShip && clickedShip.id === lead.id) { // флагман: напоминаем жест, строй не рушим
+      showShipNote(sx(lead.x), sy(lead.y) - 16, '⛵ потяни от флагмана — пойдёт весь строй');
+      if (isTouch) { clearTimeout(shipNoteTimer); shipNoteTimer = setTimeout(hideShipNote, 2200); }
+      return;
+    }
+    if (clickedShip && convoy.ids.includes(clickedShip.id)) {   // повторный тап — вывести из строя
+      convoy.ids = convoy.ids.filter(id => id !== clickedShip.id);
+      Sound.play('click'); render(); return;
+    }
+    if (clickedShip && convoyMates(lead).some(s => s.id === clickedShip.id)) {
+      if (convoy.ids.length >= convoyMax()) {
+        toast(convoyMax() < convoyCfg().max
+          ? `⚓ На такой строй не хватает манёвров (осталось ${movesLeft()})`
+          : `⛵ В строю не больше ${convoyCfg().max} судов`);
+        return;
+      }
+      convoy.ids.push(clickedShip.id);
+      Sound.play('click'); render(); return;
+    }
+    if (clickedShip && clickedShip.owner === myIdx()) { // своё, но не подходит (далеко/уже ходило)
+      toast('⛵ В строй берут суда рядом с флагманом, ещё не ходившие в этом ходу');
+      return;
+    }
+    cancelConvoy(); return;                                     // тап по воде — выйти из набора
+  }
 
   if (mode === 'broadside' && selectedShipId) {
     // Залп в сторону точки прицела (сервер сам определит борт и сектор).
@@ -2488,6 +2646,17 @@ function wheelActions(sel) {
     offMsg: noCharges ? '🔧 Материалы кончились — пополни у своей базы' : null,
     go: () => { mode = 'repair'; render(); }
   });
+  // ⛵ СТРОЙ: вести соседние суда одним жестом. Появляется, только если рядом есть кого вести
+  // и в ходу хватает манёвров (строй стоит по манёвру за судно). В бою недоступен — см. shipInContact.
+  if (!rt && convoyOn() && convoyMax() >= 2 && convoyMates(sel).length) {
+    const contact = shipInContact(sel);
+    acts.push({
+      key: 'convoy', icon: '⛵', label: 'строй',
+      off: committed || contact,
+      offMsg: contact ? '⚔️ Рядом враг — строем от боя не уйти' : null,
+      go: () => { convoy = { lead: sel.id, ids: [sel.id] }; mode = 'convoy'; render(); }
+    });
+  }
   if (canShipCollect(sel)) acts.push({ key: 'collect', icon: '💰', label: 'собрать', off: committed,
     go: () => sendAction({ type: 'collect' }) });
   const opIdx = outpostIslandAt(sel);

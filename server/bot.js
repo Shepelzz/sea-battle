@@ -1,14 +1,20 @@
 // Бот: на своём ходу собирает все осмысленные действия, оценивает и берёт лучшее.
 // Уровни: easy (Юнга) — шумные оценки и случайные ходы, mid (Боцман) — лучший ход,
 // hard (Адмирал) — лучший ход + фокус раненых, удушение экономики, ранняя агрессия.
-import { movesBudget, tributeFor, FISH_INCOME, FISH_ZONE_CAP, SHIP_TYPES, PIRATE, LOOT_REACH, PORT_RETURN_DMG, BROADSIDE_CANNONS, BROADSIDE_HALF_ARC, MORTAR_SHIPS, MORTAR_SHIP_MULT, OUTPOST_LEVELS, OUTPOST_BUILD_REACH, modeOf, isPeace, isDuel, cheapestShipPrice, windMoveMult } from './config.js';
-import { shipPlacementBlocked, applyAction } from './game.js';
+import { movesBudget, convoyCost, CONVOY_MAX, CONVOY_PICK_MULT, tributeFor, FISH_INCOME, FISH_ZONE_CAP, SHIP_TYPES, PIRATE, LOOT_REACH, PORT_RETURN_DMG, BROADSIDE_CANNONS, BROADSIDE_HALF_ARC, MORTAR_SHIPS, MORTAR_SHIP_MULT, OUTPOST_LEVELS, OUTPOST_BUILD_REACH, modeOf, isPeace, isDuel, cheapestShipPrice, windMoveMult } from './config.js';
+import { shipPlacementBlocked, shipInContact, applyAction } from './game.js';
 
 const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
 
 // Вес «бить общую цель флота» (сосредоточенный огонь, см. focusTarget). Подбирается прогоном
 // ab-bot.mjs, а не на глаз: 0 — каждый корабль снова воюет сам по себе.
 const FOCUS_W = Number(process.env.BOT_FOCUS_W ?? 25);
+// ⛵ Надбавка за КАЖДОЕ попутное судно в строю. Строй стоит один манёвр на всех, поэтому
+// переброска пачкой втрое дешевле поштучной — но и жёстче: идут по медленному, в бою не собрать.
+// Подбирается прогоном ab-bot.mjs; 0 — бот строем не пользуется. Замер (80/60 партий, hard):
+// 4 → +5, 9 → +3, 18 → −2 побед. Жадный до строя бот таскает корабли, которым было чем заняться,
+// поэтому надбавка держится НИЗКОЙ: строй берётся, только когда он заметно лучше одиночного хода.
+const CONVOY_W = Number(process.env.BOT_CONVOY_W ?? 5);
 
 export const BOT_NAMES = {
   easy: ['Юнга Билли', 'Юнга Том', 'Юнга Чарли'],
@@ -465,6 +471,70 @@ function buildCandidates(game, pIdx, level) {
     }
   }
 
+  // ── ⛵ СТРОЙ: перегнать эскадру одним манёвром ────────────────────────────────
+  // Конвой стоит ОДИН манёвр на весь строй (config.convoyCost), а не по манёвру за судно.
+  // Значит переброска пачкой втрое дешевле поштучной — ровно то, что нужно, когда бой уехал
+  // на другой конец карты, а подкрепление стоит у базы. Кандидаты строим ПОВЕРХ уже
+  // насчитанных мотивов движения: берём лучший ход корабля и смотрим, кому из соседей по пути.
+  if (game.config?.multiMove && CONVOY_W > 0) {
+    const left = movesBudget(game.config) - (game.turn.moves || 0);
+    const freeShips = myShips.filter(s2 => !acted.has(s2.id) && !game.turn.broadsideSides?.[s2.id]?.length);
+    // лучший мотив движения для каждого корабля — из уже собранных кандидатов
+    const bestMove = new Map();
+    for (const c of cands) {
+      if (c.action.type !== 'move') continue;
+      const cur = bestMove.get(c.action.shipId);
+      if (!cur || c.score > cur.score) bestMove.set(c.action.shipId, c);
+    }
+    const dirOf = (ship, c) => Math.atan2(c.action.y - ship.y, c.action.x - ship.x);
+    // ведём строй от самых мотивированных — перебирать все корабли незачем, это только шум
+    const leads = freeShips
+      .filter(s2 => bestMove.has(s2.id))
+      .sort((a2, b2) => bestMove.get(b2.id).score - bestMove.get(a2.id).score)
+      .slice(0, 3);
+    for (const lead of leads) {
+      if (shipInContact(game, lead)) continue;          // в бою строй не собрать (сервер откажет)
+      const leadBest = bestMove.get(lead.id);
+      const dir = dirOf(lead, leadBest);
+      const pickR = SHIP_TYPES[lead.type].move * CONVOY_PICK_MULT;
+      // попутчики: рядом, свободны, и их собственный мотив смотрит примерно туда же
+      // (иначе строй растащил бы рыбака с промысла или защитника от порта)
+      const mates = freeShips
+        .filter(s2 => s2.id !== lead.id && dist(lead.x, lead.y, s2.x, s2.y) <= pickR)
+        .filter(s2 => {
+          const mb = bestMove.get(s2.id);
+          return !mb || Math.abs(norm(dirOf(s2, mb) - dir)) < 1.0;
+        })
+        .sort((a2, b2) => dist(lead.x, lead.y, a2.x, a2.y) - dist(lead.x, lead.y, b2.x, b2.y))
+        .slice(0, CONVOY_MAX - 1);
+      if (!mates.length) continue;
+      for (let n = mates.length; n >= 1; n--) {         // не влез строй целиком — пробуем короче
+        const crew = [lead, ...mates.slice(0, n)];
+        if (convoyCost(crew.length) > left) continue;
+        if (crew.some(s2 => shipInContact(game, s2))) continue;
+        const slow = Math.min(...crew.map(s2 => SHIP_TYPES[s2.type].move));
+        const want = dist(lead.x, lead.y, leadBest.action.x, leadBest.action.y);
+        const ids = new Set(crew.map(s2 => s2.id));
+        let step = null;
+        for (const da of [0, 0.4, -0.4, 0.8, -0.8]) {   // упёрлись — пробуем чуть в сторону
+          const len = Math.min(slow * windMoveMult(game.wind, dir + da) - 2, want);
+          if (len < 12) continue;                       // такой строй почти не сдвинется — не ход
+          const dx = Math.cos(dir + da) * len, dy = Math.sin(dir + da) * len;
+          if (crew.every(s2 => !shipPlacementBlocked(game, Math.round(s2.x + dx), Math.round(s2.y + dy), ids))) {
+            step = { x: Math.round(lead.x + dx), y: Math.round(lead.y + dy) };
+            break;
+          }
+        }
+        if (!step) continue;
+        cands.push({
+          score: leadBest.score + CONVOY_W * (crew.length - 1),
+          action: { type: 'convoy', shipId: lead.id, ships: crew.slice(1).map(s2 => s2.id), x: step.x, y: step.y }
+        });
+        break;                                          // строй от этого флагмана найден
+      }
+    }
+  }
+
   // 🐞 Разбор для отладки: то, что бот «держит в голове» — кого считает жертвой, по кому ведёт
   // сосредоточенный огонь и насколько прикрыт его порт. Идёт в консоль и в наложение на карту.
   cands.meta = {
@@ -686,6 +756,13 @@ export function chooseBotAction(game, pIdx, level = 'mid', log = null) {
           const next = buildCandidates(probe, pIdx, level).sort((a, b) => b.score - a.score)[0];
           if (next) {
             const probe2 = structuredClone(probe);
+            // ЗАМЕЧЕНО ПРИ ВВОДЕ СТРОЯ, НО НЕ ЧИНИТСЯ ЗДЕСЬ: если продолжение ЗАКРЫВАЕТ ход,
+            // в доску прилетает чужая случайность (пополнение пиратов, доход соперника) и оценка
+            // проседает независимо от качества хода — действия, занимающие сразу несколько судов
+            // (⛵ строй), от этого страдают. Отсечка «считать продолжение, только пока ход наш»
+            // пробовалась: строй бот берёт охотнее и A/B даёт +8 вместо +6 (обе цифры в шуме),
+            // НО перестаёт прокачивать аванпосты — их окупаемость держится как раз на этом
+            // просмотре. Менять — отдельной задачей с длинным прогоном, не заодно со строем.
             if (applyAction(probe2, me.id, next.action).ok)
               total += PLAN_DISCOUNT * (boardValue(probe2, pIdx) - total);
           }

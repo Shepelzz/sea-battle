@@ -6,6 +6,7 @@ import {
   SHIP_COLLISION_DIST, LOOT_REACH, WRECK_LOOT_FRAC, tributeFor,
   BROADSIDE_CANNONS, BROADSIDE_HALF_ARC, BROADSIDE_FALLOFF_MIN, BROADSIDE_SIDE_MIN, BROADSIDE_PORT_MULT, MORTAR_SHIPS, MORTAR_SHIP_MULT,
   FISH_ZONE_CAP, movesBudget, SHIP_ACTIONS, CHEATS_ENABLED, DEBUG_GOLD_LOG, DEBUG, REPAIR_CHARGES, REPAIR_DOCK_REACH,
+  CONVOY_MAX, CONVOY_PICK_MULT, convoyCost, convoyCosts,
   modeStartGold, modeOf, isPeace, modePeaceRounds, isDuel, isRealtime, RT, cheapestShipPrice, GAME_MODES, DEFAULT_MODE,
   WIND_STRENGTH, WIND_TURN_STEP, WIND_STR_STEP, windMoveMult, REALTIME_NAME,
   OUTPOST_LEVELS, OUTPOST_RADIUS, OUTPOST_BUILD_REACH,
@@ -550,14 +551,30 @@ export function applyOutpostPerks(game, pIdx) {
 
 export function shipPlacementBlocked(game, x, y, ignoreShipId) {
   const m = game.map;
+  // ignoreShipId — id ИЛИ Set из id: конвой переставляет несколько судов разом, и «занято»
+  // собственным соседом по строю блокировать не должно (строй жёсткий, сами в себя не влезут)
+  const skip = ignoreShipId instanceof Set ? ignoreShipId : new Set([ignoreShipId]);
   if (x < MAP_EDGE_MARGIN || y < MAP_EDGE_MARGIN || x > m.w - MAP_EDGE_MARGIN || y > m.h - MAP_EDGE_MARGIN) return 'За краем карты';
   for (const b of m.bases) if (!b.noPort && dist(x, y, b.x, b.y) < b.radius + ISLAND_BLOCK_GAP) return 'Нельзя встать на остров';
   for (const o of m.lootIslands) if (dist(x, y, o.x, o.y) < o.radius + ISLAND_BLOCK_GAP) return 'Нельзя встать на остров';
   for (const s of game.ships) {
-    if (s.id !== ignoreShipId && dist(x, y, s.x, s.y) < SHIP_COLLISION_DIST) return 'Слишком близко к другому кораблю';
+    if (!skip.has(s.id) && dist(x, y, s.x, s.y) < SHIP_COLLISION_DIST) return 'Слишком близко к другому кораблю';
   }
   return null;
 }
+
+// ⚔️ Боевой контакт судна: рядом чужой корабль (или пират) на дистанции выстрела — его или своей.
+// Конвой в контакте не собирается: строй — манёвр спокойной воды, удирать эскадрой от боя нельзя.
+export function shipInContact(game, ship) {
+  const my = (SHIP_TYPES[ship.type] || PIRATE).fireRange;
+  return game.ships.some(o => {
+    if (o.owner === ship.owner || o.id === ship.id) return false;
+    const his = (SHIP_TYPES[o.type] || PIRATE).fireRange;
+    return dist(ship.x, ship.y, o.x, o.y) <= Math.max(my, his);
+  });
+}
+// контакт у ЛЮБОГО судна строя — весь строй под запретом
+export const convoyContact = (game, crew) => crew.some(s => shipInContact(game, s));
 
 // Бой против NPC (пиратов owner=-1 и игроков-ботов) в ЛИДЕРБОРД не идёт: статы (урон/потопления/
 // добыча-с-убийств) копятся только за противников-людей. Игровое золото-валюта и рыбалка/лут — не статы, их не трогаем.
@@ -887,6 +904,8 @@ export function applyAction(game, playerId, action) {
     return { ok: false, error: 'Этот корабль уже ходил' };
   if (!rt) freshEvents(game); // события этого хода для анимаций на клиенте
 
+  let convoyDone = null; // ⛵ конвой считает манёвры сам: он стоит по манёвру за каждое судно строя
+
   switch (action.type) {
     case 'buy': {
       const list = Array.isArray(action.ships) ? action.ships : [];
@@ -975,6 +994,59 @@ export function applyAction(game, playerId, action) {
       logEvent(game,
         `🧭 ${player.nick} ведёт ${SHIP_TYPES[ship.type].name} на новую позицию`,
         `🧭 ${player.nick} сделал ход`);
+      break;
+    }
+
+    // ⛵ КОНВОЙ: строй идёт ОДНИМ жестом — флагман ведёт, остальные повторяют его смещение.
+    // Правила и цена — в config.js (CONVOY_MAX / CONVOY_PICK_MULT / convoyCost).
+    case 'convoy': {
+      if (rt) return { ok: false, error: '⛈ В шторме строй не водят — суда плывут сами' };
+      if (!game.config.multiMove) return { ok: false, error: 'Конвой — только в режиме «ход тремя судами»' };
+      const ids = [...new Set([action.shipId, ...(Array.isArray(action.ships) ? action.ships : [])].filter(Boolean))];
+      if (ids.length < 2) return { ok: false, error: 'В строю должно быть минимум два судна' };
+      if (ids.length > CONVOY_MAX) return { ok: false, error: `В строю не больше ${CONVOY_MAX} судов` };
+      const crew = ids.map(id => game.ships.find(s => s.id === id));
+      if (crew.some(s => !s || s.owner !== pIdx)) return { ok: false, error: 'В строй берут только свои корабли' };
+      const actedNow = new Set(game.turn.actedShips || []);
+      if (crew.some(s => actedNow.has(s.id))) return { ok: false, error: 'Судно из строя уже ходило в этом ходу' };
+      if (crew.some(s => game.turn.broadsideSides?.[s.id]?.length)) return { ok: false, error: 'Судно из строя уже даёт залп' };
+      const cost = convoyCost(crew.length);
+      const left = movesBudget(game.config) - (game.turn.moves || 0);
+      if (cost > left) return { ok: false, error: `На строй не хватает манёвров: нужно ${cost}, осталось ${left}` };
+      const lead = crew[0];
+      const pickR = SHIP_TYPES[lead.type].move * CONVOY_PICK_MULT;
+      if (crew.some(s => dist(lead.x, lead.y, s.x, s.y) > pickR + 0.5))
+        return { ok: false, error: 'В строй берут только суда рядом с флагманом' };
+      if (convoyContact(game, crew)) return { ok: false, error: '⚔️ Рядом враг — строем от боя не уйти' };
+      const cx = Math.round(action.x), cy = Math.round(action.y);
+      const ddx = cx - lead.x, ddy = cy - lead.y;
+      const cang = Math.atan2(ddy, ddx);
+      // строй идёт по САМОМУ МЕДЛЕННОМУ — линкор в конвое режет дальность всем
+      const slow = Math.min(...crew.map(s => SHIP_TYPES[s.type].move));
+      if (Math.hypot(ddx, ddy) > slow * windMoveMult(game.wind, cang) + 0.5)
+        return { ok: false, error: '⛵ Строй идёт по самому медленному — так далеко не дотянуть' };
+      const dests = crew.map(s => ({ s, x: Math.round(s.x + ddx), y: Math.round(s.y + ddy) }));
+      const crewSet = new Set(ids);
+      for (const d of dests) {
+        const blocked = shipPlacementBlocked(game, d.x, d.y, crewSet);
+        if (blocked) return { ok: false, error: `${SHIP_TYPES[d.s.type].name}: ${blocked.toLowerCase()}` };
+      }
+      if (isPeace(game)) {
+        const keep = modeOf(game).peaceBaseKeepout || 0;
+        if (keep && dests.some(d => game.map.bases.some((b, bi) => bi !== pIdx && game.players[bi]?.alive && dist(d.x, d.y, b.x, b.y) < keep)))
+          return { ok: false, error: '🕊 Мирное время: к чужой базе подходить нельзя' };
+      }
+      // group — метка для клиента: суда строя анимируются ОДНОВРЕМЕННО, а не по очереди
+      const gid = 'c' + (game.turn.moves || 0) + '_' + lead.id;
+      for (const d of dests) {
+        pushEvent(game, { type: 'move', shipId: d.s.id, fx: d.s.x, fy: d.s.y, tx: d.x, ty: d.y, group: gid });
+        if (Math.hypot(ddx, ddy) > 1) d.s.heading = cang;
+        d.s.x = d.x; d.s.y = d.y;
+      }
+      convoyDone = { ids, cost };
+      logEvent(game,
+        `⛵ ${player.nick} ведёт строй из ${crew.length} судов (${crew.map(s => SHIP_TYPES[s.type].name).join(', ')})`,
+        `⛵ ${player.nick} ведёт строй из ${crew.length} судов`);
       break;
     }
 
@@ -1277,6 +1349,13 @@ export function applyAction(game, playerId, action) {
   // БОРТОВОЙ ЗАЛП: КАЖДЫЙ борт = отдельное действие (слот). После одного борта корабль может дать только
   // ДРУГОЙ борт (ход/мортира ему уже нельзя), после обоих бортов — отстрелялся. Так залп честно тратит ход.
   if (action.type !== 'skip' && action.type !== 'endTurn') {
+    if (convoyDone) {  // ⛵ строй: манёвр за каждое судно, сходившими помечаются все
+      game.turn.moves = (game.turn.moves || 0) + convoyDone.cost;
+      convoyDone.ids.forEach(id => (game.turn.actedShips ??= []).push(id));
+      const endsNow = game.turn.moves >= movesBudget(game.config) || !playerHasAction(game, pIdx);
+      if (game.status === 'active' && endsNow) advanceTurn(game);
+      return { ok: true };
+    }
     game.turn.moves = (game.turn.moves || 0) + 1;
     if (action.type === 'broadside') {
       if ((game.turn.broadsideSides?.[action.shipId] || []).length >= 2) (game.turn.actedShips ??= []).push(action.shipId);
@@ -1394,6 +1473,8 @@ export function publicState(game, viewerPid) {
     repairDockReach: REPAIR_DOCK_REACH,
     portMax: PORT_HP,
     movesPerTurn: movesBudget(game.config), // 3 в режиме «ход тремя судами», иначе 1
+    // ⛵ конвой: размер строя и радиус набора соседей (клиент считает те же правила у себя)
+    convoy: { max: CONVOY_MAX, pickMult: CONVOY_PICK_MULT, costs: convoyCosts(), on: !!game.config.multiMove && !isRealtime(game) },
     palette: PALETTE,
     // режим партии + мирный период (для баннера и подсказок клиента)
     mode: game.config.mode || 'classic',

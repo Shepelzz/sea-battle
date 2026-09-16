@@ -188,6 +188,7 @@ function botDecisionLine(game, d) {
   const brief = a => {
     switch (a.type) {
       case 'move': return `плыть ${name(a.shipId)} → ${Math.round(a.x)},${Math.round(a.y)}`;
+      case 'convoy': return `⛵ строй ${[a.shipId, ...(a.ships || [])].map(name).join(' + ')} → ${Math.round(a.x)},${Math.round(a.y)}`;
       case 'attack': return `🎯 мортира ${name(a.shipId)} → ` +
         (a.targetType === 'port' ? `ПОРТ ${game.players[a.targetId]?.nick}` :
          a.targetType === 'outpost' ? `аванпост #${a.targetId}` : name(a.targetId));
