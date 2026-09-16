@@ -733,3 +733,12 @@ body.debug-on { padding-bottom: var(--dbg-h); }
 .debug-log .row { padding: 2px 0; border-bottom: 1px solid #262e3a; }
 .debug-log .row:last-child { border-bottom: 0; }
 .debug-log .t { color: #6f7c8f; }
+
+/* ─── Подвал главной: копирайт и версия сборки ──────────────────────────────── */
+.page-footer {
+  display: flex; gap: 8px; justify-content: center; align-items: center; flex-wrap: wrap;
+  margin: 28px 0 18px; padding: 0 16px;
+  font-size: 13px; color: var(--pencil);
+}
+.page-footer .dot-sep { opacity: .5; }
+.page-footer .build { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }

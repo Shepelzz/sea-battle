@@ -22,6 +22,7 @@ import {
 } from './auth.js';
 import { chooseBotAction, BOT_NAMES, duelFleetPlan } from './bot.js';
 import { applyCheat } from './cheats.js';
+import { VERSION, versionLabel } from './version.js';
 import { rtStart, rtStop } from './rt.js';
 import { CHEATS_ENABLED, DEBUG, GAME_MODES, enabledModes, DEFAULT_MODE, isDuel, isRealtime, realtimeAllowed, SHIP_TYPES, PIRATE } from './config.js';
 // валидируем игровой режим из запроса (classic/deathmatch/develop) — только из включённых
@@ -257,6 +258,7 @@ function maybeAutoFinish(game) {
 app.get('/api/config', (_req, res) => res.json({
   googleClientId: GOOGLE_CLIENT_ID, palette: PALETTE, cheats: CHEATS_ENABLED,
   debug: DEBUG,   // 🐞 SB_DEBUG=1: консоль решений бота под картой + инструменты над ней
+  version: VERSION,           // 🏷 номер сборки, коммит и его дата — для подвала главной
   // доступные игровые режимы (для селектора при создании игры)
   modes: enabledModes().map(k => ({ key: k, name: GAME_MODES[k].name, desc: GAME_MODES[k].desc }))
 }));
@@ -735,7 +737,7 @@ async function bootstrap() {
     process.exit(1);
   }
   server.listen(PORT, () => {
-    console.log(`⚓ Sea Battle: http://localhost:${PORT}`);
+    console.log(`⚓ Sea Battle ${versionLabel()}: http://localhost:${PORT}`);
   });
 }
 

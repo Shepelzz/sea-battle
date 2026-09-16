@@ -279,7 +279,12 @@ function buildCandidates(game, pIdx, level) {
       const pick = level === 'hard'
         ? (me.gold >= SHIP_TYPES.linkor.price ? 'linkor' : me.gold >= 380 ? 'fregat' : me.gold >= 220 ? 'brig' : null)
         : (me.gold >= 380 ? 'fregat' : me.gold >= 220 ? 'brig' : null);
-      if (pick && (underSiege || homeDeficit || !turnPressure)) {
+      // Жалоба с живой партии: боту разбили флот, у него полная казна — а он ловит рыбу.
+      // Виноват был гейт !turnPressure: в затяжной партии («хватит копить, идём добивать»)
+      // покупка боевых кораблей отключалась совсем. Но без флота добивать нечем — поэтому
+      // при пустой палубе отстраиваемся независимо ни от чего.
+      const fleetWiped = myFighters.length < 2;
+      if (pick && (underSiege || homeDeficit || fleetWiped || !turnPressure)) {
         // ОБОРОНА ПОКУПКОЙ: новый корабль появляется у СВОЕГО порта, то есть прямо против
         // вторжения. Берём не ниже рангом, чем сильнейший из идущих на нас (если по карману),
         // и тем охотнее, чем больше дефицит.
@@ -292,6 +297,7 @@ function buildCandidates(game, pIdx, level) {
         }
         const score = homeDeficit ? defenceUrgency
           : underSiege ? 30 + Math.min(8, me.gold / 200)
+          : fleetWiped ? 40 + Math.min(10, me.gold / 200)   // без флота восстановление — приоритет №1
           : (foePower >= myPower ? 26 : 14) + Math.min(8, me.gold / 200);
         cands.push({ score, action: { type: 'buy', ships } });
       }
@@ -343,9 +349,20 @@ function buildCandidates(game, pIdx, level) {
           addMove(ship, myBase.x, myBase.y, 26); // удираем под защиту порта
         continue;                                 // иначе стоим и кормим
       }
-      const safe = game.map.fishZones.filter(z => !enemyAt(z.x, z.y, 80));
-      const z = nearest(ship, safe.length ? safe : game.map.fishZones, zz => [zz.x, zz.y]);
-      if (z) addMove(ship, z.x, z.y, safe.length ? 24 : 9); // в опасную зону — без энтузиазма
+      // МЕСТА В ЗОНЕ КОНЕЧНЫ: кормится только первые cap лодок (fishEarners в game.js), лишние
+      // просто стоят балластом. Раньше бот слал рыбаков в ближайшую зону, не считая занятых
+      // мест, и набивал одну зону, пока соседние пустовали.
+      const freeIn = z2 => {
+        const cap = z2.cap ?? FISH_ZONE_CAP;
+        const busy = game.ships.filter(s2 => SHIP_TYPES[s2.type]?.fishing > 0 &&
+          s2.id !== ship.id && dist(s2.x, s2.y, z2.x, z2.y) <= z2.radius).length;
+        return cap - busy;
+      };
+      const open = game.map.fishZones.filter(z2 => freeIn(z2) > 0);
+      const safe = open.filter(z2 => !enemyAt(z2.x, z2.y, 80));
+      const z = nearest(ship, safe.length ? safe : open, zz => [zz.x, zz.y]);
+      if (z) addMove(ship, z.x, z.y, safe.length ? 24 : 9);   // в опасную зону — без энтузиазма
+      else addMove(ship, myBase.x, myBase.y, 8);              // мест нет нигде — не мешаемся под ногами
       continue;
     }
 

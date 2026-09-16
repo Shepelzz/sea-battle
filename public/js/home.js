@@ -291,6 +291,14 @@ $('#loginOverlay').addEventListener('click', e => { if (e.target.id === 'loginOv
     renderOnlineColor();
     renderBotColor();
     renderHotseatNames();
+    // 🏷 версия сборки в подвале: номер из package.json + коммит и его дата
+    const vEl = $('#buildVersion');
+    if (vEl) {
+      const v = cfg.version || {};
+      // в подвале — только номер версии; сборка и дата остаются в /api/config и в логе сервера
+      vEl.textContent = 'v' + (v.version || '?');
+      vEl.title = v.build ? `сборка ${v.build}${v.date ? ' · ' + v.date : ''}` : 'версия сборки';
+    }
     // селекторы игрового режима (из включённых на сервере) + показ описания выбранного
     const modes = Array.isArray(cfg.modes) && cfg.modes.length ? cfg.modes : [{ key: 'classic', name: 'Классический', desc: '' }];
     document.querySelectorAll('.mode-dd').forEach(host => {

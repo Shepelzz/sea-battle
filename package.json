@@ -1,6 +1,6 @@
 {
   "name": "sea-battle",
-  "version": "1.0.0",
+  "version": "1.3.0",
   "description": "Улучшенный морской бой — браузерная пошаговая игра с линейкой",
   "main": "server/index.js",
   "type": "module",
@@ -11,6 +11,9 @@
     "start": "node --env-file-if-exists=.env server/index.js",
     "dev": "node --env-file-if-exists=.env --watch server/index.js",
     "debug": "SB_DEBUG=1 node --env-file-if-exists=.env --watch server/index.js",
+    "release:patch": "npm version patch -m \"release v%s\" && git push --follow-tags",
+    "release:minor": "npm version minor -m \"release v%s\" && git push --follow-tags",
+    "release:major": "npm version major -m \"release v%s\" && git push --follow-tags",
     "db:up": "docker run -d --name sb-mysql -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=seabattle -p 3307:3306 -v sb-mysql-data:/var/lib/mysql mysql:8",
     "db:down": "docker rm -f sb-mysql"
   },

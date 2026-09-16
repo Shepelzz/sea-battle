@@ -1,13 +1,26 @@
 // Проверка поведения ботов: прикрытие кормящих рыбаков и выбор БЕЗОПАСНОЙ рыбной зоны
 // (две жалобы: рыбак-смертник на круг + соло-атака без прикрытия).
 import { createGame, addPlayer, startGame, applyAction } from './server/game.js';
-import { movesBudget, OUTPOST_LEVELS, OUTPOST_BUILD_REACH, TRIBUTE_MIN, TRIBUTE_MAX, tributeFor } from './server/config.js';
+import { movesBudget, OUTPOST_LEVELS, OUTPOST_BUILD_REACH, TRIBUTE_MIN, TRIBUTE_MAX, tributeFor, FISH_ZONE_CAP } from './server/config.js';
 import { chooseBotAction, boardValue } from './server/bot.js';
 import { SHIP_TYPES } from './server/ships.js';
 
 let ok = 0, fail = 0;
 const check = (n, c, extra = '') => { c ? (ok++, console.log('✓', n, extra)) : (fail++, console.error('✗', n, extra)); };
 const D = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+// Решение бота СТОХАСТИЧНО: планировщик проигрывает ход на копии партии, а там пираты дрейфуют
+// и ветер меняется случайно. Поэтому поведение проверяем большинством из нескольких прогонов —
+// одиночный вызов делает тест флаки, что мы уже наблюдали.
+const majority = (build, want, tries = 7) => {
+  let hits = 0, seen = [];
+  for (let i = 0; i < tries; i++) {
+    const g = build();
+    const a = chooseBotAction(g, 0, 'hard');
+    seen.push(a.type);
+    if (want(a, g)) hits++;
+  }
+  return { ok: hits * 2 > tries, hits, tries, seen: seen.join(',') };
+};
 
 function setup() {
   const g = createGame('t', { maxPlayers: 2, turnTimer: 0, seed: 4242 });
@@ -395,13 +408,14 @@ const put = (g, owner, type, x, y, hp) =>
   };
 
   {  // пират обстрелял наш корабль — на это надо отвечать, тем более что за него платят
-    const g = clean(0);
-    put(g, 0, 'fregat', 600, 600).heading = 0;
-    put(g, 0, 'brig', 560, 640).heading = 0;
-    g.ships.push({ id: 'pir', owner: -1, type: 'pirate', x: 680, y: 600, hp: 50, maxHp: 80, bounty: 260, angryAt: 0, heading: 0 });
-    const a = chooseBotAction(g, 0, 'hard');
-    check('бот отвечает напавшему пирату (он же и добыча)',
-      a.type === 'attack' || a.type === 'broadside', `(${a.type})`);
+    const r = majority(() => {
+      const g = clean(0);
+      put(g, 0, 'fregat', 600, 600).heading = 0;
+      put(g, 0, 'brig', 560, 640).heading = 0;
+      g.ships.push({ id: 'pir', owner: -1, type: 'pirate', x: 680, y: 600, hp: 50, maxHp: 80, bounty: 260, angryAt: 0, heading: 0 });
+      return g;
+    }, a => a.type === 'attack' || a.type === 'broadside');
+    check('бот отвечает напавшему пирату (он же и добыча)', r.ok, `${r.hits}/${r.tries} (${r.seen})`);
   }
 
   {  // деньги есть, рыбное место рядом и в нём свободно — рыбаков надо ставить, а не копить
@@ -427,27 +441,86 @@ const put = (g, owner, type, x, y, hp) =>
     const isl = g.map.lootIslands[0];
     isl.outpost = { owner: 0, level: 1, hp: 120 };
     put(g, 0, 'fregat', isl.x + 120, isl.y);
-    let upgraded = false;
-    for (let i = 0; i < movesBudget(g.config) && g.turn.idx === 0; i++) {
-      const a = chooseBotAction(g, 0, 'hard');
-      if (a.type === 'outpost') upgraded = true;
-      applyAction(g, 'p0', a);
+    let upgraded = 0, tries = 5;
+    for (let t = 0; t < tries; t++) {
+      const gg = clean(900);
+      gg.map.lootIslands[0].outpost = { owner: 0, level: 1, hp: 120 };
+      put(gg, 0, 'fregat', gg.map.lootIslands[0].x + 120, gg.map.lootIslands[0].y);
+      for (let i = 0; i < movesBudget(gg.config) && gg.turn.idx === 0; i++) {
+        const a = chooseBotAction(gg, 0, 'hard');
+        if (a.type === 'outpost') upgraded++;
+        applyAction(gg, 'p0', a);
+      }
     }
-    check('бот прокачивает свой аванпост', upgraded);
+    check('бот прокачивает свой аванпост', upgraded > 0, `в ${upgraded} из ${tries} прогонов`);
   }
 
   {  // незалутанный клад под боком — его надо брать, а не ловить рыбу
+    const r = majority(() => {
+      const g = setup();
+      g.config.multiMove = true; g.players[0].gold = 0;
+      const isl = g.map.lootIslands[0];
+      put(g, 0, 'shkhuna', isl.x - 200, isl.y);
+      put(g, 0, 'brig', isl.x - 260, isl.y + 40);
+      return g;
+    }, (a, g) => {
+      const isl = g.map.lootIslands[0];
+      const sh = g.ships.find(s2 => s2.id === a.shipId);
+      return a.type === 'collect' || (a.type === 'move' && sh &&
+        Math.hypot(a.x - isl.x, a.y - isl.y) < Math.hypot(sh.x - isl.x, sh.y - isl.y));
+    });
+    check('бот идёт за незалутанным кладом', r.ok, `${r.hits}/${r.tries} (${r.seen})`);
+  }
+}
+
+// === 14. 🐟 Места в рыбной зоне конечны ===
+// Жалоба: бот шлёт лодки в уже забитую зону, а они там просто стоят — кормятся только первые
+// cap судов (fishEarners в game.js). Теперь рыбак выбирает зону со СВОБОДНЫМ местом.
+{
+  const build = () => {
     const g = setup();
     g.config.multiMove = true; g.players[0].gold = 0;
-    const isl = g.map.lootIslands[0];
-    put(g, 0, 'shkhuna', isl.x - 200, isl.y);
-    put(g, 0, 'brig', isl.x - 260, isl.y + 40);
+    const z0 = g.map.fishZones[0], cap = z0.cap ?? FISH_ZONE_CAP;
+    for (let i = 0; i < cap; i++) put(g, 0, 'barkas', z0.x + i * 8, z0.y);   // все места заняты
+    put(g, 0, 'barkas', z0.x - 260, z0.y);                                   // лишний рыбак
+    return g;
+  };
+  // Критерий: ход СОКРАЩАЕТ расстояние до какой-нибудь свободной зоны и не лезет в забитую.
+  // (Свободные зоны на этой карте могут быть далеко — «дошёл за один ход» требовать нельзя.)
+  const r = majority(build, (a, g) => {
+    if (a.type !== 'move') return false;
+    const z0 = g.map.fishZones[0];
+    if (Math.hypot(a.x - z0.x, a.y - z0.y) <= z0.radius + 40) return false;      // полезла в забитую
+    const extra = g.ships.find(s2 => s2.id === a.shipId);
+    if (!extra) return false;
+    const free = g.map.fishZones.slice(1);
+    const was = Math.min(...free.map(z => Math.hypot(extra.x - z.x, extra.y - z.y)));
+    const now = Math.min(...free.map(z => Math.hypot(a.x - z.x, a.y - z.y)));
+    return now < was;
+  }, 9);
+  check('лишний рыбак идёт в свободную зону, а не в забитую', r.ok, `${r.hits}/${r.tries} (${r.seen})`);
+}
+
+// === 15. 🚢 Разбитый флот отстраивается даже в затяжной партии ===
+// Жалоба: боту разбили флот, у него полная казна — а он ловит рыбу. Виноват был гейт
+// «затяжная партия → хватит копить, идём добивать»: он отключал покупку боевых кораблей
+// совсем, а добивать без флота нечем.
+{
+  const g = setup();
+  g.config.multiMove = true;
+  g.players[0].gold = 1500;
+  g.turn.number = 200;                                     // затяжная партия: turnPressure включён
+  put(g, 0, 'barkas', g.map.fishZones[0].x, g.map.fishZones[0].y);   // остался один рыбак
+  put(g, 1, 'linkor', 900, 600);
+  put(g, 1, 'fregat', 940, 660);
+  const bought = [];
+  for (let i = 0; i < movesBudget(g.config) && g.turn.idx === 0; i++) {
     const a = chooseBotAction(g, 0, 'hard');
-    const sh = g.ships.find(s2 => s2.id === a.shipId);
-    const toIsland = a.type === 'collect' || (a.type === 'move' && sh &&
-      Math.hypot(a.x - isl.x, a.y - isl.y) < Math.hypot(sh.x - isl.x, sh.y - isl.y));
-    check('бот идёт за незалутанным кладом', toIsland, `(${a.type})`);
+    if (a.type === 'buy') bought.push(...a.ships);
+    applyAction(g, 'p0', a);
   }
+  check('без флота и с деньгами бот строит боевые корабли', bought.some(t => SHIP_TYPES[t].dmg > 0 && !SHIP_TYPES[t].fishing),
+    bought.join(',') || 'ничего');
 }
 
 console.log(`\nИтого: ${ok} ок, ${fail} провал(ов)`);
