@@ -6,7 +6,7 @@ import {
   SHIP_COLLISION_DIST, LOOT_REACH, WRECK_LOOT_FRAC, tributeFor,
   BROADSIDE_CANNONS, BROADSIDE_HALF_ARC, BROADSIDE_FALLOFF_MIN, BROADSIDE_SIDE_MIN, BROADSIDE_PORT_MULT, MORTAR_SHIPS, MORTAR_SHIP_MULT,
   FISH_ZONE_CAP, movesBudget, SHIP_ACTIONS, CHEATS_ENABLED, DEBUG_GOLD_LOG, DEBUG, REPAIR_CHARGES, REPAIR_DOCK_REACH,
-  CONVOY_MAX, CONVOY_PICK_MULT, convoyCost, convoyCosts,
+  CONVOY_MAX, CONVOY_PICK_MULT, convoyCost, convoyCosts, shipRank,
   modeStartGold, modeOf, isPeace, modePeaceRounds, isDuel, isRealtime, RT, cheapestShipPrice, GAME_MODES, DEFAULT_MODE,
   WIND_STRENGTH, WIND_TURN_STEP, WIND_STR_STEP, windMoveMult, REALTIME_NAME,
   OUTPOST_LEVELS, OUTPOST_RADIUS, OUTPOST_BUILD_REACH,
@@ -1017,6 +1017,11 @@ export function applyAction(game, playerId, action) {
       const pickR = SHIP_TYPES[lead.type].move * CONVOY_PICK_MULT;
       if (crew.some(s => dist(lead.x, lead.y, s.x, s.y) > pickR + 0.5))
         return { ok: false, error: 'В строй берут только суда рядом с флагманом' };
+      // флагман не может быть младше ведомых: иначе баркас (ход 180 = самый широкий радиус
+      // набора) уводил бы за собой фрегаты и линкоры
+      const senior = crew.find(s => shipRank(s.type) > shipRank(lead.type));
+      if (senior)
+        return { ok: false, error: `⚓ Флагман не может быть младше: ${SHIP_TYPES[lead.type].name} не поведёт ${SHIP_TYPES[senior.type].name}` };
       if (convoyContact(game, crew)) return { ok: false, error: '⚔️ Рядом враг — строем от боя не уйти' };
       const cx = Math.round(action.x), cy = Math.round(action.y);
       const ddx = cx - lead.x, ddy = cy - lead.y;

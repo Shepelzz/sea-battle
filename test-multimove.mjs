@@ -4,7 +4,7 @@
 // сброс счётчиков на новом ходу, выдачу movesPerTurn клиенту и учёт сходивших ботом.
 import { createGame, addPlayer, startGame, applyAction, publicState } from './server/game.js';
 import { chooseBotAction } from './server/bot.js';
-import { SHIP_TYPES, movesBudget, MOVES_PER_TURN, SHIP_ACTIONS, CONVOY_MAX, convoyCost } from './server/config.js';
+import { SHIP_TYPES, movesBudget, MOVES_PER_TURN, SHIP_ACTIONS, CONVOY_MAX, convoyCost, shipRank } from './server/config.js';
 
 let ok = 0, fail = 0;
 const check = (n, c, extra = '') => { c ? (ok++) : (fail++, console.error('✗', n, extra)); };
@@ -280,14 +280,16 @@ const convoy = (g, lead, mates, x, y) =>
 
 // === строй идёт по САМОМУ МЕДЛЕННОМУ ===
 {
+  // флагманом идёт линкор (он же старший, он же самый медленный — ход 90 против 135 у брига)
   const g = calm(setup(true));
-  const brig = put(g, 0, 'brig', 700, 600);          // move 135
-  const link = put(g, 0, 'linkor', 740, 660);        // move 90 — он и режет дальность
-  const far = convoy(g, brig, [link], 700 + 120, 600);
+  const link = put(g, 0, 'linkor', 740, 660);
+  const brig = put(g, 0, 'brig', 700, 600);
+  const far = convoy(g, link, [brig], 740 + 120, 660);
   check('конвой: дальше медленного — отказ', !far.ok, far.error);
-  eq('конвой: отказ ничего не сдвинул', [brig.x, brig.y], [700, 600]);
-  const near = convoy(g, brig, [link], 700 + 85, 600);
+  eq('конвой: отказ ничего не сдвинул', [link.x, link.y, brig.x, brig.y], [740, 660, 700, 600]);
+  const near = convoy(g, link, [brig], 740 + 85, 660);
   check('конвой: в пределах медленного — идёт', near.ok, near.error);
+  eq('конвой: бриг повторил смещение линкора', [brig.x, brig.y], [785, 600]);
 }
 
 // === враг в зоне обстрела — строй не собрать (эскадрой от боя не удрать) ===
@@ -308,6 +310,38 @@ const convoy = (g, lead, mates, x, y) =>
   const r = convoy(g, a, [b], 600, 600);
   check('конвой: пират рядом — отказ', !r.ok, r.error);
 }
+
+// === старшинство: флагман не может быть младше ведомых ===
+// Без этого рыбацкий баркас (ход 180 — самый широкий радиус набора) уводил бы за собой фрегаты.
+{
+  const g = calm(setup(true));
+  const bark = put(g, 0, 'barkas', 700, 600);
+  const freg = put(g, 0, 'fregat', 760, 600);
+  put(g, 0, 'shkhuna', 500, 500);                    // запасной, чтобы ход не закрылся «нечем ходить»
+  const r = convoy(g, bark, [freg], 760, 640);
+  check('строй: баркас не поведёт фрегат', !r.ok, r.error);
+  check('строй: в отказе названы оба судна',
+    /баркас/i.test(r.error || '') && /фрегат/i.test(r.error || ''), r.error);
+  eq('строй: отказ никого не сдвинул', [bark.x, bark.y, freg.x, freg.y], [700, 600, 760, 600]);
+  // а старший ведёт младшего как ни в чём не бывало
+  const ok2 = convoy(g, freg, [bark], 820, 600);
+  check('строй: фрегат ведёт баркас', ok2.ok, ok2.error);
+  eq('строй: баркас повторил смещение флагмана', [bark.x, bark.y], [760, 600]);
+}
+// равный ранг — свои ведут своих
+{
+  const g = calm(setup(true));
+  const a = put(g, 0, 'brig', 700, 600);
+  const b = put(g, 0, 'brig', 740, 600);
+  put(g, 0, 'shkhuna', 500, 500);
+  check('строй: равные по рангу идут вместе', convoy(g, a, [b], 760, 600).ok);
+}
+// сама мера старшинства
+eq('ранг: баркас младше шхуны', shipRank('barkas') < shipRank('shkhuna'), true);
+eq('ранг: шхуна младше брига', shipRank('shkhuna') < shipRank('brig'), true);
+eq('ранг: бриг младше фрегата', shipRank('brig') < shipRank('fregat'), true);
+eq('ранг: фрегат младше линкора', shipRank('fregat') < shipRank('linkor'), true);
+eq('ранг: неизвестный тип не старше никого', shipRank('неттакого'), 0);
 
 // === набор только из соседей флагмана ===
 {

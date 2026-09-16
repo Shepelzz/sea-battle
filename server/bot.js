@@ -1,7 +1,7 @@
 // Бот: на своём ходу собирает все осмысленные действия, оценивает и берёт лучшее.
 // Уровни: easy (Юнга) — шумные оценки и случайные ходы, mid (Боцман) — лучший ход,
 // hard (Адмирал) — лучший ход + фокус раненых, удушение экономики, ранняя агрессия.
-import { movesBudget, convoyCost, CONVOY_MAX, CONVOY_PICK_MULT, tributeFor, FISH_INCOME, FISH_ZONE_CAP, SHIP_TYPES, PIRATE, LOOT_REACH, PORT_RETURN_DMG, BROADSIDE_CANNONS, BROADSIDE_HALF_ARC, MORTAR_SHIPS, MORTAR_SHIP_MULT, OUTPOST_LEVELS, OUTPOST_BUILD_REACH, modeOf, isPeace, isDuel, cheapestShipPrice, windMoveMult } from './config.js';
+import { movesBudget, convoyCost, CONVOY_MAX, CONVOY_PICK_MULT, shipRank, tributeFor, FISH_INCOME, FISH_ZONE_CAP, SHIP_TYPES, PIRATE, LOOT_REACH, PORT_RETURN_DMG, BROADSIDE_CANNONS, BROADSIDE_HALF_ARC, BROADSIDE_FALLOFF_MIN, BROADSIDE_SIDE_MIN, MORTAR_SHIPS, MORTAR_SHIP_MULT, OUTPOST_LEVELS, OUTPOST_BUILD_REACH, modeOf, isPeace, isDuel, cheapestShipPrice, windMoveMult } from './config.js';
 import { shipPlacementBlocked, shipInContact, applyAction } from './game.js';
 
 const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
@@ -198,37 +198,46 @@ function buildCandidates(game, pIdx, level) {
       });
     }
 
-    // БОРТОВОЙ ЗАЛП — ближайший враг в секторе ЕЩЁ НЕ стрелявшего борта (целимся прямо в него; сервер посчитает урон)
+    // 💥 БОРТОВОЙ ЗАЛП. Борт накрывает ВСЕ цели в секторе разом — значит и оценивать его надо по
+    // всему, что он накроет. Раньше считалась одна лучшая цель, и залп по трём рыбацким баркасам
+    // стоил ровно столько же, сколько по одному: бот исправно долбил их мортирой по очереди,
+    // вместо того чтобы снести всех тремя пушками (живая жалоба из партии).
+    // Борта считаем ПОРОЗНЬ: у них разные секторы, и лучший может оказаться не тот, где ближайшая цель.
     if (cannons && !peace) {
-      // Раньше бралась просто БЛИЖАЙШАЯ цель в секторе. Теперь сравниваем по качеству выстрела
-      // (угол × дистанция) и добавляем вес общей цели флота — залп ложится туда же, куда бьют
-      // остальные, и подранка добивают, а не переводят на него ещё один борт вхолостую.
-      let tgt = null, tgtSide = null, bestD = Infinity, bestOff = 0, bestPick = -Infinity;
-      for (const t of game.ships) {
-        if (t.owner === pIdx) continue;
-        if (t.owner >= 0 && !game.players[t.owner]?.alive) continue;
-        const d = dist(ship.x, ship.y, t.x, t.y);
-        if (d > st.fireRange) continue;
-        const ang = Math.atan2(t.y - ship.y, t.x - ship.x);
-        const offP = Math.abs(norm(ang - portDir)), offS = Math.abs(norm(ang - starDir));
-        const side = offP <= offS ? 'port' : 'starboard';
-        const off = Math.min(offP, offS);
-        if (off > BROADSIDE_HALF_ARC || firedSides.includes(side)) continue;
-        const def = t.owner === -1 ? PIRATE : SHIP_TYPES[t.type];
-        const q = Math.max(0, 1 - off / BROADSIDE_HALF_ARC) * Math.max(0, 1 - d / st.fireRange);
-        const pick = q * 100 + (isFocus(t) ? FOCUS_W : 0) + (t.hp <= st.dmg * q ? 25 : 0); // добить — отдельно ценно
-        if (pick <= bestPick) continue;
-        tgt = t; tgtSide = side; bestD = d; bestOff = off; bestPick = pick;
-      }
-      if (tgt) {
-        // КАЧЕСТВО выстрела для РЕШЕНИЯ бота — крутое и НЕ зависит от флоров урона (SIDE_MIN/FALLOFF_MIN).
-        // Иначе при мягких флорах (пользователь поднял урон) бот начинает палить и по краям сектора → капкан/паты.
-        // Бот лупит залпом, ТОЛЬКО когда борт реально наведён (хороший угол И близко); кривой/дальний — осада важнее.
-        const aq = Math.max(0, 1 - bestOff / BROADSIDE_HALF_ARC);   // 1 на перпендикуляре → 0 на краю сектора
-        const dq = Math.max(0, 1 - bestD / st.fireRange);           // 1 в упор → 0 на краю радиуса
-        let score = st.dmg * aq * dq * 2.0;
-        if (tgt.owner >= 0 && dist(tgt.x, tgt.y, myBase.x, myBase.y) < threatR) score += 35; // оборона базы
-        cands.push({ score, action: { type: 'broadside', shipId: ship.id, tx: tgt.x, ty: tgt.y } });
+      for (const side of ['port', 'starboard']) {
+        if (firedSides.includes(side)) continue;          // этот борт уже отстрелялся в этом ходу
+        const sideDir = side === 'port' ? portDir : starDir;
+        let score = 0, tgt = null, bestPick = -Infinity;
+        for (const t of game.ships) {
+          if (t.owner === pIdx) continue;
+          if (t.owner >= 0 && !game.players[t.owner]?.alive) continue;
+          const d = dist(ship.x, ship.y, t.x, t.y);
+          if (d > st.fireRange) continue;
+          const off = Math.abs(norm(Math.atan2(t.y - ship.y, t.x - ship.x) - sideDir));
+          if (off > BROADSIDE_HALF_ARC) continue;         // не с этого борта (нос/корма)
+          const def = t.owner === -1 ? PIRATE : SHIP_TYPES[t.type];
+          // РЕАЛЬНЫЙ урон — ровно по серверной формуле: нужен, чтобы не проморгать потопление
+          const real = Math.max(1, Math.round(st.dmg *
+            (1 - (1 - BROADSIDE_SIDE_MIN) * Math.min(1, off / BROADSIDE_HALF_ARC)) *
+            (1 - (1 - BROADSIDE_FALLOFF_MIN) * (d / st.fireRange))));
+          // ВЕС урона в оценке — по «крутому» качеству наводки, а НЕ по реальному урону: флоры
+          // (SIDE_MIN/FALLOFF_MIN) щадящие, и по ним бот начинал палить с края сектора и с предела
+          // дистанции вместо осады (проверено раньше — капканы и паты). Залп даём, когда борт наведён.
+          const aq = Math.max(0, 1 - off / BROADSIDE_HALF_ARC);   // 1 на перпендикуляре → 0 на краю сектора
+          const dq = Math.max(0, 1 - d / st.fireRange);           // 1 в упор → 0 на краю радиуса
+          const q = aq * dq;                                      // 1 — борт наведён в упор, 0 — мазня
+          score += st.dmg * q * 2.0;
+          // ПОТОПЛЕНИЕ считаем в полную силу: убитый убит, под каким бы углом ни прилетело.
+          if (t.hp <= real) score += 30 + (t.owner === -1 ? (t.bounty || 0) * 0.3 : def.price * 0.2);
+          // А вот приоритеты (общая цель флота, гость у порога) — ТОЛЬКО в меру наведённости:
+          // иначе кривой выстрел на пределе дальности получал полный вес приоритета и выглядел
+          // осмысленным ходом, хотя не наносит почти ничего.
+          if (isFocus(t)) score += FOCUS_W * q;                   // бьём туда же, куда весь флот
+          if (t.owner >= 0 && dist(t.x, t.y, myBase.x, myBase.y) < threatR) score += 35 * q; // гость у порога
+          const pick = aq * 100 + (isFocus(t) ? FOCUS_W : 0);     // куда целиться (борт выбирает сервер по точке)
+          if (pick > bestPick) { bestPick = pick; tgt = t; }
+        }
+        if (tgt) cands.push({ score, action: { type: 'broadside', shipId: ship.id, tx: tgt.x, ty: tgt.y } });
       }
     }
   }
@@ -500,7 +509,8 @@ function buildCandidates(game, pIdx, level) {
       // попутчики: рядом, свободны, и их собственный мотив смотрит примерно туда же
       // (иначе строй растащил бы рыбака с промысла или защитника от порта)
       const mates = freeShips
-        .filter(s2 => s2.id !== lead.id && dist(lead.x, lead.y, s2.x, s2.y) <= pickR)
+        .filter(s2 => s2.id !== lead.id && dist(lead.x, lead.y, s2.x, s2.y) <= pickR &&
+          shipRank(s2.type) <= shipRank(lead.type))   // флагман не младше ведомых (см. config)
         .filter(s2 => {
           const mb = bestMove.get(s2.id);
           return !mb || Math.abs(norm(dirOf(s2, mb) - dir)) < 1.0;

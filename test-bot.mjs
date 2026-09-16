@@ -573,5 +573,61 @@ const put = (g, owner, type, x, y, hp) =>
   check('строй: в боевом контакте бот строй не собирает', r.ok, `${r.hits}/${r.tries} (${r.seen})`);
 }
 
+// === 💥 ЗАЛП ПО ПАЧКЕ: борт бьёт всех в секторе — им и надо бить, а не мортирой по одному ===
+// Живая жалоба: «по правый борт три моих рыбалки, а он их мортирой по одной». Причина была в
+// оценке — залп считался по ОДНОЙ лучшей цели, поэтому трое стоили столько же, сколько один.
+{
+  const build = () => {
+    const g = setup();
+    g.config.multiMove = true;
+    g.wind = { ang: 0, str: 0 };
+    const fr = put(g, 0, 'fregat', 600, 600); fr.heading = 0;   // смотрит вправо → правый борт вниз
+    put(g, 1, 'barkas', 600, 700);                              // три чужих рыбака точно по борту
+    put(g, 1, 'barkas', 640, 710);
+    put(g, 1, 'barkas', 560, 705);
+    return g;
+  };
+  const r = majority(build, a => a.type === 'broadside');
+  check('залп: по трём целям в секторе бот бьёт бортом, а не мортирой', r.ok, `${r.hits}/${r.tries} (${r.seen})`);
+
+  // и этот залп реально накрывает всех троих, а мортира — одного
+  const g = build();
+  const a = chooseBotAction(g, 0, 'hard');
+  applyAction(g, 'p0', a);
+  const hurt = g.ships.filter(s => s.owner === 1 && s.hp < SHIP_TYPES.barkas.hp).length;
+  const sunk = 3 - g.ships.filter(s => s.owner === 1).length;
+  check('залп: задеты все три рыбака', hurt + sunk === 3, `подбито ${hurt}, потоплено ${sunk}`);
+}
+// Наведённый залп должен стоить МНОГО, а кривой дальний — почти ничего: именно это держит
+// бота от «танцев бортами» вместо осады. Проверяем сами ОЦЕНКИ (их выдаёт отладочный колбэк),
+// а не итоговый выбор: когда у корабля нет других дел, он справедливо стреляет и слабым залпом,
+// и проверка «какой ход выбран» ловила бы этот безобидный случай как провал.
+{
+  const scoreOf = (place) => {
+    const g = setup();
+    g.config.multiMove = true;
+    g.wind = { ang: 0, str: 0 };
+    const fr = put(g, 0, 'fregat', 600, 600); fr.heading = 0;   // смотрит вправо → правый борт вниз
+    place(g);
+    let top = null;
+    chooseBotAction(g, 0, 'hard', d => { top = d.top; });
+    const b = (top || []).find(c => c.action.type === 'broadside');
+    return b ? b.score : 0;
+  };
+  const st = SHIP_TYPES.fregat;
+  const тройной = scoreOf(g => {
+    put(g, 1, 'barkas', 600, 700); put(g, 1, 'barkas', 640, 710); put(g, 1, 'barkas', 560, 705);
+  });
+  const одиночный = scoreOf(g => put(g, 1, 'barkas', 600, 700));
+  const кривой = scoreOf(g => put(g, 1, 'shkhuna',
+    600 + Math.cos(0.78) * (st.fireRange - 4), 600 + Math.sin(0.78) * (st.fireRange - 4)));
+  // (одиночная цель уже даёт много: 33 за урон + 42 за потопление. Двое соседних тонут не с
+  //  первого залпа, поэтому добавляют «только» свой урон — но добавляют, чего раньше не было.)
+  check('залп: три цели ценятся дороже одной', тройной > одиночный * 1.3,
+    `${Math.round(тройной)} против ${Math.round(одиночный)}`);
+  check('залп: кривой дальний выстрел почти ничего не стоит', кривой < одиночный * 0.1,
+    `${Math.round(кривой)} против ${Math.round(одиночный)}`);
+}
+
 console.log(`\nИтого: ${ok} ок, ${fail} провал(ов)`);
 process.exit(fail ? 1 : 0);

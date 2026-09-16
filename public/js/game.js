@@ -47,6 +47,8 @@ let DEBUG_ON = false;
 let debugTool = null;    // null | 'move' | 'heal' | 'pirate' | 'ship' — что делает следующий клик
 let debugFog = null;     // null — как в партии, 'on' — надеть туман, 'off' — снять
 let debugEyes = false;   // рисовать «глазами бота»: обзор, угроза дому, общая цель
+let debugPass = false;   // 🐞 авто-пропуск: мой ход сдаётся сам, партию доигрывают боты
+let passTimer = null;    // отложенный пропуск (даём доиграть анимациям и не долбим сервер)
 let botEyes = null;      // последние мысли бота (приходят с botlog)
 let debugPick = null;    // выбранный корабль для переноса
 
@@ -194,6 +196,7 @@ socket.on('state', s => {
   updateTab();
   // первый раз в активной игре и ты участник — показываем обучение (⛈️ шторм-бета — без тутора: там свой ритм)
   if (s.status === 'active' && s.map && !spectator && myIdx() >= 0 && !s.rt) Tutorial.start();
+  maybeAutoPass(); // 🐞 включён авто-пропуск — сдаём свой ход и смотрим, как играют боты
 });
 
 // иконка и заголовок вкладки сигналят, чей ход (видно из соседней вкладки)
@@ -690,6 +693,31 @@ const isMyTurn = () => {
 };
 const ST = t => state.shipTypes[t];
 
+// ── 🐞 АВТО-ПРОПУСК ХОДА (кнопка «⏭ пропускать ходы») ──
+// Нужно, чтобы смотреть, как боты играют партию, не кликая «Пропустить» каждый ход.
+// Пропуск уходит с задержкой: успевают доиграть анимации чужого хода, и сервер не долбится
+// очередью. Любой отказ сервера выключает режим — молча зациклиться он не должен.
+function syncPassBtn() {
+  const b = $('#dbgPass');
+  if (!b) return;
+  b.classList.toggle('armed', debugPass);
+  b.textContent = debugPass ? '⏭ пропускаю ходы' : '⏭ пропускать ходы';
+}
+function maybeAutoPass() {
+  if (!DEBUG_ON || !debugPass || passTimer) return;
+  if (!state || state.status !== 'active' || state.rt || spectator) return;  // в шторме ходов нет
+  if (!isMyTurn()) return;
+  passTimer = setTimeout(() => {
+    passTimer = null;
+    if (!debugPass || !isMyTurn() || state?.status !== 'active') return;
+    socket.emit('action', { type: 'skip' }, r => {
+      if (r?.ok) return;
+      debugPass = false; syncPassBtn();                    // не крутим отказ по кругу
+      debugLine('⏭ авто-пропуск выключен: ' + (r?.error || 'ход не принят'));
+    });
+  }, 400);
+}
+
 // ── ⛈️ «Шторм» (реалтайм): без очереди ходов, стрельба по перезарядке ──
 const isRT = () => !!state?.rt;         // сервер прислал rt-блок → реалтайм-партия
 let rtSkew = 0;                          // серверные часы − наши (для честного отсчёта перезарядок)
@@ -727,13 +755,16 @@ const convoyShips = () => (convoy ? convoy.ids.map(shipById).filter(Boolean) : [
 // ⚔️ боевой контакт: рядом чужой корабль (или пират) на дистанции выстрела — его или своей
 const shipInContact = sh => !!state?.ships.some(o => o.owner !== sh.owner && o.id !== sh.id &&
   dist(sh.x, sh.y, o.x, o.y) <= Math.max(ST(sh.type).fireRange, ST(o.type)?.fireRange || 0));
-// Кого можно взять в строй к флагману: свои, ещё не ходившие, не начавшие залп, в радиусе набора
-// и НЕ В БОЮ. Контакт проверяется здесь, а не при отправке хода: сервер валит весь строй, если под
+// Старшинство судна = цена его класса (то же, что shipRank на сервере)
+const shipRank = type => { const d = ST(type); return d ? (d.cheat ? Infinity : d.price) : 0; };
+// Кого можно взять в строй к флагману: свои, ещё не ходившие, не начавшие залп, в радиусе набора,
+// НЕ СТАРШЕ флагмана и НЕ В БОЮ. Контакт проверяется здесь, а не при отправке хода: сервер валит весь строй, если под
 // огнём хоть одно судно, и узнавать об этом после того, как набрал строй и провёл жест, — издевательство.
 // Судно в контакте просто не подсвечивается кандидатом и не берётся тапом.
 const convoyMates = lead => (state?.ships || []).filter(s =>
   s.owner === lead.owner && s.id !== lead.id && !shipActed(s.id) && !firedSides(s.id).length &&
   dist(lead.x, lead.y, s.x, s.y) <= ST(lead.type).move * convoyCfg().pickMult &&
+  shipRank(s.type) <= shipRank(lead.type) &&   // баркас не уводит фрегатов: флагман — старший
   !shipInContact(s));
 // дальность хода: строй идёт по САМОМУ МЕДЛЕННОМУ (линкор в конвое режет дальность всем)
 const moveRangeOf = sel => (convoy && convoy.lead === sel.id && convoyShips().length > 1)
@@ -2382,9 +2413,12 @@ function handleTap(pos, isTouch) {
       Sound.play('click'); render(); return;
     }
     if (clickedShip && clickedShip.owner === myIdx()) { // своё, но не подходит — говорим, чем именно
+      const flag = shipById(convoy.lead);
       toast(shipInContact(clickedShip) ? '⚔️ Это судно в бою — строем его не увести'
         : shipActed(clickedShip.id) || firedSides(clickedShip.id).length ? '⚓ Это судно уже ходило в этом ходу'
-        : '⛵ В строй берут только суда рядом с флагманом');
+        : shipRank(clickedShip.type) > shipRank(flag.type)
+          ? `⚓ ${ST(clickedShip.type).name} старше флагмана — строй должен вести он`
+          : '⛵ В строй берут только суда рядом с флагманом');
       return;
     }
     cancelConvoy(); return;                                     // тап по воде — выйти из набора
@@ -2985,11 +3019,16 @@ function renderSidebar() {
   // онлайн/боты — только свои; хотсит — только у того, чей ход; в конце — все
   const canSee = i => state.status === 'finished' || DEBUG_ON ||
     (state.config?.hotseat ? i === state.turn.idx : state.players[i].id === myId);
+  // Само ЗОЛОТО прячет сервер (publicState шлёт null вместо чужой казны), и последнее слово —
+  // за присланными данными, а не за этим правилом. Иначе при малейшем расхождении (страница
+  // открыта с одного сервера, ходы идут с другого — например, отладочный перезапустили без
+  // SB_DEBUG) в списке капитанов честно печаталось «💰null».
+  const goldOf = p => (p.gold === null || p.gold === undefined) ? '' : `💰${p.gold} · `;
 
   // игроки
   $('#playersList').innerHTML = state.players.map((p, i) => {
     const show = state.status !== 'lobby' && canSee(i);
-    const stats = show ? `💰${p.gold} · 🏠${p.portHp}` : '';
+    const stats = show ? `${goldOf(p)}🏠${p.portHp}` : '';
     // под туманом статус врага — на момент последней разведки (не крестим вслепую)
     const aliveShown = (fogActive() && i !== myIdx()) ? (fogLastSeen[i]?.alive ?? true) : p.alive;
     return `<div class="player-row ${aliveShown ? '' : 'dead'} ${state.status === 'active' && i === state.turn.idx ? 'current' : ''}">
@@ -3353,6 +3392,14 @@ const Tutorial = (() => {
     const myShip = state.ships.find(s => s.owner === myIdx());
     const heavyShip = state.ships.find(s => s.owner === myIdx() && canBroadside(s)) || myShip;
     const enemyBase = state.map.bases.find((b, i) => i !== myIdx());
+    // ⛵ шаг про строй подсвечивает ВЕСЬ стартовый флот: он как раз стоит кучкой у базы,
+    // и «соседние суда» становятся понятны без слов
+    const fleet = state.ships.filter(s2 => s2.owner === myIdx());
+    const fleetSpot = fleet.length > 1 ? (() => {
+      const fx = fleet.reduce((a, s2) => a + s2.x, 0) / fleet.length;
+      const fy = fleet.reduce((a, s2) => a + s2.y, 0) / fleet.length;
+      return { x: fx, y: fy, r: Math.max(...fleet.map(s2 => dist(fx, fy, s2.x, s2.y))) + 26 };
+    })() : null;
     // рыбное место и остров с кладом — БЛИЖАЙШИЕ к базе смотрящего (его «домашние», не подглядываем в чужие воды)
     const nearestTo = (arr) => (arr && arr.length)
       ? arr.reduce((a, b) => dist(myBase.x, myBase.y, b.x, b.y) < dist(myBase.x, myBase.y, a.x, a.y) ? b : a)
@@ -3373,6 +3420,9 @@ const Tutorial = (() => {
         target: heavyShip ? { world: { x: heavyShip.x, y: heavyShip.y, r: 26 } } : null },
       { text: 'За борт стреляешь раз в ход, но можно дать залп <b>и левым, и правым</b> бортом (это одно действие). А <b>фрегат и линкор</b> вдобавок имеют <b>🎯 Мортиру</b> — прицельный выстрел по одной цели, в т.ч. по <b>порту</b> (осада).',
         target: heavyShip ? { world: { x: heavyShip.x, y: heavyShip.y, r: 26 } } : null },
+      // строй — только там, где он вообще есть (режим «ход тремя судами»)
+      multiMoveOn() && { text: '⛵ <b>Строй</b>: соседние суда можно вести <b>разом и за один манёвр</b> — так подкрепление не гоняешь по одному. Тапни корабль, жми <b>⛵</b> в кольце, отметь соседей (до трёх) и потяни от флагмана. Строй идёт по <b>самому медленному</b>, вести его должен <b>старший</b>, а в бою его не собрать.',
+        target: fleetSpot ? { world: fleetSpot } : null },
       { text: 'В <b>Верфи</b> покупаешь корабли за золото 💰: шустрые шхуны и бриги, мощные фрегаты, рыбацкие баркасы — и <b>линкор</b>, который бьёт по портам сильнее всех 🏰.',
         target: { sel: '#btnShop' } },
       { text: 'Тут твой <b>баланс</b> — <b>золото</b> 💰. Зарабатывай его рыбалкой, кладами и потоплением врагов, а трать в <b>Верфи</b> на новые корабли.',
@@ -3513,6 +3563,13 @@ function initDebug() {
     $('#dbgEyes').classList.toggle('armed', debugEyes);
     debugLine(debugEyes ? 'показываю глазами бота: обзор, тревога у базы, цель флота' : 'наложение снято');
     if (state) render();
+  });
+  $('#dbgPass').addEventListener('click', () => {
+    debugPass = !debugPass;
+    if (!debugPass && passTimer) { clearTimeout(passTimer); passTimer = null; }
+    syncPassBtn();
+    debugLine(debugPass ? 'авто-пропуск включён — мои ходы сдаются сами, играют боты' : 'авто-пропуск выключен');
+    maybeAutoPass();          // если сейчас мой ход — сдаём его сразу, не дожидаясь стейта
   });
   $('#dbgGold').addEventListener('click', () => socket.emit('debug', { kind: 'gold', amount: 500 }, r => {
     if (!r?.ok) debugLine('❌ ' + (r?.error || 'не вышло'));
