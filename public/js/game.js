@@ -18,6 +18,11 @@ let aim = null;            // тач-прицел хода: {sel, finger:{x,y}, 
 const AIM_RATIO = 2 / 3;   // крестик на 2/3 пути от корабля до пальца (меньше тянуть пальцем на телефоне)
 const AIM_GRAB_PX = 42;    // радиус зоны захвата корабля для drag-aim (экранные px)
 const AIM_CANCEL_DIST = 32; // палец вернулся ~на корабль (мировые ед.) → ход/залп отменяется
+// ПРИТИРКА К ПРЕДЕЛУ ХОДА: на сколько ЭКРАННЫХ px можно перетянуть за контур, чтобы ход не
+// отменялся, а крестик сам сел на контур. Пытаясь уйти максимально далеко, легко промахнуться
+// на пару пикселей — а на телефоне (карта отзумлена, палец крупнее цели) этот перелёт просто
+// не виден, и ход срывался в отмену без видимой причины. Мерим в экранных px, а не в мировых:
+// «незаметно» — это свойство экрана, поэтому на отзумленной карте допуск шире сам собой.
 let moveDemo = null;       // обучающая анимация жеста (тач, до первого хода игрока): {t0}
 const IS_COARSE = !!(window.matchMedia && matchMedia('(pointer: coarse)').matches); // сенсорный экран?
 const hasMovedOnce = () => localStorage.getItem('sb_moved') === '1';
@@ -722,10 +727,14 @@ const convoyShips = () => (convoy ? convoy.ids.map(shipById).filter(Boolean) : [
 // ⚔️ боевой контакт: рядом чужой корабль (или пират) на дистанции выстрела — его или своей
 const shipInContact = sh => !!state?.ships.some(o => o.owner !== sh.owner && o.id !== sh.id &&
   dist(sh.x, sh.y, o.x, o.y) <= Math.max(ST(sh.type).fireRange, ST(o.type)?.fireRange || 0));
-// кого можно взять в строй к флагману: свои, ещё не ходившие, не начавшие залп, в радиусе набора
+// Кого можно взять в строй к флагману: свои, ещё не ходившие, не начавшие залп, в радиусе набора
+// и НЕ В БОЮ. Контакт проверяется здесь, а не при отправке хода: сервер валит весь строй, если под
+// огнём хоть одно судно, и узнавать об этом после того, как набрал строй и провёл жест, — издевательство.
+// Судно в контакте просто не подсвечивается кандидатом и не берётся тапом.
 const convoyMates = lead => (state?.ships || []).filter(s =>
   s.owner === lead.owner && s.id !== lead.id && !shipActed(s.id) && !firedSides(s.id).length &&
-  dist(lead.x, lead.y, s.x, s.y) <= ST(lead.type).move * convoyCfg().pickMult);
+  dist(lead.x, lead.y, s.x, s.y) <= ST(lead.type).move * convoyCfg().pickMult &&
+  !shipInContact(s));
 // дальность хода: строй идёт по САМОМУ МЕДЛЕННОМУ (линкор в конвое режет дальность всем)
 const moveRangeOf = sel => (convoy && convoy.lead === sel.id && convoyShips().length > 1)
   ? Math.min(...convoyShips().map(s => ST(s.type).move))
@@ -2193,8 +2202,14 @@ function updateAim(screenPt) {
   else {
     // ⚡ реалтайм: крестик ПОД ПАЛЬЦЕМ (дальности нет — «середина пути» только укорачивала жест);
     // пошагово — на AIM_RATIO пути (палец не закрывает цель, а дальше круга всё равно нельзя)
-    const len = fd * (state?.rt ? 1 : AIM_RATIO);
-    aim.clamped = len > range;     // вышла за контур хода — ход недопустим
+    let len = fd * (state?.rt ? 1 : AIM_RATIO);
+    // перетянул на считанные пиксели — не отменяем ход, а сажаем крестик РОВНО на контур;
+    // перетянул заметно — всё как раньше: красная линейка и ход не проходит
+    if (len > range) {
+      const slack = Math.min((IS_COARSE ? 14 : 9) / (view.scale || 1), range * 0.25);
+      if (len <= range + slack) len = Math.max(0, range - 0.5);   // тихо садим крестик на контур
+    }
+    aim.clamped = len > range;     // вышла за контур И за допуск — ход недопустим
     const k = len / fd;
     aim.dest = { x: sel.x + dx * k, y: sel.y + dy * k };
   }
@@ -2366,8 +2381,10 @@ function handleTap(pos, isTouch) {
       convoy.ids.push(clickedShip.id);
       Sound.play('click'); render(); return;
     }
-    if (clickedShip && clickedShip.owner === myIdx()) { // своё, но не подходит (далеко/уже ходило)
-      toast('⛵ В строй берут суда рядом с флагманом, ещё не ходившие в этом ходу');
+    if (clickedShip && clickedShip.owner === myIdx()) { // своё, но не подходит — говорим, чем именно
+      toast(shipInContact(clickedShip) ? '⚔️ Это судно в бою — строем его не увести'
+        : shipActed(clickedShip.id) || firedSides(clickedShip.id).length ? '⚓ Это судно уже ходило в этом ходу'
+        : '⛵ В строй берут только суда рядом с флагманом');
       return;
     }
     cancelConvoy(); return;                                     // тап по воде — выйти из набора
