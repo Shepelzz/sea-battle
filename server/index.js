@@ -22,7 +22,7 @@ import {
   buildSetCookie, buildClearCookie, createSessionStore, newSessionToken
 } from './auth.js';
 import { chooseBotAction, BOT_NAMES, duelFleetPlan } from './bot.js';
-import { LANGS, LANG_COOKIE, SOURCE_LANG, normLang, pickLang, buildLangCookie } from './i18n.js';
+import { LANGS, LANG_COOKIE, SOURCE_LANG, DEFAULT_LANG, normLang, pickLang, buildLangCookie } from './i18n.js';
 import { applyCheat } from './cheats.js';
 import { VERSION, versionLabel } from './version.js';
 import { rtStart, rtStop } from './rt.js';
@@ -64,7 +64,7 @@ async function buildPage(file, lang) {
   const dict = await langDict(lang);
   const at = k => k.split('.').reduce((o, p) => o?.[p], dict);
   const text = k => { const v = at(k); return v === undefined ? k : String(v); };  // нет ключа — виден ключ
-  const boot = { lang, source: SOURCE_LANG, langs: LANGS, res: { [lang]: dict } };
+  const boot = { lang, source: SOURCE_LANG, def: DEFAULT_LANG, langs: LANGS, res: { [lang]: dict } };
 
   const html = (await fsp.readFile(htmlPath, 'utf8'))
     // 1. содержимое помеченных элементов: <p data-i18n="ключ">…</p> и data-i18n-html
@@ -90,13 +90,11 @@ async function buildPage(file, lang) {
   return html;
 }
 
-// Язык этого запроса: профиль аккаунта > кука > Accept-Language > дефолт (см. i18n.js).
+// Язык этого запроса: профиль аккаунта > кука > дефолт (см. pickLang в i18n.js).
 async function reqLang(req) {
   const pid = accountPidFromReq(req);
   const profile = pid ? (await db.getPlayer(pid))?.lang : null;
-  return pickLang({
-    profile, cookie: parseCookies(req.headers.cookie)[LANG_COOKIE], header: req.headers['accept-language']
-  });
+  return pickLang({ profile, cookie: parseCookies(req.headers.cookie)[LANG_COOKIE] });
 }
 
 async function renderPage(file, req, res) {

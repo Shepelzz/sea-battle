@@ -7,7 +7,7 @@
 import fs from 'node:fs';
 import {
   LANGS, SOURCE_LANG, DEFAULT_LANG, LANG_COOKIE, isLang, normLang,
-  parseAcceptLanguage, pickLang, buildLangCookie
+  pickLang, buildLangCookie
 } from './server/i18n.js';
 
 let ok = 0, fail = 0;
@@ -30,24 +30,15 @@ eq('дефолт входит в список', LANGS.includes(DEFAULT_LANG), tr
 eq('по умолчанию — украинский', DEFAULT_LANG, 'uk');
 eq('эталон (и фолбэк) — русский', SOURCE_LANG, 'ru');
 
-// === 2. Accept-Language ===
-eq('Accept-Language: порядок по q',
-  parseAcceptLanguage('de,en;q=0.7,uk;q=0.9'), ['uk', 'en']);
-eq('Accept-Language: без q — вес 1',
-  parseAcceptLanguage('uk-UA,en;q=0.5'), ['uk', 'en']);
-eq('Accept-Language: дубли схлопываются',
-  parseAcceptLanguage('uk-UA,uk;q=0.9,uk-ua;q=0.8'), ['uk']);
-eq('Accept-Language: q=0 не считается', parseAcceptLanguage('en;q=0'), []);
-eq('Accept-Language: пусто', parseAcceptLanguage(''), []);
-eq('Accept-Language: только чужие', parseAcceptLanguage('de,fr,pl'), []);
-
-// === 3. Приоритет: профиль > кука > заголовок > дефолт ===
-eq('профиль главнее куки', pickLang({ profile: 'uk', cookie: 'en', header: 'ru' }), 'uk');
-eq('кука главнее заголовка', pickLang({ cookie: 'en', header: 'uk' }), 'en');
-eq('заголовок, если больше нечего', pickLang({ header: 'uk-UA,uk;q=0.9' }), 'uk');
-eq('дефолт, если нечего', pickLang({}), DEFAULT_LANG);
+// === 2. Приоритет: профиль > кука > дефолт ===
+// ГЛАВНОЕ: не выбирал язык — получи дефолтный. Именно так ведёт себя инкогнито без куки,
+// и никакой Accept-Language на это не влияет (он тут не участвует вовсе — см. pickLang).
+eq('чистый заход (инкогнито, без куки и профиля) — дефолт', pickLang({}), DEFAULT_LANG);
+eq('чистый заход: язык браузера не в счёт', pickLang({ header: 'ru-RU,ru;q=0.9' }), DEFAULT_LANG);
+eq('только кука', pickLang({ cookie: 'en' }), 'en');
+eq('профиль главнее куки', pickLang({ profile: 'uk', cookie: 'en' }), 'uk');
 eq('битый профиль не ломает выбор', pickLang({ profile: 'de', cookie: 'en' }), 'en');
-eq('битая кука не ломает выбор', pickLang({ cookie: 'zz', header: 'uk' }), 'uk');
+eq('битая кука → дефолт', pickLang({ cookie: 'zz' }), DEFAULT_LANG);
 
 // === 4. Кука языка ===
 const c = buildLangCookie('uk');

@@ -25,11 +25,15 @@
   const boot = window.__SB_I18N || {};
   const LANGS = boot.langs || ['uk', 'ru', 'en'];
   const SOURCE = boot.source || 'ru';
+  // Язык по умолчанию — дубль DEFAULT_LANG из server/i18n.js. Нужен ровно в одном случае:
+  // страница пришла мимо рендера (сырая статика), и boot.lang пуст. Язык браузера тут
+  // НЕ смотрим — по той же причине, что и на сервере: не выбирал язык → видишь дефолтный.
+  const DEFAULT = boot.def || 'uk';
   // Родные названия языков — единственное, что НЕ переводится: в списке каждый язык
   // подписан на себе самом, иначе его не найдёт тот, кто попал не на свой.
   const NAMES = { uk: '🇺🇦 Українська', ru: '🇷🇺 Русский', en: '🇬🇧 English' };
 
-  let lang = boot.lang || readCookie('sb_lang') || norm(navigator.language) || SOURCE;
+  let lang = boot.lang || readCookie('sb_lang') || DEFAULT;
 
   function norm(raw) {
     const base = String(raw || '').trim().toLowerCase().split(/[-_]/)[0];

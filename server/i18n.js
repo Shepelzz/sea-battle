@@ -29,25 +29,18 @@ export function normLang(raw) {
   return isLang(base) ? base : null;
 }
 
-// Accept-Language: 'uk-UA,uk;q=0.9,en;q=0.7,de' → ['uk','en'] (по убыванию q, чужие выброшены).
-export function parseAcceptLanguage(header) {
-  return String(header || '').split(',')
-    .map(part => {
-      const [tag, ...params] = part.trim().split(';');
-      const q = params.map(p => /^\s*q\s*=\s*([\d.]+)/i.exec(p)?.[1]).find(Boolean);
-      return { lang: normLang(tag), q: q === undefined ? 1 : parseFloat(q) };
-    })
-    .filter(x => x.lang && Number.isFinite(x.q) && x.q > 0)
-    .sort((a, b) => b.q - a.q)
-    .map(x => x.lang)
-    .filter((l, i, arr) => arr.indexOf(l) === i);
-}
-
-// Какой язык показать. ПРОФИЛЬ > КУКА > Accept-Language > дефолт.
+// Какой язык показать. ПРОФИЛЬ > КУКА > ДЕФОЛТ. И всё — больше ничего.
+//
 // Профиль главнее куки намеренно: залогинился со своего аккаунта — получил СВОЙ язык,
 // а не тот, что остался в браузере от чужого/гостевого сеанса на этом устройстве.
-export function pickLang({ profile, cookie, header } = {}) {
-  return normLang(profile) || normLang(cookie) || parseAcceptLanguage(header)[0] || DEFAULT_LANG;
+//
+// ⚠ Accept-Language НЕ смотрим сознательно. Он казался вежливым («уважаем язык браузера»),
+// но ломал главное правило: в инкогнито куки нет, браузер шлёт ru-RU — и человек вместо
+// украинского получал русский. В Украине русская локаль браузера — обычное дело, так что
+// заголовок отправлял бы на русский как раз тех, для кого украинский и ставили дефолтом.
+// Не выбирал язык — видишь дефолтный; выбрал переключателем — он запомнится в куке/профиле.
+export function pickLang({ profile, cookie } = {}) {
+  return normLang(profile) || normLang(cookie) || DEFAULT_LANG;
 }
 
 // Кука языка — НЕ httpOnly: клиент читает её сам, когда страницу отдал не наш рендер
