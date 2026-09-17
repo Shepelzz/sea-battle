@@ -59,29 +59,29 @@ function escapeHtml(s) {
 function renderLobbies(list) {
   const box = $('#lobbiesList');
   if (!list.length) {
-    box.innerHTML = '<p class="muted">Пока нет открытых лобби. Создай свой через «🌐 Онлайн» — и он появится здесь у всех!</p>';
+    box.innerHTML = `<p class="muted">${t('lobby.empty')}</p>`;
     return;
   }
   box.innerHTML = list.map(l => {
     const full = l.players >= l.max;
     const canEnter = !full || l.mine;                         // в полное лобби можно вернуться, если оно твоё
-    const label = l.mine ? 'Вернуться' : (full ? 'Полно' : 'Войти');
+    const label = t(l.mine ? 'lobby.return' : (full ? 'lobby.full' : 'lobby.enter'));
     return `<div class="lobby-item ${full ? 'full' : ''}">
       <div class="info">
-        <div class="host">🏴‍☠️ ${escapeHtml(l.host)}${l.isHost ? ' · твоё' : ''}</div>
-        <div class="meta">👤 ${l.players}/${l.max}${(l.tags && l.tags.length) ? ' · ' + l.tags.map(escapeHtml).join(' · ') : ''}</div>
+        <div class="host">🏴‍☠️ ${escapeHtml(l.host)}${l.isHost ? ' · ' + t('lobby.yours') : ''}</div>
+        <div class="meta">👤 ${l.players}/${l.max}${(l.tags && l.tags.length) ? ' · ' + l.tags.map(x => escapeHtml(tr(x.k, x.p))).join(' · ') : ''}</div>
       </div>
       <button class="small primary" data-join="${l.id}" ${canEnter ? '' : 'disabled'}>${label}</button>
-      ${l.isHost ? `<button class="small danger lobby-x" data-closelobby="${l.id}" title="Закрыть лобби">✕</button>` : ''}
+      ${l.isHost ? `<button class="small danger lobby-x" data-closelobby="${l.id}" title="${t('lobby.closeTitle')}">✕</button>` : ''}
     </div>`;
   }).join('');
   box.querySelectorAll('[data-join]').forEach(b =>
     b.addEventListener('click', () => { location.href = '/game/' + b.dataset.join; }));
   box.querySelectorAll('[data-closelobby]').forEach(b =>
     b.addEventListener('click', () => {
-      if (!confirm('Закрыть это лобби? Все, кто в нём, вернутся на главную.')) return;
+      if (!confirm(t('lobby.closeConfirm'))) return;
       socket.emit('game:finish', { gameId: b.dataset.closelobby, token: getToken() },
-        res => { if (!res || !res.ok) alert((res && res.error) || 'Не вышло'); });
+        res => { if (!res || !res.ok) alert((res && errText(res)) || t('lobby.failed')); });
     }));
 }
 // «Мои игры» — секция сверху браузера: активные игры, в которых я участвую (онлайн и оффлайн)
@@ -89,26 +89,27 @@ function renderMyGames(list) {
   const box = $('#myGamesList');
   if (!box) return;
   if (!list.length) { box.innerHTML = ''; return; }
-  box.innerHTML = '<h3 class="browse-h">Мои игры</h3>' + list.map(g => {
-    const turn = g.myTurn ? '<b>твой ход</b>' : 'ход: ' + escapeHtml(g.turnNick);
-    const kind = g.online ? 'онлайн' : (g.hotseat ? 'на устройстве' : 'с ботами');
-    const opp = (g.opponents && g.opponents.length) ? ' · ' + g.opponents.map(escapeHtml).join(', ') : '';
+  box.innerHTML = `<h3 class="browse-h">${t('lobby.myGames')}</h3>` + list.map(g => {
+    // ник — чужой текст, а строка уходит в innerHTML: экранируем сами (см. шапку i18n.js)
+    const turn = g.myTurn ? `<b>${t('lobby.myTurn')}</b>` : t('lobby.turnOf', { nick: escapeHtml(tr(g.turnNick)) });
+    const kind = t(g.online ? 'lobby.kindOnline' : (g.hotseat ? 'lobby.kindHotseat' : 'lobby.kindBots'));
+    const opp = (g.opponents && g.opponents.length) ? ' · ' + g.opponents.map(n => escapeHtml(tr(n))).join(', ') : '';
     return `<div class="lobby-item mygame ${g.myTurn ? 'myturn' : ''}">
       <div class="info">
-        <div class="host">${escapeHtml(g.mode)} · ${kind}</div>
+        <div class="host">${escapeHtml(tr(g.mode))} · ${kind}</div>
         <div class="meta">${turn}${opp}</div>
       </div>
-      <button class="small primary" data-resume="${g.id}">Войти</button>
-      ${g.canFinish ? `<button class="small danger" data-finish="${g.id}">Завершить</button>` : ''}
+      <button class="small primary" data-resume="${g.id}">${t('lobby.enter')}</button>
+      ${g.canFinish ? `<button class="small danger" data-finish="${g.id}">${t('lobby.finish')}</button>` : ''}
     </div>`;
   }).join('') + '<div class="browse-sep"></div>';
   box.querySelectorAll('[data-resume]').forEach(b =>
     b.addEventListener('click', () => { location.href = '/game/' + b.dataset.resume; }));
   box.querySelectorAll('[data-finish]').forEach(b =>
     b.addEventListener('click', () => {
-      if (!confirm('Завершить эту игру? Вернуться в неё будет нельзя.')) return;
+      if (!confirm(t('lobby.finishConfirm'))) return;
       socket.emit('game:finish', { gameId: b.dataset.finish, token: getToken() },
-        res => { if (!res || !res.ok) alert((res && res.error) || 'Не вышло'); });
+        res => { if (!res || !res.ok) alert((res && errText(res)) || t('lobby.failed')); });
     }));
 }
 // бейдж с числом моих активных игр на кнопке «найти игру»
@@ -119,7 +120,9 @@ function updateLobbyBadge(n) {
   b.classList.toggle('hidden', !(n > 0));
 }
 // данные браузера приходят как { lobbies, myGames } (старый формат — просто массив лобби)
+let lastBrowse = null;
 function renderBrowse(data) {
+  lastBrowse = data;
   const lobbies = Array.isArray(data) ? data : ((data && data.lobbies) || []);
   const myGames = Array.isArray(data) ? [] : ((data && data.myGames) || []);
   renderMyGames(myGames);
@@ -146,10 +149,12 @@ function renderHotseatNames() {
   const n = +$('#hotseatCount').value;
   const old = [...document.querySelectorAll('#hotseatNames input.hs-name')].map(i => i.value);
   hotseatColors = defaultColors(n, hotseatColors);
+  // плейсхолдеры имён по номеру игрока: ключи перечислены явно, чтобы их видел test-i18n.mjs
+  const namePh = [t('home.hsPh1'), t('home.hsPh2'), t('home.hsPh3'), t('home.hsPh4')];
   $('#hotseatNames').innerHTML = Array.from({ length: n }, (_, i) => `
-    <label>Игрок ${i + 1}</label>
+    <label>${t('home.playerN', { n: i + 1 })}</label>
     <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap">
-      <input type="text" class="hs-name" maxlength="20" placeholder="${['Капитан', 'Адмирал', 'Боцман', 'Юнга'][i]}…" value="${old[i] ? old[i].replace(/"/g, '&quot;') : ''}" style="flex:1; min-width:150px">
+      <input type="text" class="hs-name" maxlength="20" placeholder="${namePh[i]}…" value="${old[i] ? old[i].replace(/"/g, '&quot;') : ''}" style="flex:1; min-width:150px">
       <div data-hs="${i}"></div>
     </div>`).join('');
   [...document.querySelectorAll('#hotseatNames [data-hs]')].forEach((sw, i) => {
@@ -162,8 +167,8 @@ renderHotseatNames();
 
 $('#hotseatBtn').addEventListener('click', async () => {
   const nicks = [...document.querySelectorAll('#hotseatNames input.hs-name')].map(i => i.value.trim());
-  if (nicks.some(n => !n)) { $('#hotseatError').textContent = 'Впиши имена всех игроков!'; return; }
-  if (new Set(nicks).size !== nicks.length) { $('#hotseatError').textContent = 'Имена не должны повторяться'; return; }
+  if (nicks.some(n => !n)) { $('#hotseatError').textContent = t('home.errNames'); return; }
+  if (new Set(nicks).size !== nicks.length) { $('#hotseatError').textContent = t('home.errDupNames'); return; }
   $('#hotseatBtn').disabled = true;
   try {
     const res = await fetch('/api/games', {
@@ -172,7 +177,7 @@ $('#hotseatBtn').addEventListener('click', async () => {
       body: JSON.stringify({ token: getToken(), mode: 'hotseat', nicks, colors: hotseatColors, multiMove: $('#hotseatMulti').checked, gameMode: $('#hotseatMode').dataset.mode })
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Ошибка сервера');
+    if (!res.ok) throw new Error(errText(data) || t('home.errServer'));
     // ник нужен для входа на страницу игры (в хотсите не показывается)
     if (!localStorage.getItem('sb_nick')) localStorage.setItem('sb_nick', nicks[0]);
     location.href = '/game/' + data.gameId;
@@ -194,13 +199,20 @@ function renderBadge() {
     const ava = me.avatar
       ? `<span class="ava"><img src="${escapeHtml(me.avatar)}" alt="" referrerpolicy="no-referrer"></span>`
       : '<span class="ava">👤</span>';
-    box.innerHTML = `${ava}<span class="who" title="${escapeHtml(me.email || '')}">${escapeHtml(me.nick || 'игрок')}</span><button class="small" id="logoutBtn" type="button">Выйти</button>`;
+    box.innerHTML = `${ava}<span class="who" title="${escapeHtml(me.email || '')}">${escapeHtml(me.nick || t('common.player'))}</span><button class="small" id="logoutBtn" type="button">${t('common.logout')}</button>`;
     $('#logoutBtn').addEventListener('click', doLogout);
   } else {
-    box.innerHTML = '<button class="small primary" id="badgeLogin" type="button">🔑 Войти</button>';
+    box.innerHTML = `<button class="small primary" id="badgeLogin" type="button">${t('common.login')}</button>`;
     $('#badgeLogin').addEventListener('click', () => openLogin(null));
   }
 }
+
+// язык сменили на лету — перерисовываем свою динамику (разметку обновит сам i18n.js)
+window.addEventListener('sb:lang', () => {
+  renderBadge();
+  renderHotseatNames();
+  if (lastBrowse) renderBrowse(lastBrowse);
+});
 
 async function loadMe() {
   try { me = await (await fetch('/api/auth/me')).json(); } catch { me = { loggedIn: false }; }
@@ -246,8 +258,11 @@ async function onGoogleCredential(resp) {
       body: JSON.stringify({ credential: resp.credential, nick })
     });
     const data = await r.json();
-    if (!r.ok) { $('#loginError').textContent = data.error || 'Не удалось войти'; return; }
-    me = { loggedIn: true, nick: data.nick, email: data.email, avatar: data.avatar };
+    if (!r.ok) { $('#loginError').textContent = errText(data) || t('home.errLogin'); return; }
+    me = { loggedIn: true, nick: data.nick, email: data.email, avatar: data.avatar, lang: data.lang };
+    // у аккаунта свой язык — он главнее того, что выбрал гость на этом устройстве.
+    // persist:false: значение и так пришло из профиля, писать его обратно незачем.
+    if (data.lang) SBI18n.set(data.lang, { persist: false });
     // аккаунт — источник правды: применяем его сохранённый ник везде
     localStorage.setItem('sb_nick', data.nick);
     $('#nick').value = data.nick;
@@ -259,7 +274,7 @@ async function onGoogleCredential(resp) {
     const act = pendingAction;
     closeLogin();
     if (act) act();   // продолжить то, ради чего входили (онлайн/лобби)
-  } catch { $('#loginError').textContent = 'Сеть недоступна'; }
+  } catch { $('#loginError').textContent = t('home.errNet'); }
 }
 
 async function doLogout() {
@@ -297,10 +312,11 @@ $('#loginOverlay').addEventListener('click', e => { if (e.target.id === 'loginOv
       const v = cfg.version || {};
       // в подвале — только номер версии; сборка и дата остаются в /api/config и в логе сервера
       vEl.textContent = 'v' + (v.version || '?');
-      vEl.title = v.build ? `сборка ${v.build}${v.date ? ' · ' + v.date : ''}` : 'версия сборки';
+      vEl.title = v.build ? t('home.buildTitle', { build: v.build }) + (v.date ? ' · ' + v.date : '') : t('home.buildUnknown');
     }
     // селекторы игрового режима (из включённых на сервере) + показ описания выбранного
-    const modes = Array.isArray(cfg.modes) && cfg.modes.length ? cfg.modes : [{ key: 'classic', name: 'Классический', desc: '' }];
+    const modes = (Array.isArray(cfg.modes) && cfg.modes.length ? cfg.modes : ['classic'])
+      .map(key => ({ key, name: t(`mode.${key}.name`), desc: t(`mode.${key}.desc`) }));
     document.querySelectorAll('.mode-dd').forEach(host => {
       // дуэль — только онлайн и против бота (строго 1на1); «на одном устройстве» её не предлагаем.
       const ms = host.id === 'hotseatMode' ? modes.filter(m => m.key !== 'duel') : modes;
@@ -349,7 +365,7 @@ $('#loginOverlay').addEventListener('click', e => { if (e.target.id === 'loginOv
 
 $('#createBtn').addEventListener('click', async () => {
   const nick = $('#nick').value.trim();
-  if (!nick) { $('#createError').textContent = 'Сначала впиши ник!'; return; }
+  if (!nick) { $('#createError').textContent = t('home.errNickFirst'); return; }
   localStorage.setItem('sb_nick', nick);
   $('#createBtn').disabled = true;
   try {
@@ -371,7 +387,7 @@ $('#createBtn').addEventListener('click', async () => {
     const data = await res.json();
     // редкий случай: cookie протухла между открытием редактора и созданием — попросим войти и повторим
     if (res.status === 401 && data.needAuth) { $('#createBtn').disabled = false; return openLogin(() => $('#createBtn').click()); }
-    if (!res.ok) throw new Error(data.error || 'Ошибка сервера');
+    if (!res.ok) throw new Error(errText(data) || t('home.errServer'));
     location.href = '/game/' + data.gameId;
   } catch (e) {
     $('#createError').textContent = e.message;
@@ -383,7 +399,7 @@ $('#createBtn').addEventListener('click', async () => {
 $('#botNick').value = localStorage.getItem('sb_nick') || '';
 $('#botBtn').addEventListener('click', async () => {
   const nick = $('#botNick').value.trim();
-  if (!nick) { $('#botError').textContent = 'Впиши ник!'; return; }
+  if (!nick) { $('#botError').textContent = t('home.errNick'); return; }
   localStorage.setItem('sb_nick', nick);
   $('#botBtn').disabled = true;
   try {
@@ -404,7 +420,7 @@ $('#botBtn').addEventListener('click', async () => {
       })
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Ошибка сервера');
+    if (!res.ok) throw new Error(errText(data) || t('home.errServer'));
     location.href = '/game/' + data.gameId;
   } catch (e) {
     $('#botError').textContent = e.message;

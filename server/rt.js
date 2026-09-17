@@ -117,7 +117,7 @@ export function tickWind(game, now, dt) {
     game.rt.windShiftAt = now + RT.WIND_MS * (0.75 + Math.random() * 0.5);
     w.targetAng = Math.random() * Math.PI * 2;
     w.targetStr = 0.3 + Math.random() * 0.7;
-    pushLog(game, '🌬 Ветер меняется…');
+    pushLog(game, { k: 'log.windShift' });
   }
   const maxTurn = RT.WIND_TURN * dt / 1000;
   w.ang = norm(w.ang + clamp(norm((w.targetAng ?? w.ang) - w.ang), -maxTurn, maxTurn));

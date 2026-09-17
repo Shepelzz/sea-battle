@@ -1,6 +1,6 @@
 {
   "name": "sea-battle",
-  "version": "0.3.18",
+  "version": "0.4.0",
   "description": "Улучшенный морской бой — браузерная пошаговая игра с линейкой",
   "main": "server/index.js",
   "type": "module",
@@ -11,6 +11,7 @@
     "start": "node --env-file-if-exists=.env server/index.js",
     "dev": "node --env-file-if-exists=.env --watch server/index.js",
     "debug": "SB_DEBUG=1 node --env-file-if-exists=.env --watch server/index.js",
+    "vendor:i18next": "cp node_modules/i18next/dist/umd/i18next.min.js public/vendor/i18next.min.js",
     "release:patch": "npm version patch -m \"release v%s\" && git push --follow-tags",
     "release:minor": "npm version minor -m \"release v%s\" && git push --follow-tags",
     "release:major": "npm version major -m \"release v%s\" && git push --follow-tags",
@@ -25,6 +26,7 @@
     "socket.io": "^4.8.1"
   },
   "devDependencies": {
+    "i18next": "^26.4.2",
     "socket.io-client": "^4.8.3"
   }
 }

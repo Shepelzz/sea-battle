@@ -80,7 +80,7 @@ eq('SHIP_ACTIONS', [...SHIP_ACTIONS].sort(), ['attack', 'broadside', 'move', 'ou
   put(g, 0, 'shkhuna', 800, 600);
   applyAction(g, 'A', { type: 'move', shipId: s1.id, x: 715, y: 600 });
   const r = applyAction(g, 'A', { type: 'move', shipId: s1.id, x: 730, y: 600 });
-  check('многоход: повтор тем же кораблём отклонён', !r.ok && /уже ходил/i.test(r.error || ''), JSON.stringify(r));
+  check('многоход: повтор тем же кораблём отклонён', !r.ok && r.error === 'err.shipActed', JSON.stringify(r));
   eq('повтор не сменил ход и не сжёг слот', [g.turn.idx, g.turn.moves], [0, 1]);
 }
 
@@ -152,7 +152,7 @@ for (const endType of ['skip', 'endTurn']) {
   eq('клад собран', g.map.lootIslands[0].looted, true);
   eq('собравший корабль помечен сходившим', g.turn.actedShips.includes(s.id), true);
   const rm = applyAction(g, 'A', { type: 'move', shipId: s.id, x: 600, y: 600 });
-  check('после сбора этим кораблём ходить нельзя', !rm.ok && /уже ходил/i.test(rm.error || ''), JSON.stringify(rm));
+  check('после сбора этим кораблём ходить нельзя', !rm.ok && rm.error === 'err.shipActed', JSON.stringify(rm));
 }
 
 // === Многоход: АВТО-завершение хода, когда больше нечем ходить (под конец партии судов мало) ===
@@ -300,7 +300,7 @@ const convoy = (g, lead, mates, x, y) =>
   put(g, 1, 'brig', 800, 600);                       // fireRange 140 — контакт
   const r = convoy(g, a, [b], 600, 600);
   check('конвой: в боевом контакте — отказ', !r.ok, r.error);
-  check('конвой: причина названа', /враг/i.test(r.error || ''), r.error);
+  check('конвой: причина названа', r.error === 'err.convoyContact', r.error);
 }
 {
   const g = calm(setup(true));
@@ -320,8 +320,10 @@ const convoy = (g, lead, mates, x, y) =>
   put(g, 0, 'shkhuna', 500, 500);                    // запасной, чтобы ход не закрылся «нечем ходить»
   const r = convoy(g, bark, [freg], 760, 640);
   check('строй: баркас не поведёт фрегат', !r.ok, r.error);
+  // отказ — КЛЮЧ + параметры-ключи имён: текст соберёт клиент на своём языке (см. server/i18n.js)
   check('строй: в отказе названы оба судна',
-    /баркас/i.test(r.error || '') && /фрегат/i.test(r.error || ''), r.error);
+    r.error === 'err.convoyRank' && r.params?.lead === 'ship.barkas.name' && r.params?.senior === 'ship.fregat.name',
+    JSON.stringify(r));
   eq('строй: отказ никого не сдвинул', [bark.x, bark.y, freg.x, freg.y], [700, 600, 760, 600]);
   // а старший ведёт младшего как ни в чём не бывало
   const ok2 = convoy(g, freg, [bark], 820, 600);
@@ -367,7 +369,8 @@ eq('ранг: неизвестный тип не старше никого', shi
   g.turn.moves = movesBudget(g.config) - convoyCost(CONVOY_MAX) + 1; g.turn.actedShips = [];
   const r = convoy(g, a, [b, c], 760, 600);
   check('конвой: не влезает в остаток хода — отказ', !r.ok, r.error);
-  check('конвой: в отказе видно, сколько осталось', /осталось/.test(r.error || ''), r.error);
+  check('конвой: в отказе видно, сколько осталось',
+    r.error === 'err.convoyNoMoves' && Number.isFinite(r.params?.left) && Number.isFinite(r.params?.need), JSON.stringify(r));
 }
 {
   const g = calm(setup(false));                      // классика: один манёвр за ход

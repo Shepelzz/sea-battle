@@ -42,16 +42,16 @@ const banishPirates = g => {
   const sh = put(g, 0, 'shkhuna', isl.x + isl.radius + 30, isl.y);
   const far = put(g, 0, 'brig', isl.x + isl.radius + 300, isl.y);
   const r0 = applyAction(g, 'p0', { type: 'outpost', shipId: sh.id, islandId: ii });
-  check('на НЕзалутанном острове строить нельзя', !r0.ok && /клад/.test(r0.error), r0.error || '');
+  check('на НЕзалутанном острове строить нельзя', !r0.ok && r0.error === 'err.lootFirst', r0.error || '');
   isl.looted = true;
   const r1 = applyAction(g, 'p0', { type: 'outpost', shipId: far.id, islandId: ii });
-  check('издалека строить нельзя', !r1.ok && /вплотную/.test(r1.error), r1.error || '');
+  check('издалека строить нельзя', !r1.ok && r1.error === 'err.comeCloserToIsland', r1.error || '');
   g.players[0].gold = 100;
   const r2 = applyAction(g, 'p0', { type: 'outpost', shipId: sh.id, islandId: ii });
-  check('без золота строить нельзя', !r2.ok && /золота/.test(r2.error), r2.error || '');
+  check('без золота строить нельзя', !r2.ok && r2.error === 'err.noGoldFor', r2.error || '');
   g.players[0].gold = 1000;
   const rNoShip = applyAction(g, 'p0', { type: 'outpost', islandId: ii }); // первая постройка БЕЗ корабля
-  check('первая постройка без корабля — нельзя', !rNoShip.ok && /корабль/.test(rNoShip.error), rNoShip.error || '');
+  check('первая постройка без корабля — нельзя', !rNoShip.ok && rNoShip.error === 'err.notYourShip', rNoShip.error || '');
   const r3 = applyAction(g, 'p0', { type: 'outpost', shipId: sh.id, islandId: ii });
   check('⛺ ур.1 построен, золото списано', r3.ok && isl.outpost?.level === 1 && isl.outpost.owner === 0 && g.players[0].gold === 1000 - L1.price);
   check('постройка = действие корабля (пометлен сходившим)', (g.turn.actedShips || []).includes(sh.id));
@@ -62,7 +62,7 @@ const banishPirates = g => {
   applyAction(g, 'p0', { type: 'skip' }); // ход p1
   const foe = put(g, 1, 'shkhuna', isl.x + isl.radius + 30, isl.y - 10);
   const r5 = applyAction(g, 'p1', { type: 'outpost', shipId: foe.id, islandId: ii });
-  check('на чужом аванпосте строить нельзя', !r5.ok && /чужой/.test(r5.error), r5.error || '');
+  check('на чужом аванпосте строить нельзя', !r5.ok && r5.error === 'err.enemyOutpost', r5.error || '');
 }
 
 // ═══════════════ Перки в начале хода владельца ═══════════════
@@ -94,7 +94,7 @@ const banishPirates = g => {
   const foe = put(g, 0, 'shkhuna', isl.x + 100, isl.y);
   const fr = put(g, 0, 'fregat', isl.x + 120, isl.y);
   const r = applyAction(g, 'p0', { type: 'attack', shipId: fr.id, targetType: 'outpost', targetId: 0 }); // пока ход p0
-  check('мир: чужой аванпост мортирой не тронуть', !r.ok && /Мирное/.test(r.error), r.error || '');
+  check('мир: чужой аванпост мортирой не тронуть', !r.ok && /^err\.peace/.test(r.error), r.error || '');
   applyAction(g, 'p0', { type: 'skip' }); // → ход p1: перки его форта
   check('мир: форт НЕ стреляет', foe.hp === SHIP_TYPES.shkhuna.hp);
 }
@@ -108,7 +108,7 @@ const banishPirates = g => {
   const fr = put(g, 0, 'fregat', isl.x + isl.radius + 60, isl.y);
   const far = put(g, 0, 'fregat', isl.x + 600, isl.y);
   const rFar = applyAction(g, 'p0', { type: 'attack', shipId: far.id, targetType: 'outpost', targetId: 0 });
-  check('мортира: вне дальности — отказ', !rFar.ok && /дальности/.test(rFar.error), rFar.error || '');
+  check('мортира: вне дальности — отказ', !rFar.ok && rFar.error === 'err.outpostOutOfRange', rFar.error || '');
   const r1 = applyAction(g, 'p0', { type: 'attack', shipId: fr.id, targetType: 'outpost', targetId: 0 });
   check('мортира бьёт аванпост полным уроном', r1.ok && isl.outpost.hp === L1.hp - SHIP_TYPES.fregat.dmg, `(hp ${isl.outpost?.hp})`);
   applyAction(g, 'p0', { type: 'skip' });

@@ -66,7 +66,7 @@ function join(nick) {
         return;
       }
       showJoin(!!res.needAuth);
-      if (!res.needAuth) $('#nickError').textContent = res.error || '';
+      if (!res.needAuth) $('#nickError').textContent = errText(res);
       return;
     }
     authRetried = false;
@@ -88,8 +88,8 @@ function showJoin(needAuth) {
   $('#nickBtn').classList.toggle('hidden', lockToAuth);
   $('#joinHint').textContent = !needAuth ? ''
     : (me.loggedIn
-        ? 'Не удалось подтвердить сессию. Обнови страницу (⌘R / Ctrl+R) — должно пустить.'
-        : 'Это онлайн-баттл — войди через Google, чтобы присоединиться. Статистика привяжется к аккаунту.');
+        ? t('game.joinSession')
+        : t('game.joinAuth'));
   if (showGoogle) renderGoogleBtn();
 }
 
@@ -128,7 +128,7 @@ async function onGoogleCredential(resp) {
       body: JSON.stringify({ credential: resp.credential, nick })
     });
     const data = await r.json();
-    if (!r.ok) { $('#nickError').textContent = data.error || 'Не удалось войти'; return; }
+    if (!r.ok) { $('#nickError').textContent = errText(data) || t('home.errLogin'); return; }
     me = { loggedIn: true, nick: data.nick, email: data.email, avatar: data.avatar };
     localStorage.setItem('sb_nick', data.nick);
     // Сокет подключался ДО входа (рукопожатие без cookie). Переподключаемся, чтобы сервер увидел
@@ -136,7 +136,7 @@ async function onGoogleCredential(resp) {
     authRetried = false;
     if (socket.connected) socket.disconnect();
     socket.connect();
-  } catch { $('#nickError').textContent = 'Сеть недоступна'; }
+  } catch { $('#nickError').textContent = t('home.errNet'); }
 }
 
 // Конфиг сервера (читы + Google) и кто я.
@@ -160,7 +160,7 @@ async function onGoogleCredential(resp) {
 
 $('#nickBtn').addEventListener('click', () => {
   const nick = $('#nickInput').value.trim();
-  if (!nick) { $('#nickError').textContent = 'Впиши ник!'; return; }
+  if (!nick) { $('#nickError').textContent = t('home.errNick'); return; }
   localStorage.setItem('sb_nick', nick);
   authRetried = false;                          // ручная попытка — даём свежий ре-коннект при нужде
   join(nick);
@@ -208,19 +208,34 @@ function updateTab() {
   if (key === tabKey) return;
   tabKey = key;
   if (state.status === 'lobby') {
-    setFavicon('lobby'); document.title = '⏳ Лобби — Морской бой';
+    setFavicon('lobby'); document.title = t('game.tabLobby');
   } else if (state.status === 'finished') {
-    setFavicon('over'); document.title = '🏁 Баттл окончен — Морской бой';
+    setFavicon('over'); document.title = t('game.tabOver');
   } else if (state.status === 'active' && state.rt) {
-    setFavicon('myturn'); document.title = '⚡ Полный вперёд — Морской бой';
+    setFavicon('myturn'); document.title = t('game.tabRt');
   } else if (state.status === 'active' && !spectator && isMyTurn()) {
-    setFavicon('myturn'); document.title = '🟢 Твой ход! — Морской бой';
+    setFavicon('myturn'); document.title = t('game.tabMyTurn');
   } else if (state.status === 'active') {
     setFavicon('wait');
-    const cur = state.players[state.turn.idx]?.nick ?? '…';
-    document.title = `🔴 Ход: ${cur} — Морской бой`;
+    const cur = nickOf(state.players[state.turn.idx]) || '…';
+    document.title = t('game.tabTurnOf', { nick: cur });
   }
 }
+
+// Смена языка: подписи на канве, сайдбар и панели рисуются из JS — перерисовываем их сами
+// (статическую разметку обновляет public/js/i18n.js).
+window.addEventListener('sb:lang', () => {
+  if (!state) return;
+  tabKey = null;            // сбросить мемоизацию заголовка вкладки — иначе он останется на старом языке
+  lastLogSig = null;        // и журнала — он мемоизируется по числу записей, а не по языку
+  renderSidebar();
+  renderOverlays();   // лобби, верфь, финальная таблица
+  updateActionButtons();
+  updateOutpostPanel();
+  updateMoveHint();
+  updateTab();
+  render();
+});
 
 // ============ АНИМАЦИИ ============
 let effects = [];          // активные эффекты {kind, ..., start, dur}
@@ -692,6 +707,17 @@ const isMyTurn = () => {
   return myIdx() === state.turn.idx && !!state.players[myIdx()]?.alive;
 };
 const ST = t => state.shipTypes[t];
+// Ник игрока — как есть, ник БОТА приезжает ключом словаря (звание переводится). tr() пропускает
+// всё, что на ключ не похоже, поэтому годится для любого участника.
+const nickOf = p => tr(p && p.nick);
+// Имя и описание класса — из словаря: сервер шлёт только тип и цифры (см. SHIP_TYPES в config.js).
+// В описания подставляем те же цифры из стейта, чтобы текст не разъезжался с балансом.
+const shipName = type => t(`ship.${type}.name`);
+const shipDesc = type => t(`ship.${type}.desc`, { fishing: ST(type)?.fishing ?? 0 });
+// постройка на острове: имя уровня — из словаря (сервер шлёт только цифры и иконку).
+// Ключи перечислены явно, чтобы их видел test-i18n.mjs.
+const OUTPOST_NAMES = ['outpost.0.name', 'outpost.1.name', 'outpost.2.name'];
+const outpostName = lvlIdx => t(OUTPOST_NAMES[lvlIdx] || OUTPOST_NAMES[0]);
 
 // ── 🐞 АВТО-ПРОПУСК ХОДА (кнопка «⏭ пропускать ходы») ──
 // Нужно, чтобы смотреть, как боты играют партию, не кликая «Пропустить» каждый ход.
@@ -713,7 +739,7 @@ function maybeAutoPass() {
     socket.emit('action', { type: 'skip' }, r => {
       if (r?.ok) return;
       debugPass = false; syncPassBtn();                    // не крутим отказ по кругу
-      debugLine('⏭ авто-пропуск выключен: ' + (r?.error || 'ход не принят'));
+      debugLine('⏭ авто-пропуск выключен: ' + (errText(r) || 'ход не принят'));
     });
   }, 400);
 }
@@ -809,7 +835,7 @@ function maybeMovesToast(prev, s) {
   if (!prev || prev.turn.idx !== s.turn.idx || prev.turn.number !== s.turn.number) return; // смена хода, а не суб-ход
   if ((s.turn.moves || 0) <= (prev.turn.moves || 0)) return; // ходов не прибавилось — действие не моё
   const left = movesLeft();
-  if (left > 0) hudToast(`⚓ Осталось ходов: ${left} — ходи дальше или «Завершить ход»`);
+  if (left > 0) hudToast(t('game.movesLeft', { count: left }));
 }
 
 // Баннер мирного времени (режим «Развитие»): сверху карты, ненавязчиво. Тает, когда мир кончился.
@@ -822,14 +848,13 @@ function updatePeaceBanner(prev, s) {
   if (show) {
     if (pc.leftMs != null) { // ⚡ реалтайм: мир по времени — обратный отсчёт (обновляется тиками стейта)
       const sec = Math.ceil(pc.leftMs / 1000);
-      el.textContent = `🕊 Мирное время — до войны ${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+      el.textContent = t('game.peaceTimer', { time: `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}` });
     } else {
       const left = Math.max(1, pc.until - pc.round + 1);
-      const word = left === 1 ? 'раунд' : left < 5 ? 'раунда' : 'раундов';
-      el.textContent = `🕊 Мирное время — до войны ${left} ${word}`;
+      el.textContent = t('game.peaceRounds', { count: left });   // склонение — на Intl.PluralRules
     }
   } else if (prev?.peace?.active && pc && !pc.active) {
-    hudToast('⚔️ Мирное время кончилось — война!', 4000); // разовый сигнал на старте войны
+    hudToast(t('game.warStarted'), 4000); // разовый сигнал на старте войны
   }
 }
 
@@ -842,11 +867,11 @@ function updatePauseUI(s) {
   btn.classList.toggle('hidden', !rtActive);
   const paused = !!(rtActive && s.rt.pausedAt);
   btn.textContent = paused ? '▶️' : '⏸';
-  btn.title = paused ? 'Продолжить' : 'Пауза';
+  btn.title = t(paused ? 'game.resumeTitle' : 'game.pauseTitle');
   ov.classList.toggle('hidden', !paused);
   if (paused) {
-    const who = s.players[s.rt.pausedBy]?.nick || '?';
-    $('#pauseWho').textContent = `⏸ Пауза — игру остановил ${who}`;
+    const who = nickOf(s.players[s.rt.pausedBy]) || '?';
+    $('#pauseWho').textContent = t('game.pausedBy', { who });
   }
 }
 
@@ -867,7 +892,7 @@ function hideShipNote() {
 
 function sendAction(action) {
   socket.emit('action', action, res => {
-    if (!res.ok) errToast(res.error);
+    if (!res.ok) errToast(errText(res));
     else {
       if (action.type === 'move' || action.type === 'convoy') localStorage.setItem('sb_moved', '1'); // сходил — демо больше не нужно
       basket = {};
@@ -1105,7 +1130,7 @@ function drawBase(b, i, { alive, hpFrac, dim }) {
   drawFort(sx(b.x), sy(b.y), b.radius * view.scale * 0.54, p.color, alive ? FORT_STONE : FORT_DEAD, alive);
   ctx.font = `bold ${Math.max(12, 15 * view.scale)}px Neucha, cursive`;
   ctx.fillStyle = '#2b3a55'; ctx.textAlign = 'center';
-  ctx.fillText(p.nick, sx(b.x), sy(b.y + b.radius) + 16);
+  ctx.fillText(nickOf(p), sx(b.x), sy(b.y + b.radius) + 16);
   ctx.globalAlpha = 1;
   if (alive && hpFrac != null) hpBar(sx(b.x), sy(b.y + b.radius) + 22, 56, hpFrac, '#27ae60');
   else if (!alive) { ctx.font = `${20 * view.scale + 8}px serif`; ctx.fillText('💀', sx(b.x), sy(b.y) + 6); }
@@ -1607,10 +1632,10 @@ function render(canvasOnly) {
     ctx.textAlign = 'center';
     if (aim && aim.cancel) {
       ctx.fillStyle = '#9aa0a8';
-      ctx.fillText('↩ отмена', sx(sel.x), sy(sel.y) - 24);
+      ctx.fillText(t('game.aimCancel'), sx(sel.x), sy(sel.y) - 24);
     } else {
       ctx.fillStyle = ok ? '#2b3a55' : '#c0392b';
-      ctx.fillText(`${(d / 40).toFixed(1)} кл.`, mx, my - 8);
+      ctx.fillText(t('game.cells', { n: (d / 40).toFixed(1) }), mx, my - 8);
     }
 
     // тач-прицел: крестик-цель + маркер пальца с тонкой линией (палец не закрывает цель).
@@ -1669,7 +1694,7 @@ function drawConvoy(lead) {
     ctx.font = `bold ${Math.max(11, 13 * view.scale)}px Neucha, cursive`;
     ctx.textAlign = 'center';
     ctx.fillStyle = '#b8860b';
-    ctx.fillText(i === 0 ? '⚓ флагман' : String(i + 1), sx(s.x), sy(s.y) - (20 * view.scale + 10));
+    ctx.fillText(i === 0 ? t('game.flagship') : String(i + 1), sx(s.x), sy(s.y) - (20 * view.scale + 10));
     if (off && i > 0) {   // призрак спутника на новом месте (флагмана рисует общая «линейка»)
       ctx.globalAlpha = 0.35;
       drawShip({ ...s, x: s.x + off.x, y: s.y + off.y, _headingOverride: Math.atan2(off.y, off.x) }, false);
@@ -1679,8 +1704,8 @@ function drawConvoy(lead) {
   // подсказка полоской внизу кадра: жест нестандартный, и объяснить его надо ровно один раз —
   // прямо на карте (нижняя панель действий при штурвале скрыта, писать туда некуда)
   if (mode === 'convoy') drawConvoyHint(picked.length < 2
-    ? `⛵ тапни соседние суда (до ${convoyMax()}), потом потяни от флагмана`
-    : `⛵ в строю ${picked.length}/${convoyMax()} — потяни от флагмана, пойдут все`);
+    ? t('game.hintConvoyPick', { max: convoyMax() })
+    : t('game.hintConvoyReady', { n: picked.length, max: convoyMax() }));
 }
 
 function drawConvoyHint(text) {
@@ -1747,7 +1772,7 @@ function drawWindCompass() {
   ctx.font = '12px Neucha, cursive';
   ctx.fillStyle = '#2b3a55';
   ctx.textAlign = 'center';
-  ctx.fillText('🌬 ветер', cx, cy + R + 14);
+  ctx.fillText(t('game.wind'), cx, cy + R + 14);
   ctx.restore();
 }
 
@@ -1761,10 +1786,10 @@ function updateMoveHint() {
   // ⛵ строй объясняем на ЛЮБОМ экране: жест нестандартный, а подсказка снимает все вопросы
   const showConvoy = mode === 'convoy' && convoy;
   if (showConvoy) el.textContent = convoy.ids.length < 2
-    ? `⛵ тапни соседние суда (до ${convoyMax()}), затем потяни от флагмана`
-    : `⛵ в строю ${convoy.ids.length}/${convoyMax()} — потяни от флагмана, пойдут все`;
-  else if (showBroad) el.textContent = 'тапни в сторону цели — залп с этого борта';
-  else if (showMove) el.textContent = 'потяни от корабля, чтобы плыть';
+    ? t('game.hintConvoyPick', { max: convoyMax() })
+    : t('game.hintConvoyReady', { n: convoy.ids.length, max: convoyMax() });
+  else if (showBroad) el.textContent = t('game.hintBroadside');
+  else if (showMove) el.textContent = t('game.hintMove');
   el.classList.toggle('hidden', !(showMove || showBroad || showConvoy));
 }
 
@@ -2292,7 +2317,7 @@ canvas.addEventListener('pointermove', e => {
     // записка-стикер над сходившим своим кораблём при наведении мышью
     const overActed = isMyTurn() && state.ships.find(s =>
       s.owner === myIdx() && shipActed(s.id) && dist(p.x, p.y, sx(s.x), sy(s.y)) <= 28);
-    if (overActed) showShipNote(sx(overActed.x), sy(overActed.y) - 16, '⚓ Уже ходил');
+    if (overActed) showShipNote(sx(overActed.x), sy(overActed.y) - 16, t('game.acted'));
     else hideShipNote();
     // «линейка» хода / прицел залпа за курсором: в RT аним-цикл и так перерисует ближайшим
     // кадром — прямой render на каждый mousemove (до 120 Гц) там лишний, кадры удваивались
@@ -2314,8 +2339,8 @@ function endPointer(e) {
       deselect(); render(); return;
     }
     if (a.clamped) {                                // вне радиуса — без хода
-      if (convoy) { mode = 'convoy'; toast('🚫 Строй идёт по самому медленному — точка вне круга'); render(); return; }
-      errToast('🚫 Слишком далеко — точка вне круга хода');
+      if (convoy) { mode = 'convoy'; toast(t('game.convoyOutOfRange')); render(); return; }
+      errToast(t('game.outOfRange'));
       return;
     }
     if (a.dest && dist(a.sel.x, a.sel.y, a.dest.x, a.dest.y) > 4) {
@@ -2379,7 +2404,7 @@ function handleTap(pos, isTouch) {
     if (wsel && wsel.owner === myIdx()) {
       const hit = wheelHit(wsel, pos.x, pos.y);
       if (hit) {
-        if (hit.off) errToast(hit.offMsg || (hit.cdMs > 0 ? `⏳ Перезарядка: ${Math.ceil(hit.cdMs / 1000)}с` : '⚓ Сейчас недоступно'));
+        if (hit.off) errToast(hit.offMsg || (hit.cdMs > 0 ? t('game.cooldown', { sec: Math.ceil(hit.cdMs / 1000) }) : t('game.unavailable')));
         else { Sound.play('click'); hit.go(); }
         return;
       }
@@ -2394,7 +2419,7 @@ function handleTap(pos, isTouch) {
     const lead = shipById(convoy.lead);
     if (!lead) { cancelConvoy(); return; }
     if (clickedShip && clickedShip.id === lead.id) { // флагман: напоминаем жест, строй не рушим
-      showShipNote(sx(lead.x), sy(lead.y) - 16, '⛵ потяни от флагмана — пойдёт весь строй');
+      showShipNote(sx(lead.x), sy(lead.y) - 16, t('game.convoyDrag'));
       if (isTouch) { clearTimeout(shipNoteTimer); shipNoteTimer = setTimeout(hideShipNote, 2200); }
       return;
     }
@@ -2405,8 +2430,8 @@ function handleTap(pos, isTouch) {
     if (clickedShip && convoyMates(lead).some(s => s.id === clickedShip.id)) {
       if (convoy.ids.length >= convoyMax()) {
         toast(convoyMax() < convoyCfg().max
-          ? `⚓ На такой строй не хватает манёвров (осталось ${movesLeft()})`
-          : `⛵ В строю не больше ${convoyCfg().max} судов`);
+          ? t('game.convoyNoMoves', { left: movesLeft() })
+          : t('game.convoyTooMany', { count: convoyCfg().max }));
         return;
       }
       convoy.ids.push(clickedShip.id);
@@ -2414,11 +2439,11 @@ function handleTap(pos, isTouch) {
     }
     if (clickedShip && clickedShip.owner === myIdx()) { // своё, но не подходит — говорим, чем именно
       const flag = shipById(convoy.lead);
-      toast(shipInContact(clickedShip) ? '⚔️ Это судно в бою — строем его не увести'
-        : shipActed(clickedShip.id) || firedSides(clickedShip.id).length ? '⚓ Это судно уже ходило в этом ходу'
+      toast(shipInContact(clickedShip) ? t('game.convoyInBattle')
+        : shipActed(clickedShip.id) || firedSides(clickedShip.id).length ? t('game.convoyActed')
         : shipRank(clickedShip.type) > shipRank(flag.type)
-          ? `⚓ ${ST(clickedShip.type).name} старше флагмана — строй должен вести он`
-          : '⛵ В строй берут только суда рядом с флагманом');
+          ? t('game.convoySenior', { ship: shipName(clickedShip.type) })
+          : t('game.convoyNear'));
       return;
     }
     cancelConvoy(); return;                                     // тап по воде — выйти из набора
@@ -2477,7 +2502,7 @@ function handleTap(pos, isTouch) {
   // выбор своего корабля — из ЛЮБОГО режима (тап по кораблю всегда открывает штурвал)
   if (clickedShip && clickedShip.owner === myIdx() && isMyTurn()) {
     if (shipActed(clickedShip.id)) { // уже ходил — показываем записку (на тач сама исчезнет)
-      showShipNote(sx(clickedShip.x), sy(clickedShip.y) - 16, '⚓ Уже ходил');
+      showShipNote(sx(clickedShip.x), sy(clickedShip.y) - 16, t('game.acted'));
       if (isTouch) { clearTimeout(shipNoteTimer); shipNoteTimer = setTimeout(hideShipNote, 2200); }
       return;
     }
@@ -2490,7 +2515,7 @@ function handleTap(pos, isTouch) {
     if (!WHEEL_UI) {
       $('#shipActions').classList.remove('hidden');
       positionActionBar(clickedShip); // панель — на противоположной кораблю половине экрана
-      $('#shipActionsTitle').textContent = ST(clickedShip.type).icon + ' ' + ST(clickedShip.type).name;
+      $('#shipActionsTitle').textContent = ST(clickedShip.type).icon + ' ' + shipName(clickedShip.type);
     }
     updateActionButtons();
     render();
@@ -2534,10 +2559,10 @@ function outpostIslandAt(ship) {
 // ⛺ ПАНЕЛЬ АВАНПОСТА: клик по своему аванпосту → уровень, перки словами, кнопка «Улучшить».
 let outpostPanelIdx = null; // какой остров открыт (обновляется каждым стейтом, закрывается если снесли)
 function perkText(def) {
-  const parts = [`💰 +${def.income} золота/ход`];
-  if (def.heal) parts.push(`🛟 чинит твои корабли рядом (+${Math.round(def.heal * 100)}% прочности/ход)`);
-  if (def.gun) parts.push(`💥 пушка: −${def.gun} HP врагу/пирату рядом`);
-  parts.push('👁 дозор: снимает туман вокруг');
+  const parts = [t('game.perk.income', { gold: def.income })];
+  if (def.heal) parts.push(t('game.perk.heal', { p: Math.round(def.heal * 100) }));
+  if (def.gun) parts.push(t('game.perk.gun', { dmg: def.gun }));
+  parts.push(t('game.perk.watch'));
   return parts.join(' · ');
 }
 function openOutpostPanel(idx) {
@@ -2557,16 +2582,16 @@ function updateOutpostPanel() {
   const lv = state.outposts?.levels || [];
   const def = lv[op.level - 1], next = lv[op.level];
   $('#outpostPanel').classList.remove('hidden');
-  $('#outpostTitle').textContent = `${def.icon} ${def.name}${op.hp < def.hp ? ` · 🏚${op.hp}/${def.hp}` : ''}`;
+  $('#outpostTitle').textContent = `${def.icon} ${outpostName(op.level - 1)}${op.hp < def.hp ? ` · 🏚${op.hp}/${def.hp}` : ''}`;
   $('#outpostPerks').textContent = perkText(def);
   const btn = $('#btnOutpostUp'), hint = $('#outpostNext');
   btn.classList.toggle('hidden', !next);
   hint.classList.toggle('hidden', !next);
   if (next) {
     const gold = state.players[myIdx()]?.gold ?? 0;
-    btn.textContent = `⬆ ${next.icon} ${next.name} (${next.price})`;
+    btn.textContent = `⬆ ${next.icon} ${outpostName(op.level)} (${next.price})`;
     btn.disabled = gold < next.price || (!isRT() && !isMyTurn());
-    hint.textContent = `даст: ${perkText(next)}`;
+    hint.textContent = t('game.perk.next', { perks: perkText(next) });
   }
 }
 $('#btnOutpostUp').addEventListener('click', () => {
@@ -2615,7 +2640,7 @@ function updateActionButtons() {
     const isl = state.map.lootIslands[opIdx];
     const def = (state.outposts?.levels || [])[isl.outpost?.level || 0];
     const gold = state.players[myIdx()]?.gold ?? 0;
-    opBtn.textContent = `${def.icon} ${def.name} (${def.price})`;
+    opBtn.textContent = `${def.icon} ${outpostName(isl.outpost?.level || 0)} (${def.price})`;
     opBtn.dataset.island = opIdx;
     opBtn.disabled = gold < def.price;
   }
@@ -2627,18 +2652,18 @@ function updateActionButtons() {
     const mCd = cdLeft(sel, 'm'), rCd = cdLeft(sel, 'r');
     $('#btnMove').disabled = false;
     $('#btnFire').disabled = mCd > 0;
-    $('#btnFire').textContent = mCd > 0 ? `🎯 ${Math.ceil(mCd / 1000)}с…` : '🎯 Мортира';
+    $('#btnFire').textContent = mCd > 0 ? t('game.cdMortar', { sec: Math.ceil(mCd / 1000) }) : t('game.btnFire');
     $('#btnBroadside').disabled = bs > 0;
-    $('#btnBroadside').textContent = bs > 0 ? `💥 ${Math.ceil(bs / 1000)}с…` : '💥 Залп';
+    $('#btnBroadside').textContent = bs > 0 ? t('game.cdBroadside', { sec: Math.ceil(bs / 1000) }) : t('game.btnBroadside');
     $('#btnRepair').disabled = rCd > 0 || noCharges;
-    $('#btnRepair').textContent = rCd > 0 ? `🛟 ${Math.ceil(rCd / 1000)}с…` : '🛟 Чинить';
+    $('#btnRepair').textContent = rCd > 0 ? t('game.cdRepair', { sec: Math.ceil(rCd / 1000) }) : t('game.btnRepair');
     $('#btnCollectHere').disabled = false;
     $('#btnRecharge').disabled = false;
     return;
   }
-  $('#btnFire').textContent = '🎯 Мортира';                      // вернуть подписи после шторма
-  $('#btnBroadside').textContent = '💥 Залп';
-  $('#btnRepair').textContent = '🛟 Чинить';
+  $('#btnFire').textContent = t('game.btnFire');                      // вернуть подписи после шторма
+  $('#btnBroadside').textContent = t('game.btnBroadside');
+  $('#btnRepair').textContent = t('game.btnRepair');
   const fired = firedSides(sel.id), committed = fired.length > 0;
   $('#btnMove').disabled = committed;
   $('#btnFire').disabled = committed;
@@ -2678,23 +2703,23 @@ function wheelActions(sel) {
     const cd = rt ? Math.min(cdLeft(sel, 'p'), cdLeft(sel, 's')) : 0; // готов хотя бы один борт
     const bothUsed = !rt && fired.length >= 2;
     acts.push({
-      key: 'broadside', icon: '💥', label: 'залп',
+      key: 'broadside', icon: '💥', label: t('game.wheel.broadside'),
       cdMs: cd, cdMax: state.rt?.cds?.broadside || 1,
-      off: bothUsed || cd > 0, offMsg: bothUsed ? '💥 Оба борта уже стреляли в этом ходу' : null,
+      off: bothUsed || cd > 0, offMsg: bothUsed ? t('game.offBothSides') : null,
       go: () => { mode = 'broadside'; render(); }
     });
   }
   if (canMortar(sel)) acts.push({
-    key: 'mortar', icon: '🎯', label: 'мортира',
+    key: 'mortar', icon: '🎯', label: t('game.wheel.mortar'),
     cdMs: rt ? cdLeft(sel, 'm') : 0, cdMax: state.rt?.cds?.mortar || 1, off: committed || (rt && cdLeft(sel, 'm') > 0),
-    offMsg: committed ? '💥 Корабль даёт залп — мортира в этом ходу закрыта' : null,
+    offMsg: committed ? t('game.offMortar') : null,
     go: () => { mode = 'attack'; render(); }
   });
   if (st.repairer) acts.push({
-    key: 'repair', icon: '🛟', label: noCharges ? 'нет материалов' : 'чинить',
+    key: 'repair', icon: '🛟', label: t(noCharges ? 'game.wheel.noMaterials' : 'game.wheel.repair'),
     cdMs: rt ? cdLeft(sel, 'r') : 0, cdMax: state.rt?.cds?.repair || 1,
     off: committed || noCharges || (rt && cdLeft(sel, 'r') > 0),
-    offMsg: noCharges ? '🔧 Материалы кончились — пополни у своей базы' : null,
+    offMsg: noCharges ? t('game.offNoMaterials') : null,
     go: () => { mode = 'repair'; render(); }
   });
   // ⛵ СТРОЙ: вести соседние суда одним жестом. Появляется, только если рядом есть кого вести
@@ -2702,24 +2727,24 @@ function wheelActions(sel) {
   if (!rt && convoyOn() && convoyMax() >= 2 && convoyMates(sel).length) {
     const contact = shipInContact(sel);
     acts.push({
-      key: 'convoy', icon: '⛵', label: 'строй',
+      key: 'convoy', icon: '⛵', label: t('game.wheel.convoy'),
       off: committed || contact,
-      offMsg: contact ? '⚔️ Рядом враг — строем от боя не уйти' : null,
+      offMsg: contact ? t('game.offConvoyEnemy') : null,
       go: () => { convoy = { lead: sel.id, ids: [sel.id] }; mode = 'convoy'; render(); }
     });
   }
-  if (canShipCollect(sel)) acts.push({ key: 'collect', icon: '💰', label: 'собрать', off: committed,
+  if (canShipCollect(sel)) acts.push({ key: 'collect', icon: '💰', label: t('game.wheel.collect'), off: committed,
     go: () => sendAction({ type: 'collect' }) });
   const opIdx = outpostIslandAt(sel);
   if (opIdx >= 0) {
     const isl = state.map.lootIslands[opIdx];
     const def = (state.outposts?.levels || [])[isl.outpost?.level || 0];
     const gold = state.players[myIdx()]?.gold ?? 0;
-    acts.push({ key: 'outpost', icon: def.icon, label: `${def.name} · ${def.price}`,
-      off: committed || gold < def.price, offMsg: gold < def.price ? `Не хватает золота (нужно ${def.price})` : null,
+    acts.push({ key: 'outpost', icon: def.icon, label: `${outpostName(isl.outpost?.level || 0)} · ${def.price}`,
+      off: committed || gold < def.price, offMsg: gold < def.price ? t('game.offNoGold', { price: def.price }) : null,
       go: () => sendAction({ type: 'outpost', shipId: sel.id, islandId: opIdx }) });
   }
-  if (canShipRecharge(sel)) acts.push({ key: 'recharge', icon: '🔧', label: 'порох', off: committed,
+  if (canShipRecharge(sel)) acts.push({ key: 'recharge', icon: '🔧', label: t('game.wheel.recharge'), off: committed,
     go: () => sendAction({ type: 'recharge', shipId: sel.id }) });
   return acts;
 }
@@ -2796,7 +2821,7 @@ function drawCommandWheel() {
     // подпись — радиально снаружи (или секунды перезарядки)
     ctx.font = 'bold 11px Neucha, cursive'; ctx.fillStyle = 'rgba(43,58,85,.8)';
     const lx = wx + Math.cos(w.ang) * (L.Ic + 12), ly = wy + Math.sin(w.ang) * (L.Ic + 12) + 4;
-    ctx.fillText(w.act.cdMs > 0 ? `${Math.ceil(w.act.cdMs / 1000)}с` : w.act.label, lx, ly);
+    ctx.fillText(w.act.cdMs > 0 ? t('game.cdSec', { sec: Math.ceil(w.act.cdMs / 1000) }) : w.act.label, lx, ly);
     ctx.textBaseline = 'alphabetic';
   }
   ctx.restore();
@@ -2894,14 +2919,14 @@ function openInfo() {
         const isMortar = (state.broadside?.mortarShips || []).includes(type);
         const mm = state.broadside?.mortarShipMult ?? 0.5;
         const extra = [
-          isMortar ? `🎯 мортира ${Math.round(st.dmg * mm)}, порт ${Math.round(st.dmg * (st.portBonus || 1))}` : '',
+          isMortar ? t('game.fleet.mortar', { dmg: Math.round(st.dmg * mm), port: Math.round(st.dmg * (st.portBonus || 1)) }) : '',
           st.fishing ? `🐟 +${st.fishing}` : '',
-          st.healFrac ? `🛟 +${Math.round(st.healFrac * 100)}% HP` : '',
-          st.repairer ? `🔧 ${repairChargesMax()} ремонтов` : ''
+          st.healFrac ? t('game.fleet.heal', { p: Math.round(st.healFrac * 100) }) : '',
+          st.repairer ? t('game.fleet.repairs', { count: repairChargesMax() }) : ''
         ].filter(Boolean).join(' · ');
-        const power = st.repairer ? '🛟 ремонт' : (cannons ? `💥 залп до ${st.dmg}` : `⚔️${st.dmg}`);
+        const power = st.repairer ? t('game.fleet.repairer') : (cannons ? t('game.fleet.volley', { dmg: st.dmg }) : `⚔️${st.dmg}`);
         return `<div class="info-fleet-row">
-          <span class="nm">${st.icon} ${st.name}</span>
+          <span class="nm">${st.icon} ${shipName(type)}</span>
           <span class="st">${st.price}з · ❤️${st.hp} · ${power} · 🎯${(st.fireRange / 40).toFixed(1)} · 🧭${(st.move / 40).toFixed(1)}${extra ? ' · ' + extra : ''}</span>
         </div>`;
       }).join('');
@@ -2916,7 +2941,7 @@ function openInfo() {
   $('#tutToggle').disabled = seenThisMatch;
   $('#tutToggleLabel').classList.toggle('disabled', seenThisMatch);
   $('#tutToggleLabel').title = seenThisMatch
-    ? 'Подсказки в этом матче уже показаны — заново не включить. Вся нужная информация — в инфобазе ниже 👇'
+    ? t('game.tutSeen')
     : '';
   $('#infoOverlay').classList.remove('hidden');
 }
@@ -2958,20 +2983,20 @@ $('#btnShop').addEventListener('click', () => {
 $('#shopClose').addEventListener('click', () => $('#shopOverlay').classList.add('hidden'));
 $('#btnNudge').addEventListener('click', () => {
   socket.emit('nudge', res => {
-    if (!res.ok) toast(res.error);
-    else toast(res.emailSent ? '📯 Письмо отправлено, у игрока 10 минут' : '📯 У игрока 10 минут на ход');
+    if (!res.ok) toast(errText(res));
+    else toast(t(res.emailSent ? 'game.nudgeMail' : 'game.nudgeOk'));
   });
 });
 $('#btnSurrender').addEventListener('click', () => {
   const q = state?.config?.hotseat
-    ? `${state.players[state.turn.idx]?.nick} спускает флаг? Флот утонет, игрок выбывает.`
-    : 'Точно спустить флаг? Твой флот утонет, а ты выбываешь из баттла.';
+    ? t('game.surrenderHotseat', { nick: nickOf(state.players[state.turn.idx]) })
+    : t('game.surrenderAsk');
   if (!confirm(q)) return;
-  socket.emit('leave', res => { if (!res.ok) toast(res.error); });
+  socket.emit('leave', res => { if (!res.ok) toast(errText(res)); });
 });
 $('#leaveLobbyBtn').addEventListener('click', () => {
   socket.emit('leave', res => {
-    if (!res.ok) toast(res.error);
+    if (!res.ok) toast(errText(res));
     else location.href = '/';
   });
 });
@@ -2981,7 +3006,7 @@ $('#lobbyMinimize')?.addEventListener('click', () => { location.href = '/'; });
 socket.on('lobbyClosed', () => { location.href = '/'; });
 $('#btnBuy').addEventListener('click', () => {
   const ships = Object.entries(basket).flatMap(([t, n]) => Array(n).fill(t));
-  if (!ships.length) { toast('Корзина пуста — добавь корабли «+»'); return; }
+  if (!ships.length) { toast(t('game.basketEmpty')); return; }
   // дуэль, фаза закупки — это стартовый сбор флота (buyFleet), иначе обычная докупка (buy)
   sendAction({ type: state.phase === 'buy' ? 'buyFleet' : 'buy', ships });
 });
@@ -2996,13 +3021,13 @@ function renderSidebar() {
   const banner = $('#turnBanner');
   const showMoves = multiMoveOn() && state.status === 'active' && (isMyTurn() || state.config?.hotseat);
   const movesTag = showMoves ? ` ⚓${movesLeft()}/${movesPerTurn()}` : '';
-  if (state.status === 'lobby') banner.textContent = '⏳ Сбор флота…';
-  else if (state.phase === 'buy') banner.textContent = me?.ready ? '⏳ Ждём, пока соперник соберёт флот…' : '🛒 Собери флот — на всё золото!';
-  else if (state.status === 'finished') banner.textContent = '🏁 Баттл окончен';
-  else if (state.rt) banner.textContent = '⚡ Полный вперёд — реалтайм, жми и плыви!'; // ходов нет — только море и перезарядки
-  else if (state.config?.hotseat) banner.textContent = `✏️ Ходит: ${current?.nick} (№${state.turn.number})${movesTag}`;
-  else if (isMyTurn()) banner.textContent = `🔥 Твой ход!${movesTag}`;
-  else banner.textContent = `Ход: ${current?.nick ?? '…'} (№${state.turn.number})`;
+  if (state.status === 'lobby') banner.textContent = t('game.banner.lobby');
+  else if (state.phase === 'buy') banner.textContent = t(me?.ready ? 'game.banner.waitFleet' : 'game.banner.buyFleet');
+  else if (state.status === 'finished') banner.textContent = t('game.banner.over');
+  else if (state.rt) banner.textContent = t('game.banner.rt'); // ходов нет — только море и перезарядки
+  else if (state.config?.hotseat) banner.textContent = t('game.banner.hotseat', { nick: nickOf(current), n: state.turn.number }) + movesTag;
+  else if (isMyTurn()) banner.textContent = t('game.banner.myTurn') + movesTag;
+  else banner.textContent = t('game.banner.turnOf', { nick: nickOf(current) || '…', n: state.turn.number });
   banner.classList.toggle('my-turn', isMyTurn() && !state.config?.hotseat && !state.rt);
   // красная рамка «твой ход»: поднимаем на старте КАЖДОГО моего хода; гаснет, когда игрок «очнулся»
   // (повёл мышью / тапнул / нажал клавишу — слушатели в инициализации). В хотсите/шторме не нужна.
@@ -3033,7 +3058,7 @@ function renderSidebar() {
     const aliveShown = (fogActive() && i !== myIdx()) ? (fogLastSeen[i]?.alive ?? true) : p.alive;
     return `<div class="player-row ${aliveShown ? '' : 'dead'} ${state.status === 'active' && i === state.turn.idx ? 'current' : ''}">
       <span class="dot" style="background:${p.color}"></span>
-      <span>${p.isBot ? '🤖 ' : ''}${escapeHtml(p.nick)}${p.id === myId ? ' (ты)' : ''}</span>
+      <span>${p.isBot ? '🤖 ' : ''}${escapeHtml(nickOf(p))}${p.id === myId ? ' ' + t('game.youTag') : ''}</span>
       <span class="gold">${stats}</span>
     </div>`;
   }).join('');
@@ -3050,17 +3075,17 @@ function renderSidebar() {
     const btnSkip = $('#btnSkip');
     btnSkip.classList.toggle('hidden', !!state.rt);   // ⛈️ шторм: ходов нет — нечего пропускать
     btnSkip.disabled = !isMyTurn();
-    btnSkip.textContent = finishing ? '✅ Завершить ход' : '⏭ Пропустить';
+    btnSkip.textContent = t(finishing ? 'game.btnFinishTurn' : 'game.btnSkip');
     btnSkip.classList.toggle('primary', finishing && isMyTurn());
     $('#btnNudge').classList.toggle('hidden',
       !!state.rt || isMyTurn() || state.turn.nudged || !!state.players[state.turn.idx]?.isBot);
     $('#hint').textContent = state.rt
-      ? '⚡ Полный вперёд (бета): без ходов! Корабли плывут к точке сами (кликай куда угодно), залп и мортира стреляют по перезарядке.'
+      ? t('game.hintRt')
       : isMyTurn()
         ? (multiMoveOn()
-            ? `Ход тремя судами: до ${movesPerTurn()} действий за ход — двигай и стреляй разными кораблями, собирай добычу, покупай (осталось ${movesLeft()}). Закончил раньше — «Завершить ход».`
-            : 'Одно действие за ход: купить, собрать, передвинуть один корабль или выстрелить.')
-        : `Ждём ход игрока ${current?.nick}…`;
+            ? t('game.hintMulti', { max: movesPerTurn(), left: movesLeft() })
+            : t('game.hintSingle'))
+        : t('game.hintWait', { nick: nickOf(current) });
     if (!$('#shopOverlay').classList.contains('hidden')) renderShop();
   } else {
     $('#shopOverlay').classList.add('hidden');
@@ -3073,7 +3098,8 @@ function renderSidebar() {
   if (logSig !== lastLogSig) {
     lastLogSig = logSig;
     $('#log').innerHTML = [...state.log].reverse().map(l =>
-      `<div class="${l.type}">${escapeHtml(l.text)}</div>`).join('');
+      // l.text — служебная запись (дебаг/чит) как есть; иначе ключ + параметры с сервера
+      `<div class="${l.type}">${escapeHtml(l.text ?? tr(l.k, l.p))}</div>`).join('');
     $('#log').scrollTop = 0;
   }
 
@@ -3096,25 +3122,25 @@ function renderShop() {
   $('#shopDesc')?.classList.toggle('hidden', state.phase === 'buy');
   const total = Object.entries(basket).reduce((s, [t, n]) => s + ST(t).price * n, 0);
   $('#shopGold').textContent = `💰 ${me.gold}`;
-  $('#shopList').innerHTML = Object.entries(state.shipTypes).filter(([, st]) => !st.npc && !st.cheat && (!state.duel || !st.fishing)).map(([t, st]) => {
+  $('#shopList').innerHTML = Object.entries(state.shipTypes).filter(([, st]) => !st.npc && !st.cheat && (!state.duel || !st.fishing)).map(([type, st]) => {
     const cantAddMore = total + st.price > me.gold;
     return `
-    <div class="ship-card ${cantAddMore && !basket[t] ? 'unaffordable' : ''}" title="${st.desc}">
-      <div class="head"><span>${st.icon}</span><span class="nm">${st.name}</span><span class="price">${st.price} зол.</span></div>
+    <div class="ship-card ${cantAddMore && !basket[type] ? 'unaffordable' : ''}" title="${shipDesc(type)}">
+      <div class="head"><span>${st.icon}</span><span class="nm">${shipName(type)}</span><span class="price">${t('game.shop.price', { gold: st.price })}</span></div>
       <div class="stats">
-        <span title="Прочность">❤️ ${st.hp}</span>
+        <span title="${t('game.ship.hp')}">❤️ ${st.hp}</span>
         ${st.repairer
-          ? `<span title="Ремонт союзника за действие: доля его макс. HP">🛟 +${Math.round(st.healFrac * 100)}% HP</span>`
-          : `<span title="Урон за выстрел">⚔️ ${st.dmg}</span>`}
-        <span title="${st.repairer ? 'Радиус ремонта' : 'Дальность стрельбы'}">🎯 ${(st.fireRange / 40).toFixed(1)} кл.</span>
-        <span title="Дальность хода">🧭 ${(st.move / 40).toFixed(1)} кл.</span>
-        ${st.fishing ? `<span title="Доход за каждый ход в рыбном месте">🐟 +${st.fishing}/ход</span>` : ''}
-        ${st.portBonus ? `<span title="Урон по порту ×${st.portBonus}">🏰 ×${st.portBonus}</span>` : ''}
+          ? `<span title="${t('game.ship.healTitle')}">🛟 +${Math.round(st.healFrac * 100)}% HP</span>`
+          : `<span title="${t('game.ship.dmgTitle')}">⚔️ ${st.dmg}</span>`}
+        <span title="${t(st.repairer ? 'game.ship.healRange' : 'game.ship.fireRange')}">🎯 ${t('game.cells', { n: (st.fireRange / 40).toFixed(1) })}</span>
+        <span title="${t('game.ship.moveRange')}">🧭 ${t('game.cells', { n: (st.move / 40).toFixed(1) })}</span>
+        ${st.fishing ? `<span title="${t('game.ship.fishTitle')}">${t('game.ship.fishIncome', { gold: st.fishing })}</span>` : ''}
+        ${st.portBonus ? `<span title="${t('game.ship.portTitle', { x: st.portBonus })}">🏰 ×${st.portBonus}</span>` : ''}
       </div>
       <div class="qty">
-        <button class="small" data-shop="${t}" data-d="-1" ${!basket[t] ? 'disabled' : ''}>−</button>
-        <span class="cnt">${basket[t] || 0}</span>
-        <button class="small" data-shop="${t}" data-d="1" ${cantAddMore ? 'disabled' : ''}>+</button>
+        <button class="small" data-shop="${type}" data-d="-1" ${!basket[type] ? 'disabled' : ''}>−</button>
+        <span class="cnt">${basket[type] || 0}</span>
+        <button class="small" data-shop="${type}" data-d="1" ${cantAddMore ? 'disabled' : ''}>+</button>
       </div>
     </div>`;
   }).join('');
@@ -3122,21 +3148,21 @@ function renderShop() {
     const remaining = me.gold - total;
     const fullSpent = total > 0 && total <= me.gold && remaining < state.minShipPrice;
     $('#shopTotal').textContent = total
-      ? (fullSpent ? `Флот на ${total} зол. — в бой!` : `Осталось ${remaining} зол. — скупись на всё (мин. корабль ${state.minShipPrice})`)
-      : `Собери флот на все ${me.gold} зол.`;
+      ? (fullSpent ? t('game.shop.duelReady', { total }) : t('game.shop.duelLeft', { left: remaining, min: state.minShipPrice }))
+      : t('game.shop.duelAll', { gold: me.gold });
     $('#shopTotal').style.color = total > me.gold ? '#c0392b' : '';
     $('#btnBuy').disabled = !fullSpent;
-    $('#btnBuy').textContent = '⚔️ В бой!';
+    $('#btnBuy').textContent = t('game.shop.toBattle');
   } else {
-    $('#shopTotal').textContent = total ? `Итого: ${total} из ${me.gold} зол.` : 'Выбери корабли кнопкой «+»';
+    $('#shopTotal').textContent = total ? t('game.shop.total', { total, gold: me.gold }) : t('game.shop.pick');
     $('#shopTotal').style.color = total > me.gold ? '#c0392b' : '';
     $('#btnBuy').disabled = !total || total > me.gold || !isMyTurn();
-    $('#btnBuy').textContent = total ? `Купить за ${total} зол.` : 'Купить';
+    $('#btnBuy').textContent = total ? t('game.shop.buyFor', { total }) : t('game.shop.buy');
   }
   document.querySelectorAll('[data-shop]').forEach(b => b.addEventListener('click', () => {
-    const t = b.dataset.shop;
-    basket[t] = Math.max(0, (basket[t] || 0) + (+b.dataset.d));
-    if (!basket[t]) delete basket[t];
+    const type = b.dataset.shop;
+    basket[type] = Math.max(0, (basket[type] || 0) + (+b.dataset.d));
+    if (!basket[type]) delete basket[type];
     renderShop();
   }));
 }
@@ -3162,13 +3188,13 @@ function renderOverlays() {
   if (inLobby) {
     const cfg = state.config;
     const lobParts = [
-      state.modeName || 'Классический',
-      `${cfg.maxPlayers} игрока`,
-      cfg.turnTimer ? `таймер ${cfg.turnTimer} сек/ход` : 'без таймера'
+      t(`mode.${state.mode || 'classic'}.name`),
+      t('game.lobby.players', { count: cfg.maxPlayers }),
+      cfg.turnTimer ? t('game.lobby.timer', { sec: cfg.turnTimer }) : t('game.lobby.noTimer')
     ];
     if (!state.duel) {                                  // в дуэли правила фиксированы — туман/ход тремя судами не показываем
-      lobParts.push(cfg.fog ? 'туман войны' : 'без тумана');
-      lobParts.push(cfg.multiMove ? 'ход тремя судами' : 'по одному действию');
+      lobParts.push(t(cfg.fog ? 'game.lobby.fog' : 'game.lobby.noFog'));
+      lobParts.push(t(cfg.multiMove ? 'game.lobby.multi' : 'game.lobby.single'));
     }
     $('#lobbyConfig').textContent = lobParts.join(' · ');
     // показываем текущий ник (не перетираем, пока игрок печатает)
@@ -3178,20 +3204,20 @@ function renderOverlays() {
     if (me && state.palette) {
       const taken = new Set(state.players.filter(p => p.id !== myId).map(p => p.color));
       renderColorDropdown($('#lobbyColors'), state.palette, me.color,
-        c => socket.emit('setColor', { color: c }, r => { if (!r.ok) $('#lobbyError').textContent = r.error; }),
+        c => socket.emit('setColor', { color: c }, r => { if (!r.ok) $('#lobbyError').textContent = errText(r); }),
         taken);
     } else { $('#lobbyColors').innerHTML = ''; }
     $('#inviteUrl').textContent = location.href;
     const isCreator = (state.hostPid || state.players[0]?.id) === myId;
     $('#lobbySlots').innerHTML = Array.from({ length: cfg.maxPlayers }, (_, i) => {
       const p = state.players[i];
-      if (!p) return `<div class="slot">пусто…</div>`;
+      if (!p) return `<div class="slot">${t('game.lobby.slotEmpty')}</div>`;
       const dot = `<span class="dot" style="background:${p.color}"></span>`;
       if (p.isBot) {
-        const rm = isCreator ? `<button class="small slot-x" data-rmbot="${p.id}" title="Убрать бота">✖</button>` : '';
-        return `<div class="slot filled">${dot}🤖 ${escapeHtml(p.nick)}${rm}</div>`;
+        const rm = isCreator ? `<button class="small slot-x" data-rmbot="${p.id}" title="${t('game.lobby.rmBot')}">✖</button>` : '';
+        return `<div class="slot filled">${dot}🤖 ${escapeHtml(nickOf(p))}${rm}</div>`;
       }
-      return `<div class="slot filled">${dot}${escapeHtml(p.nick)}${p.id === myId ? ' (ты)' : ''}</div>`;
+      return `<div class="slot filled">${dot}${escapeHtml(nickOf(p))}${p.id === myId ? ' ' + t('game.youTag') : ''}</div>`;
     }).join('');
     // управление ботами (только создатель): боты ≤ половины слотов
     const botCount = state.players.filter(p => p.isBot).length;
@@ -3199,29 +3225,30 @@ function renderOverlays() {
     const canAddBot = isCreator && botCount < botLimit && state.players.length < cfg.maxPlayers;
     $('#lobbyBots').classList.toggle('hidden', !isCreator || state.duel); // в дуэли ботов не добавляют (1 на 1)
     $('#addBotBtn').disabled = !canAddBot;
-    $('#botHint').textContent = `боты: ${botCount}/${botLimit}` + (botCount >= botLimit ? ' (лимит)' : '');
+    $('#botHint').textContent = t('game.lobby.bots', { n: botCount, max: botLimit }) + (botCount >= botLimit ? ' ' + t('game.lobby.botLimit') : '');
     const humans = state.players.filter(p => !p.isBot).length;
     const canStart = isCreator && humans >= 2;
     $('#startBtn').classList.toggle('hidden', !isCreator);
     $('#startBtn').disabled = !canStart;
     $('#lobbyWait').textContent = isCreator
-      ? (humans < 2 ? 'Нужен ещё хотя бы один живой игрок (с ботами — это одиночный режим)'
-        : state.players.length < state.config.maxPlayers ? `Можно ждать ещё ${state.config.maxPlayers - state.players.length} или начинать`
-        : 'Все на борту!')
-      : 'Ждём, пока создатель начнёт игру…';
+      ? (humans < 2 ? t('game.lobby.needHuman')
+        : state.players.length < state.config.maxPlayers
+          ? t('game.lobby.canWait', { count: state.config.maxPlayers - state.players.length })
+          : t('game.lobby.allAboard'))
+      : t('game.lobby.waitHost');
   }
 
   // финал
   if (state.status === 'finished' && !finishShown) {
     finishShown = true;
     const winner = state.players[state.winner];
-    $('#finishTitle').textContent = `👑 Победитель — ${winner?.nick}!`;
+    $('#finishTitle').textContent = t('game.finish.winner', { nick: nickOf(winner) });
     const medals = ['🥇', '🥈', '🥉', '4.'];
     const sorted = [...state.players].sort((a, b) => (a.placement || 9) - (b.placement || 9));
     $('#finishTable').innerHTML = sorted.map(p => `
       <tr>
         <td class="medal">${medals[(p.placement || 4) - 1]}</td>
-        <td><span class="dot" style="display:inline-block;width:11px;height:11px;border-radius:50%;background:${p.color}"></span> ${escapeHtml(p.nick)}</td>
+        <td><span class="dot" style="display:inline-block;width:11px;height:11px;border-radius:50%;background:${p.color}"></span> ${escapeHtml(nickOf(p))}</td>
         <td>${p.stats.damageDealt}</td>
         <td>${p.stats.shipsSunk}</td>
         <td>${p.stats.shipsLost}</td>
@@ -3237,19 +3264,19 @@ $('#copyBtn').addEventListener('click', async () => {
   setTimeout(() => { $('#copyBtn').textContent = '📋'; }, 1500);
 });
 $('#startBtn').addEventListener('click', () => {
-  socket.emit('start', res => { if (!res.ok) $('#lobbyError').textContent = res.error; });
+  socket.emit('start', res => { if (!res.ok) $('#lobbyError').textContent = errText(res); });
 });
 // добавить бота в лобби
 $('#addBotBtn').addEventListener('click', () => {
   socket.emit('addBot', { level: $('#botLevelSel').value }, res => {
-    if (!res.ok) $('#lobbyError').textContent = res.error;
+    if (!res.ok) $('#lobbyError').textContent = errText(res);
   });
 });
 // убрать бота (делегирование — кнопки ✖ перерисовываются)
 $('#lobbySlots').addEventListener('click', e => {
   const b = e.target.closest('[data-rmbot]');
   if (b) socket.emit('removeBot', { botId: b.dataset.rmbot }, res => {
-    if (!res.ok) $('#lobbyError').textContent = res.error;
+    if (!res.ok) $('#lobbyError').textContent = errText(res);
   });
 });
 // смена своего ника прямо в лобби/игре — принимаем по уводу фокуса (blur) или Enter. Сервер обновит
@@ -3257,14 +3284,14 @@ $('#lobbySlots').addEventListener('click', e => {
 let lastSentNick = null;
 function saveLobbyNick() {
   const n = $('#lobbyNick').value.trim();
-  if (!n) { $('#lobbyError').textContent = 'Ник не может быть пустым'; return; }
+  if (!n) { $('#lobbyError').textContent = t('game.lobby.nickEmpty'); return; }
   const cur = state?.players?.find(p => p.id === myId)?.nick;
   if (n === cur || n === lastSentNick) return;   // ничего не поменялось — сервер не дёргаем
   lastSentNick = n;
   localStorage.setItem('sb_nick', n);
   if (me.loggedIn) me.nick = n;                  // синхронизируем локальное состояние аккаунта
   $('#lobbyError').textContent = '';
-  socket.emit('setNick', { nick: n }, r => { if (!r.ok) { $('#lobbyError').textContent = r.error; lastSentNick = null; } });
+  socket.emit('setNick', { nick: n }, r => { if (!r.ok) { $('#lobbyError').textContent = errText(r); lastSentNick = null; } });
 }
 $('#lobbyNickSave').addEventListener('click', saveLobbyNick);
 $('#lobbyNick').addEventListener('blur', saveLobbyNick);                       // увёл фокус — приняли
@@ -3278,7 +3305,7 @@ setInterval(() => {
     return;
   }
   const left = Math.max(0, Math.ceil((state.turn.deadline - Date.now()) / 1000));
-  $('#timerRow').textContent = `⏱ ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} до конца хода`;
+  $('#timerRow').textContent = t('game.turnTimeLeft', { time: `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` });
 }, 400);
 
 // ============ ОБУЧЕНИЕ (подсказки на первой игре) ============
@@ -3307,18 +3334,18 @@ const Tutorial = (() => {
     }
   }
   // прямоугольник цели в координатах экрана: el — селектор DOM, либо canvas-точка {x,y,r}
-  function targetRect(t) {
-    if (!t) return null;
-    if (t.sel) {
-      const el = $(t.sel);
+  function targetRect(tg) {
+    if (!tg) return null;
+    if (tg.sel) {
+      const el = $(tg.sel);
       if (!el || el.offsetParent === null) return null;
       const r = el.getBoundingClientRect();
       return { x: r.left - 6, y: r.top - 6, w: r.width + 12, h: r.height + 12 };
     }
-    if (t.world && state?.map) {
+    if (tg.world && state?.map) {
       const cr = canvasRect();
-      const px = cr.left + sx(t.world.x), py = cr.top + sy(t.world.y);
-      const rad = (t.world.r || 40) * view.scale + 16;
+      const px = cr.left + sx(tg.world.x), py = cr.top + sy(tg.world.y);
+      const rad = (tg.world.r || 40) * view.scale + 16;
       // вне видимой области — не подсвечиваем
       if (px < cr.left - 40 || px > cr.right + 40 || py < cr.top - 40 || py > cr.bottom + 40) return null;
       return { x: px - rad, y: py - rad, w: rad * 2, h: rad * 2 };
@@ -3356,7 +3383,7 @@ const Tutorial = (() => {
     card.style.maxWidth = cw + 'px';
     $('#coachText').innerHTML = step.text;
     $('#coachStep').textContent = `${idx + 1} / ${steps.length}`;
-    $('#coachNext').textContent = idx === steps.length - 1 ? '⚓ В бой!' : 'Далее →';
+    $('#coachNext').textContent = t(idx === steps.length - 1 ? 'game.coach.toBattle' : 'game.coach.next');
   }
 
   function show() {
@@ -3410,34 +3437,34 @@ const Tutorial = (() => {
     const pirate = state.ships.find(s => s.owner === -1);
 
     steps = [
-      { text: '⚓ <b>Привет, капитан!</b> Несколько коротких подсказок — и в бой. Это «морской бой на листке в клетку».' },
-      { text: 'Это твой <b>порт и флот</b>. Порт приносит немного золота каждый ход и <b>огрызается</b> 🏰 по тому, кто его атакует. Разобьют порт — ты выбываешь, береги его!',
+      { text: t('tut.hello') },
+      { text: t('tut.port'),
         target: { world: { x: myBase.x, y: myBase.y, r: myBase.radius } } },
       { text: multiMoveOn()
-          ? 'Ходите <b>по очереди</b>. За ход — до <b>трёх действий</b>: двигай и стреляй <b>разными</b> кораблями (одним — раз за ход), собирай добычу, покупай в верфи. Готов раньше — жми <b>«✅ Завершить ход»</b>.'
-          : 'Ходите <b>по очереди</b>. За ход — только <b>одно</b> действие: поплыть, выстрелить, собрать добычу или сходить в верфь.',
+          ? t('tut.turnMulti')
+          : t('tut.turnSingle'),
         target: { sel: '#turnBanner' } },
-      { text: 'Нажми на свой корабль → <b>«Плыть»</b> (в пределах контура; 🌬 по ветру он вытянут — уплывёшь дальше!) или <b>«💥 Залп»</b>. Главная атака — <b>бортовой залп</b>: бьёт только В БОРТ (повернись бортом к врагу!), наводишь как ход. Чем ближе цель к борту — тем больнее.',
+      { text: t('tut.move'),
         target: heavyShip ? { world: { x: heavyShip.x, y: heavyShip.y, r: 26 } } : null },
-      { text: 'За борт стреляешь раз в ход, но можно дать залп <b>и левым, и правым</b> бортом (это одно действие). А <b>фрегат и линкор</b> вдобавок имеют <b>🎯 Мортиру</b> — прицельный выстрел по одной цели, в т.ч. по <b>порту</b> (осада).',
+      { text: t('tut.broadside'),
         target: heavyShip ? { world: { x: heavyShip.x, y: heavyShip.y, r: 26 } } : null },
       // строй — только там, где он вообще есть (режим «ход тремя судами»)
-      multiMoveOn() && { text: '⛵ <b>Строй</b>: соседние суда можно вести <b>разом и за один манёвр</b> — так подкрепление не гоняешь по одному. Тапни корабль, жми <b>⛵</b> в кольце, отметь соседей (до трёх) и потяни от флагмана. Строй идёт по <b>самому медленному</b>, вести его должен <b>старший</b>, а в бою его не собрать.',
+      multiMoveOn() && { text: t('tut.convoy'),
         target: fleetSpot ? { world: fleetSpot } : null },
-      { text: 'В <b>Верфи</b> покупаешь корабли за золото 💰: шустрые шхуны и бриги, мощные фрегаты, рыбацкие баркасы — и <b>линкор</b>, который бьёт по портам сильнее всех 🏰.',
+      { text: t('tut.shop'),
         target: { sel: '#btnShop' } },
-      { text: 'Тут твой <b>баланс</b> — <b>золото</b> 💰. Зарабатывай его рыбалкой, кладами и потоплением врагов, а трать в <b>Верфи</b> на новые корабли.',
+      { text: t('tut.gold'),
         target: { sel: '#playersList' }, panel: true },
-      fish && { text: 'Поставь <b>баркас</b> в эту <b>🐟-рыбную зону</b> — он будет сам приносить золото каждый ход, и действие на это не тратится.',
+      fish && { text: t('tut.fish'),
                 target: { world: { x: fish.x, y: fish.y, r: fish.radius } }, reveal: true },
-      loot && { text: 'А это <b>остров с кладом</b> 💰 — подведи любой корабль вплотную и жми <b>«Собрать»</b>, чтобы забрать золото.',
+      loot && { text: t('tut.loot'),
                 target: { world: { x: loot.x, y: loot.y, r: loot.radius } }, reveal: true },
       // ⛺ постройки на островах: в туториале их не было вовсе, хотя это вся экономика второй половины партии
-      island && { text: '⛺ Залутанный остров — уже <b>плацдарм</b>: подведи корабль вплотную → <b>«⛺ Аванпост»</b>. Дальше кликай по постройке и улучшай: 🏪 <b>Фактория</b> чинит корабли рядом, 🏰 <b>Форт</b> ставит <b>береговую пушку</b> и даёт больше золота. Чужие постройки ломает только 🎯 <b>мортира</b>.',
+      island && { text: t('tut.outpost'),
                 target: { world: { x: island.x, y: island.y, r: island.radius } }, reveal: true },
-      { text: 'По морю бродят <b>пираты</b> 🏴‍☠️ — потопи и забери награду. А жирный <b>👑-босс</b> несёт большой куш! Но осторожно: пираты огрызаются в ответ.',
+      { text: t('tut.pirates'),
         target: pirate ? { world: { x: pirate.x, y: pirate.y, r: 30 } } : null, reveal: true },
-      { text: 'Цель — <b>разбить порт соперника</b>. Подведи флот и расстреляй его базу. Удачи, капитан! 🏴‍☠️',
+      { text: t('tut.goal'),
         target: enemyBase ? { world: { x: enemyBase.x, y: enemyBase.y, r: enemyBase.radius } } : null }
     ].filter(Boolean);   // шаги про рыбу/клад выпадают, если их объектов нет на карте
     idx = 0;
@@ -3576,7 +3603,7 @@ function initDebug() {
     maybeAutoPass();          // если сейчас мой ход — сдаём его сразу, не дожидаясь стейта
   });
   $('#dbgGold').addEventListener('click', () => socket.emit('debug', { kind: 'gold', amount: 500 }, r => {
-    if (!r?.ok) debugLine('❌ ' + (r?.error || 'не вышло'));
+    if (!r?.ok) debugLine('❌ ' + (errText(r) || 'не вышло'));
   }));
   $('#debugClear').addEventListener('click', () => { $('#debugLog').innerHTML = ''; debugRows = 0; $('#debugCount').textContent = ''; });
 
@@ -3591,13 +3618,13 @@ function fillShipPickers() {
   if (!types.options.length) {
     types.innerHTML = Object.entries(state.shipTypes || {})
       .filter(([k, st]) => !st.npc && k !== 'pirate')
-      .map(([k, st]) => `<option value="${k}">${st.icon || ''} ${escapeHtml(st.name)}</option>`).join('');
+      .map(([k, st]) => `<option value="${k}">${st.icon || ''} ${escapeHtml(shipName(k))}</option>`).join('');
   }
   const want = state.players.map((p, i) => `${i}:${p.nick}`).join('|');
   if (owners.dataset.key !== want) {
     owners.dataset.key = want;
     owners.innerHTML = state.players
-      .map((p, i) => `<option value="${i}">${escapeHtml(p.nick)}${p.isBot ? ' 🤖' : ''}</option>`).join('');
+      .map((p, i) => `<option value="${i}">${escapeHtml(nickOf(p))}${p.isBot ? ' 🤖' : ''}</option>`).join('');
   }
 }
 
@@ -3622,16 +3649,16 @@ function debugClick(x, y) {
     .map(s => ({ s, d: Math.hypot(s.x - x, s.y - y) }))
     .sort((a, b) => a.d - b.d)[0];
   const hit = near && near.d < 34 ? near.s : null;
-  const send = (op, note) => socket.emit('debug', op, r => debugLine(r?.ok ? '🐞 ' + note : '❌ ' + (r?.error || 'не вышло')));
+  const send = (op, note) => socket.emit('debug', op, r => debugLine(r?.ok ? '🐞 ' + note : '❌ ' + (errText(r) || 'не вышло')));
 
   if (debugTool === 'heal') {
     if (!hit) return debugLine('🐞 лечить: мимо корабля');
-    return send({ kind: 'heal', shipId: hit.id }, `вылечен ${ST(hit.type)?.name || hit.type}`);
+    return send({ kind: 'heal', shipId: hit.id }, `вылечен ${shipName(hit.type)}`);
   }
   if (debugTool === 'ship') {
     const type = $('#dbgShipType').value, owner = +$('#dbgShipOwner').value;
     return send({ kind: 'ship', type, owner, x, y },
-      `поставлен ${ST(type)?.name || type} игроку ${state.players[owner]?.nick}`);
+      `поставлен ${shipName(type)} игроку ${nickOf(state.players[owner])}`);
   }
   if (debugTool === 'pirate') {
     const boss = $('#dbgPirateKind').value === 'boss';
@@ -3642,7 +3669,7 @@ function debugClick(x, y) {
       if (!hit) return debugLine('🐞 перенести: сначала ткни в корабль');
       debugPick = hit.id;
       $('#dbgHint').textContent = 'теперь ткни, куда его поставить';
-      return debugLine('🐞 взят ' + (ST(hit.type)?.name || hit.type));
+      return debugLine('🐞 взят ' + shipName(hit.type));
     }
     const id = debugPick;
     debugPick = null;

@@ -36,6 +36,8 @@ export const saveGame       = (game) => api.saveGame(game);
 export const deleteGame     = (id) => api.deleteGame(id);
 export const saveResults    = (game) => api.saveResults(game);
 export const getPlayer      = (pid) => api.getPlayer(pid);
+// язык интерфейса аккаунта (для гостя язык живёт в куке — см. server/i18n.js)
+export const setPlayerLang  = (pid, lang) => api.setPlayerLang(pid, lang);
 export const getPlayerEmail = (pid) => api.getPlayerEmail(pid);
 export const countGames     = () => api.countGames();
 export const getLeaderboard = () => api.getLeaderboard();
@@ -95,7 +97,7 @@ async function makeSqlite() {
           token TEXT PRIMARY KEY, pid TEXT NOT NULL, created_at INTEGER NOT NULL);
       `);
       // миграция уже существующих баз: добавляем новые колонки, если их ещё нет
-      for (const [col, def] of [['provider', 'TEXT'], ['avatar', 'TEXT']])
+      for (const [col, def] of [['provider', 'TEXT'], ['avatar', 'TEXT'], ['lang', 'TEXT']])
         try { db.exec(`ALTER TABLE players ADD COLUMN ${col} ${def}`); } catch { /* колонка уже есть */ }
       console.log('🗄  SQLite (локально): ' + file);
     },
@@ -133,9 +135,10 @@ async function makeSqlite() {
       }
     },
     async getPlayer(pid) {
-      const r = db.prepare('SELECT nick, email, provider, avatar FROM players WHERE token = ?').get(pid);
-      return r ? { nick: r.nick, email: r.email ?? null, provider: r.provider ?? null, avatar: r.avatar ?? null } : null;
+      const r = db.prepare('SELECT nick, email, provider, avatar, lang FROM players WHERE token = ?').get(pid);
+      return r ? { nick: r.nick, email: r.email ?? null, provider: r.provider ?? null, avatar: r.avatar ?? null, lang: r.lang ?? null } : null;
     },
+    async setPlayerLang(pid, lang) { run('UPDATE players SET lang = ? WHERE token = ?', lang, pid); },
     async getPlayerEmail(pid) {
       return db.prepare('SELECT email FROM players WHERE token = ?').get(pid)?.email ?? null;
     },
@@ -192,7 +195,7 @@ async function makeMysql() {
       ];
       for (const t of tables) await pool.query(t);
       // миграция уже существующих баз: добавляем новые колонки, если их ещё нет
-      for (const [col, def] of [['provider', 'VARCHAR(16)'], ['avatar', 'VARCHAR(512)']])
+      for (const [col, def] of [['provider', 'VARCHAR(16)'], ['avatar', 'VARCHAR(512)'], ['lang', 'VARCHAR(8)']])
         try { await pool.query(`ALTER TABLE players ADD COLUMN ${col} ${def}`); } catch { /* колонка уже есть */ }
       console.log('🗄  MySQL: ' + cfg.host + '/' + cfg.database);
     },
@@ -228,10 +231,14 @@ async function makeMysql() {
       }
     },
     async getPlayer(pid) {
-      try { const [rows] = await pool.query('SELECT nick, email, provider, avatar FROM players WHERE token = ?', [pid]);
+      try { const [rows] = await pool.query('SELECT nick, email, provider, avatar, lang FROM players WHERE token = ?', [pid]);
         const r = rows[0];
-        return r ? { nick: r.nick, email: r.email ?? null, provider: r.provider ?? null, avatar: r.avatar ?? null } : null;
+        return r ? { nick: r.nick, email: r.email ?? null, provider: r.provider ?? null, avatar: r.avatar ?? null, lang: r.lang ?? null } : null;
       } catch (e) { console.error('db:', e.message); return null; }
+    },
+    async setPlayerLang(pid, lang) {
+      try { await q('UPDATE players SET lang = ? WHERE token = ?', [lang, pid]); }
+      catch (e) { console.error('db:', e.message); }
     },
     async getPlayerEmail(pid) {
       try { const [rows] = await pool.query('SELECT email FROM players WHERE token = ?', [pid]);

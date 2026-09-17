@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Баттл — Морской бой</title>
+  <title data-i18n="game.title">Баттл — Морской бой</title>
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
@@ -15,8 +15,8 @@
       <!-- ⏸ пауза реалтайма: оверлей закрывает карту (случайные приказы не улетают), снять может любой -->
       <div class="pause-overlay hidden" id="pauseOverlay">
         <div class="pause-card">
-          <div id="pauseWho">⏸ Пауза</div>
-          <button id="pauseResumeBtn" type="button">▶️ Продолжить</button>
+          <div id="pauseWho" data-i18n="game.pause">⏸ Пауза</div>
+          <button id="pauseResumeBtn" data-i18n="game.pauseResume" type="button">▶️ Продолжить</button>
         </div>
       </div>
       <!-- 🐞 инструменты отладки: появляются только при SB_DEBUG=1 на сервере -->
@@ -41,66 +41,66 @@
       <div class="ship-note" id="shipNote"></div>
       <div class="chat-bar" id="chatBar">
         <span class="chat-prompt">💬</span>
-        <input type="text" id="chatInput" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="120" placeholder="введите текст…">
+        <input type="text" id="chatInput" data-i18n-attr="placeholder:game.chatPh" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="120" placeholder="введите текст…">
       </div>
       <div class="action-bar hidden" id="shipActions">
         <span id="shipActionsTitle" style="align-self:center"></span>
-        <button class="small" id="btnMove">🧭 Плыть</button>
-        <button class="small danger" id="btnFire">🎯 Мортира</button>
-        <button class="small repair hidden" id="btnRepair">🛟 Чинить</button>
-        <button class="small danger hidden" id="btnBroadside">💥 Залп</button>
-        <button class="small hidden" id="btnCollectHere">💰 Собрать</button>
-        <button class="small hidden" id="btnOutpost">⛺ Аванпост</button>
-        <button class="small repair hidden" id="btnRecharge">🔧 Пополнить</button>
-        <button class="small" id="btnCancel">✖</button>
-        <span class="move-hint hidden" id="moveHint">потяни корабль, чтобы выбрать курс</span>
-        <span class="move-hint hidden" id="rechargeNote">🔧 нет материалов — вернись на базу пополнить</span>
+        <button class="small" id="btnMove" data-i18n="game.btnMove">🧭 Плыть</button>
+        <button class="small danger" id="btnFire" data-i18n="game.btnFire">🎯 Мортира</button>
+        <button class="small repair hidden" id="btnRepair" data-i18n="game.btnRepair">🛟 Чинить</button>
+        <button class="small danger hidden" id="btnBroadside" data-i18n="game.btnBroadside">💥 Залп</button>
+        <button class="small hidden" id="btnCollectHere" data-i18n="game.btnCollect">💰 Собрать</button>
+        <button class="small hidden" id="btnOutpost" data-i18n="game.btnOutpost">⛺ Аванпост</button>
+        <button class="small repair hidden" id="btnRecharge" data-i18n="game.btnRecharge">🔧 Пополнить</button>
+        <button class="small" id="btnCancel" data-i18n="common.close">✖</button>
+        <span class="move-hint hidden" id="moveHint" data-i18n="game.moveHint">потяни корабль, чтобы выбрать курс</span>
+        <span class="move-hint hidden" id="rechargeNote" data-i18n="game.rechargeNote">🔧 нет материалов — вернись на базу пополнить</span>
       </div>
       <!-- ⛺ панель аванпоста: открывается кликом по СВОЕМУ аванпосту на острове -->
       <div class="action-bar hidden" id="outpostPanel">
         <span id="outpostTitle" style="align-self:center"></span>
         <span class="move-hint" id="outpostPerks"></span>
-        <button class="small primary hidden" id="btnOutpostUp">⬆ Улучшить</button>
+        <button class="small primary hidden" id="btnOutpostUp" data-i18n="game.btnOutpostUp">⬆ Улучшить</button>
         <span class="move-hint hidden" id="outpostNext"></span>
-        <button class="small" id="outpostClose">✖</button>
+        <button class="small" id="outpostClose" data-i18n="common.close">✖</button>
       </div>
     </div>
 
     <aside class="panel" id="panel">
       <div class="panel-head">
-        <div class="turn-banner" id="turnBanner">Подключение…</div>
-        <button class="small hidden" id="pauseBtn" title="Пауза">⏸</button>
-        <button class="small hidden" id="chatBtn" title="Чат">💬</button>
-        <button class="small" id="muteBtn" title="Звук">🔊</button>
-        <button class="small" id="homeBtn" title="На главную — баттл продолжит ждать, вернёшься через «Мои игры»">🏠</button>
-        <button class="small" id="panelToggle" title="Меню">☰</button>
+        <div class="turn-banner" id="turnBanner" data-i18n="game.connecting">Подключение…</div>
+        <button class="small hidden" id="pauseBtn" data-i18n-attr="title:game.pauseTitle" title="Пауза">⏸</button>
+        <button class="small hidden" id="chatBtn" data-i18n-attr="title:game.chatTitle" title="Чат">💬</button>
+        <button class="small" id="muteBtn" data-i18n-attr="title:game.soundTitle" title="Звук">🔊</button>
+        <button class="small" id="homeBtn" data-i18n-attr="title:game.homeTitle" title="На главную — баттл продолжит ждать, вернёшься через «Мои игры»">🏠</button>
+        <button class="small" id="panelToggle" data-i18n-attr="title:game.menuTitle" title="Меню">☰</button>
       </div>
       <div id="timerRow" class="muted" style="text-align:center"></div>
 
       <div class="actions-bar">
         <div id="actionsRow" class="hidden">
-          <button class="small primary" id="btnShop">🛒 Верфь</button>
-          <button class="small" id="btnSkip">⏭ Пропустить</button>
-          <button class="small" id="btnNudge">📯 Поторопить</button>
+          <button class="small primary" id="btnShop" data-i18n="game.btnShop">🛒 Верфь</button>
+          <button class="small" id="btnSkip" data-i18n="game.btnSkip">⏭ Пропустить</button>
+          <button class="small" id="btnNudge" data-i18n="game.btnNudge">📯 Поторопить</button>
         </div>
-        <button class="small" id="infoBtn" title="Инфобаза — флот, правила, обучение">📖</button>
+        <button class="small" id="infoBtn" data-i18n-attr="title:game.infoTitle" title="Инфобаза — флот, правила, обучение">📖</button>
       </div>
 
       <div id="panelBody">
-      <p class="muted" id="hint" style="margin:0">Кликни по своему кораблю, чтобы плыть или стрелять.</p>
+      <p class="muted" id="hint" data-i18n="game.hint" style="margin:0">Кликни по своему кораблю, чтобы плыть или стрелять.</p>
 
       <div>
-        <h3 style="margin-bottom:4px">⚓ Капитаны</h3>
+        <h3 style="margin-bottom:4px" data-i18n="game.captains">⚓ Капитаны</h3>
         <div id="playersList"></div>
       </div>
 
       <div>
-        <h3 style="margin-bottom:4px">📜 Журнал</h3>
+        <h3 style="margin-bottom:4px" data-i18n="game.logTitle">📜 Журнал</h3>
         <div id="log"></div>
       </div>
 
       <div style="text-align:right">
-        <button class="small danger" id="btnSurrender">🏳️ Сдаться</button>
+        <button class="small danger" id="btnSurrender" data-i18n="game.surrender">🏳️ Сдаться</button>
       </div>
       </div><!-- /panelBody -->
     </aside>
@@ -121,14 +121,14 @@
   <!-- ввод ника -->
   <div class="overlay hidden" id="nickOverlay">
     <div class="note taped">
-      <h2>Кто на борту?</h2>
-      <label for="nickInput">Твой ник</label>
-      <input type="text" id="nickInput" maxlength="20" placeholder="Капитан...">
+      <h2 data-i18n="game.nick.title">Кто на борту?</h2>
+      <label for="nickInput" data-i18n="game.nick.label">Твой ник</label>
+      <input type="text" id="nickInput" maxlength="20" placeholder="Капитан..." data-i18n-attr="placeholder:home.nickPh">
       <p class="error" id="nickError"></p>
       <p class="muted" id="joinHint" style="margin:2px 0 8px"></p>
-      <button class="primary" id="nickBtn" style="margin-top:10px">Войти в баттл</button>
+      <button class="primary" id="nickBtn" data-i18n="game.nick.btn" style="margin-top:10px">Войти в баттл</button>
       <div id="googleAuthBox" class="hidden" style="margin-top:14px">
-        <p class="muted" style="margin:0 0 6px">Войди через Google — статистика привяжется к аккаунту:</p>
+        <p class="muted" style="margin:0 0 6px" data-i18n="game.nick.google">Войди через Google — статистика привяжется к аккаунту:</p>
         <div id="googleBtn"></div>
       </div>
     </div>
@@ -138,35 +138,35 @@
   <div class="overlay hidden" id="lobbyOverlay">
     <div class="note taped">
       <div style="display:flex; align-items:center; gap:10px">
-        <h2 style="margin:0; flex:1">🏴‍☠️ Сбор флота</h2>
-        <button class="small" id="lobbyMinimize" title="Свернуть — лобби продолжит ждать, можно вернуться позже">✕</button>
+        <h2 style="margin:0; flex:1" data-i18n="game.lobby.title">🏴‍☠️ Сбор флота</h2>
+        <button class="small" id="lobbyMinimize" data-i18n-attr="title:game.lobby.minimize" title="Свернуть — лобби продолжит ждать, можно вернуться позже">✕</button>
       </div>
       <p class="muted" id="lobbyConfig"></p>
-      <label for="lobbyNick">Твой ник и цвет</label>
+      <label for="lobbyNick" data-i18n="home.nickColor">Твой ник и цвет</label>
       <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
-        <input type="text" id="lobbyNick" maxlength="20" placeholder="Капитан..." style="flex:1; min-width:140px">
+        <input type="text" id="lobbyNick" maxlength="20" placeholder="Капитан..." data-i18n-attr="placeholder:home.nickPh" style="flex:1; min-width:140px">
         <div id="lobbyColors"></div>
-        <button class="small" id="lobbyNickSave">Сменить</button>
+        <button class="small" id="lobbyNickSave" data-i18n="game.lobby.rename">Сменить</button>
       </div>
       <div class="slots" id="lobbySlots" style="margin-top:14px"></div>
       <div id="lobbyBots" class="hidden" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:8px">
         <select id="botLevelSel" class="small">
-          <option value="easy">🐣 Юнга</option>
-          <option value="mid" selected>⚓ Боцман</option>
-          <option value="hard">💀 Адмирал</option>
+          <option value="easy" data-i18n="game.lobby.lvlEasy">🐣 Юнга</option>
+          <option value="mid" selected data-i18n="game.lobby.lvlMid">⚓ Боцман</option>
+          <option value="hard" data-i18n="game.lobby.lvlHard">💀 Адмирал</option>
         </select>
-        <button class="small" id="addBotBtn">🤖 Добавить бота</button>
+        <button class="small" id="addBotBtn" data-i18n="game.lobby.addBot">🤖 Добавить бота</button>
         <span class="muted" id="botHint"></span>
       </div>
-      <p>Зови друзей — кидай им ссылку:</p>
+      <p data-i18n="game.lobby.invite">Зови друзей — кидай им ссылку:</p>
       <div class="invite-link">
         <span id="inviteUrl"></span>
         <button class="small" id="copyBtn">📋</button>
       </div>
       <p class="error" id="lobbyError"></p>
       <div style="margin-top:14px; display:flex; gap:10px; align-items:center; flex-wrap:wrap">
-        <button class="primary" id="startBtn">⚔️ Начать баттл</button>
-        <button class="small" id="leaveLobbyBtn">🚪 Выйти из лобби</button>
+        <button class="primary" id="startBtn" data-i18n="game.lobby.start">⚔️ Начать баттл</button>
+        <button class="small" id="leaveLobbyBtn" data-i18n="game.lobby.leave">🚪 Выйти из лобби</button>
         <span class="muted" id="lobbyWait"></span>
       </div>
     </div>
@@ -176,20 +176,16 @@
   <div class="overlay hidden" id="shopOverlay">
     <div class="note taped shop-note">
       <div style="display:flex; align-items:center; gap:10px">
-        <h2 style="margin:0; flex:1">🛒 Верфь</h2>
+        <h2 style="margin:0; flex:1" data-i18n="game.shop.title">🛒 Верфь</h2>
         <span class="gold-chip" id="shopGold"></span>
-        <button class="small" id="shopClose">✖</button>
+        <button class="small" id="shopClose" data-i18n="common.close">✖</button>
       </div>
-      <div class="duel-rules hidden" id="duelRules">
-        <b>⚔️ Дуэль 1 на 1.</b> Скупись на <b>ВСЁ</b> золото — пока можно купить хоть один корабль, в бой не выйдешь.
-        Карта маленькая, без баз и островов: твой флот встанет в ряд на твоей стороне. Дохода за ход нет — золото только за пиратов
-        (за них можно докупиться в бою). Побеждает тот, кто <b>разнесёт весь флот соперника</b>. Готов — жми «⚔️ В бой!».
-      </div>
-      <p class="muted" id="shopDesc" style="margin:6px 0 10px">Новые корабли появятся у твоего порта. Покупка нескольких — одно действие за ход.</p>
+      <div class="duel-rules hidden" id="duelRules" data-i18n-html="game.shop.duelRules"><b>⚔️ Дуэль 1 на 1.</b> Скупись на <b>ВСЁ</b> золото — пока можно купить хоть один корабль, в бой не выйдешь. Карта маленькая, без баз и островов: твой флот встанет в ряд на твоей стороне. Дохода за ход нет — золото только за пиратов (за них можно докупиться в бою). Побеждает тот, кто <b>разнесёт весь флот соперника</b>. Готов — жми «⚔️ В бой!».</div>
+      <p class="muted" id="shopDesc" data-i18n="game.shop.desc" style="margin:6px 0 10px">Новые корабли появятся у твоего порта. Покупка нескольких — одно действие за ход.</p>
       <div class="shop-grid" id="shopList"></div>
       <div class="shop-footer">
         <span id="shopTotal" class="muted"></span>
-        <button class="primary" id="btnBuy">Купить</button>
+        <button class="primary" id="btnBuy" data-i18n="game.shop.buy">Купить</button>
       </div>
     </div>
   </div>
@@ -197,14 +193,14 @@
   <!-- финальная таблица -->
   <div class="overlay hidden" id="finishOverlay">
     <div class="note taped">
-      <h2 id="finishTitle">Баттл окончен!</h2>
+      <h2 id="finishTitle" data-i18n="game.finish.title">Баттл окончен!</h2>
       <table>
-        <thead><tr><th>Место</th><th>Капитан</th><th>Урон</th><th>Потопил</th><th>Потерял</th><th>Добыча</th></tr></thead>
+        <thead><tr><th data-i18n="game.finish.place">Место</th><th data-i18n="home.lb.captain">Капитан</th><th data-i18n="home.lb.damage">Урон</th><th data-i18n="game.finish.sunk">Потопил</th><th data-i18n="game.finish.lost">Потерял</th><th data-i18n="game.finish.loot">Добыча</th></tr></thead>
         <tbody id="finishTable"></tbody>
       </table>
       <div style="margin-top:16px; display:flex; gap:10px">
-        <a class="btn" href="/">🏠 На главную</a>
-        <button class="small" id="finishClose">Посмотреть карту</button>
+        <a class="btn" href="/" data-i18n="game.finish.home">🏠 На главную</a>
+        <button class="small" id="finishClose" data-i18n="game.finish.map">Посмотреть карту</button>
       </div>
     </div>
   </div>
@@ -213,119 +209,120 @@
   <div class="overlay hidden" id="infoOverlay">
     <div class="note taped info-modal">
       <div class="info-head">
-        <h2 style="margin:0; flex:1">📖 Инфобаза</h2>
+        <h2 style="margin:0; flex:1" data-i18n="game.infobase">📖 Инфобаза</h2>
+        <div class="lang-box inline" data-lang-switch></div>
         <button class="small" id="infoClose">✖</button>
       </div>
 
       <label class="info-toggle" id="tutToggleLabel">
         <input type="checkbox" id="tutToggle">
-        <span>🎓 Показывать обучающие подсказки в начале игры</span>
+        <span data-i18n="game.tutToggle">🎓 Показывать обучающие подсказки в начале игры</span>
       </label>
 
       <div class="info-body">
         <section class="info-card">
-          <h3>🎯 Цель</h3>
-          <p>Разбей <b>порт</b> соперника — и он выбывает. Последний выживший порт побеждает баттл. 👑</p>
+          <h3 data-i18n="wiki.goal.h">🎯 Цель</h3>
+          <p data-i18n-html="wiki.goal.p">Разбей <b>порт</b> соперника — и он выбывает. Последний выживший порт побеждает баттл. 👑</p>
         </section>
 
         <section class="info-card">
-          <h3>🔄 Ход</h3>
+          <h3 data-i18n="wiki.turn.h">🔄 Ход</h3>
           <div id="wikiTurnSingle">
-            <p>Игроки ходят по очереди. За ход — <b>одно</b> действие:</p>
+            <p data-i18n-html="wiki.turn.single.p">Игроки ходят по очереди. За ход — <b>одно</b> действие:</p>
             <ul>
-              <li>🧭 <b>передвинуть</b> один корабль;</li>
-              <li>🔥 <b>выстрелить</b> кораблём по цели;</li>
-              <li>💰 <b>собрать</b> добычу;</li>
-              <li>🛒 сходить в <b>верфь</b> (купить корабли).</li>
+              <li data-i18n-html="wiki.turn.single.liMove">🧭 <b>передвинуть</b> один корабль;</li>
+              <li data-i18n-html="wiki.turn.liFire">🔥 <b>выстрелить</b> кораблём по цели;</li>
+              <li data-i18n-html="wiki.turn.liLoot">💰 <b>собрать</b> добычу;</li>
+              <li data-i18n-html="wiki.turn.single.liShop">🛒 сходить в <b>верфь</b> (купить корабли).</li>
             </ul>
           </div>
           <div id="wikiTurnMulti" class="hidden">
-            <p>Игроки ходят по очереди. За один ход — <b>до трёх действий</b>. Передвинуть и выстрелить можно <b>разными</b> кораблями (одним кораблём — не больше раза за ход):</p>
+            <p data-i18n-html="wiki.turn.multi.p">Игроки ходят по очереди. За один ход — <b>до трёх действий</b>. Передвинуть и выстрелить можно <b>разными</b> кораблями (одним кораблём — не больше раза за ход):</p>
             <ul>
-              <li>🧭 <b>передвинуть</b> корабль;</li>
-              <li>🔥 <b>выстрелить</b> кораблём по цели;</li>
-              <li>💰 <b>собрать</b> добычу;</li>
-              <li>🛒 сходить в <b>верфь</b>.</li>
+              <li data-i18n-html="wiki.turn.multi.liMove">🧭 <b>передвинуть</b> корабль;</li>
+              <li data-i18n-html="wiki.turn.liFire">🔥 <b>выстрелить</b> кораблём по цели;</li>
+              <li data-i18n-html="wiki.turn.liLoot">💰 <b>собрать</b> добычу;</li>
+              <li data-i18n-html="wiki.turn.multi.liShop">🛒 сходить в <b>верфь</b>.</li>
             </ul>
-            <p>Любое из этих действий тратит один из трёх ходов. Закончил раньше (1–2 корабля — не повод тянуть) — жми <b>«✅ Завершить ход»</b>.</p>
-            <p>⛵ <b>Строй (конвой)</b> — подкрепление гнать пачкой, а не по одному. Тапни корабль, выбери в кольце <b>⛵</b>, отметь соседние суда (до трёх вместе с флагманом) и потяни от флагмана — строй пойдёт целиком, сохраняя расстановку. Весь строй стоит <b>один манёвр</b> — перебросить эскадру через полкарты можно за ход, а не за три. Плата за скорость: идёт по <b>самому медленному</b> (линкор в строю режет дальность всем), а <b>в бою строй не собрать</b> — если рядом вражеский корабль или пират на дистанции выстрела, эскадрой от боя не удрать, води суда поодиночке. <b>Флагманом идёт старший</b>: баркас не уведёт за собой фрегат — веди строй тем, кто крупнее. Боты водят строй наравне с тобой.</p>
+            <p data-i18n-html="wiki.turn.multi.budget">Любое из этих действий тратит один из трёх ходов. Закончил раньше (1–2 корабля — не повод тянуть) — жми <b>«✅ Завершить ход»</b>.</p>
+            <p data-i18n-html="wiki.turn.multi.convoy">⛵ <b>Строй (конвой)</b> — подкрепление гнать пачкой, а не по одному. Тапни корабль, выбери в кольце <b>⛵</b>, отметь соседние суда (до трёх вместе с флагманом) и потяни от флагмана — строй пойдёт целиком, сохраняя расстановку. Весь строй стоит <b>один манёвр</b> — перебросить эскадру через полкарты можно за ход, а не за три. Плата за скорость: идёт по <b>самому медленному</b> (линкор в строю режет дальность всем), а <b>в бою строй не собрать</b> — если рядом вражеский корабль или пират на дистанции выстрела, эскадрой от боя не удрать, води суда поодиночке. <b>Флагманом идёт старший</b>: баркас не уведёт за собой фрегат — веди строй тем, кто крупнее. Боты водят строй наравне с тобой.</p>
           </div>
         </section>
 
         <section class="info-card">
-          <h3>🌬 Ветер</h3>
-          <p>В каждом баттле дует <b>ветер</b> — компас в правом верхнем углу карты (стрелка = куда дует, длина = сила). <b>По ветру плывёшь дальше, против — меньше</b> (до ±35%), поэтому контур дальности хода — <b>«капля»</b>, вытянутая по ветру. Ветер <b>меняется между ходами</b> (в свой ход он стабилен — планируй спокойно): лови попутный на атаку и не дай зажать себя против ветра.</p>
+          <h3 data-i18n="wiki.wind.h">🌬 Ветер</h3>
+          <p data-i18n-html="wiki.wind.p">В каждом баттле дует <b>ветер</b> — компас в правом верхнем углу карты (стрелка = куда дует, длина = сила). <b>По ветру плывёшь дальше, против — меньше</b> (до ±35%), поэтому контур дальности хода — <b>«капля»</b>, вытянутая по ветру. Ветер <b>меняется между ходами</b> (в свой ход он стабилен — планируй спокойно): лови попутный на атаку и не дай зажать себя против ветра.</p>
         </section>
 
         <section class="info-card">
-          <h3>⚡ Полный вперёд! (бета) — реалтайм</h3>
-          <p>Тумблер при создании баттла: партия <b>без ходов</b> — всё происходит одновременно и непрерывно, как в стратегиях в реальном времени. Кликай <b>куда угодно</b> — корабль сам плывёт к точке и <b>обходит острова</b>. Разворот — <b>по дуге</b>: чем тяжелее корабль, тем медленнее перекладывается на другой борт (линкор — секунд пять), так что манёвр планируй заранее. <b>Залп и мортира</b> стреляют по <b>перезарядке</b> (у каждого борта — своя), доход порта и рыбалка капают по времени.</p>
-          <p>Доступен <b>во всех режимах</b> (онлайн и против компьютера): в «Развитии» мирное время идёт <b>по таймеру</b> (баннер с отсчётом над картой), в дуэли закупка флота как обычно. Кнопка <b>⏸ в шапке</b> ставит игру на паузу — мир замирает целиком (перезарядки, доходы, боты); снять паузу может <b>любой игрок</b>. Пока в бете — <b>в рейтинг не идёт</b>.</p>
+          <h3 data-i18n="wiki.rt.h">⚡ Полный вперёд! (бета) — реалтайм</h3>
+          <p data-i18n-html="wiki.rt.p1">Тумблер при создании баттла: партия <b>без ходов</b> — всё происходит одновременно и непрерывно, как в стратегиях в реальном времени. Кликай <b>куда угодно</b> — корабль сам плывёт к точке и <b>обходит острова</b>. Разворот — <b>по дуге</b>: чем тяжелее корабль, тем медленнее перекладывается на другой борт (линкор — секунд пять), так что манёвр планируй заранее. <b>Залп и мортира</b> стреляют по <b>перезарядке</b> (у каждого борта — своя), доход порта и рыбалка капают по времени.</p>
+          <p data-i18n-html="wiki.rt.p2">Доступен <b>во всех режимах</b> (онлайн и против компьютера): в «Развитии» мирное время идёт <b>по таймеру</b> (баннер с отсчётом над картой), в дуэли закупка флота как обычно. Кнопка <b>⏸ в шапке</b> ставит игру на паузу — мир замирает целиком (перезарядки, доходы, боты); снять паузу может <b>любой игрок</b>. Пока в бете — <b>в рейтинг не идёт</b>.</p>
         </section>
 
         <section class="info-card">
-          <h3>🧭 Движение «по линейке»</h3>
-          <p>Выбери свой корабль и нажми «Плыть». Вокруг появится <b>контур дальности</b> — поставь корабль в любую точку внутри (нельзя на острова и впритык к другим кораблям). У каждого класса своя дальность хода, а 🌬 <b>ветер вытягивает контур</b>: по ветру уплывёшь дальше, против — меньше.</p>
+          <h3 data-i18n="wiki.move.h">🧭 Движение «по линейке»</h3>
+          <p data-i18n-html="wiki.move.p">Выбери свой корабль и нажми «Плыть». Вокруг появится <b>контур дальности</b> — поставь корабль в любую точку внутри (нельзя на острова и впритык к другим кораблям). У каждого класса своя дальность хода, а 🌬 <b>ветер вытягивает контур</b>: по ветру уплывёшь дальше, против — меньше.</p>
         </section>
 
         <section class="info-card">
-          <h3>💥 Бортовой залп</h3>
-          <p>Главное оружие любого боевого корабля и лучший способ топить флот. Выбери корабль, нажми «Залп» и наведи <b>в сторону</b> — весь борт бьёт по <b>всем врагам в секторе</b> разом (своих и рыбацкие баркасы не задевает). Урон <b>максимален, когда враг строго на перпендикуляре к центру борта</b> (там залп бьёт как полный выстрел корабля!) и слабее к краям сектора; плюс <b>спадает с дистанцией</b>. Поэтому выгодно <b>повернуться бортом</b> вплотную к цели.</p>
-          <p>Пушек на борт: <b>шхуна 2, бриг 3, фрегат и линкор 4</b>. Залп <b>одним бортом</b> — твоё действие за ход, а <b>второй борт того же корабля</b> можно дать сразу следом <b>бесплатно</b> (разверни прицел на другую сторону). Кончилось HP цели — она тонет, ты лутаешь ≈50% её цены.</p>
+          <h3 data-i18n="wiki.broadside.h">💥 Бортовой залп</h3>
+          <p data-i18n-html="wiki.broadside.p1">Главное оружие любого боевого корабля и лучший способ топить флот. Выбери корабль, нажми «Залп» и наведи <b>в сторону</b> — весь борт бьёт по <b>всем врагам в секторе</b> разом (своих и рыбацкие баркасы не задевает). Урон <b>максимален, когда враг строго на перпендикуляре к центру борта</b> (там залп бьёт как полный выстрел корабля!) и слабее к краям сектора; плюс <b>спадает с дистанцией</b>. Поэтому выгодно <b>повернуться бортом</b> вплотную к цели.</p>
+          <p data-i18n-html="wiki.broadside.p2">Пушек на борт: <b>шхуна 2, бриг 3, фрегат и линкор 4</b>. Залп <b>одним бортом</b> — твоё действие за ход, а <b>второй борт того же корабля</b> можно дать сразу следом <b>бесплатно</b> (разверни прицел на другую сторону). Кончилось HP цели — она тонет, ты лутаешь ≈50% её цены.</p>
         </section>
 
         <section class="info-card">
-          <h3>🎯 Мортира</h3>
-          <p>Только у <b>фрегата и линкора</b>. Прицельный <b>одиночный выстрел в любую сторону</b> (в т.ч. в нос/корму, куда залп не достаёт). По <b>кораблям бьёт вполовину</b> — её дело не размен в море, а <b>осада</b>: по вражескому порту лупит <b>на максимум</b> (линкор — ещё ×1.5). Хочешь топить флот — залп; хочешь снести базу — мортира. За ход кораблём: либо мортира, либо залп, либо проплыть.</p>
+          <h3 data-i18n="wiki.mortar.h">🎯 Мортира</h3>
+          <p data-i18n-html="wiki.mortar.p">Только у <b>фрегата и линкора</b>. Прицельный <b>одиночный выстрел в любую сторону</b> (в т.ч. в нос/корму, куда залп не достаёт). По <b>кораблям бьёт вполовину</b> — её дело не размен в море, а <b>осада</b>: по вражескому порту лупит <b>на максимум</b> (линкор — ещё ×1.5). Хочешь топить флот — залп; хочешь снести базу — мортира. За ход кораблём: либо мортира, либо залп, либо проплыть.</p>
         </section>
 
         <section class="info-card">
-          <h3>🛟 Ремонтник</h3>
-          <p>Опорный корабль: вместо стрельбы <b>чинит союзный флот</b>. Выбери его, нажми «Чинить» → ткни в свой подбитый корабль в <b>жёлтом радиусе</b> (чуть меньше дальности хода) — он восстановит <b>≈15% его прочности</b> (жёлтый луч). За ход — либо проплыть, либо починить один корабль. Размером и ходом — как бриг, но <b>сам не воюет</b>: держи его за спинами боевых кораблей.</p>
-          <p>🔧 <b>Запас материалов</b> — жёлтая шкала под полоской HP: ремонтник чинит ограниченное число раз (по делению за починку, независимо от корабля). Кончились материалы — <b>вернись к своей базе</b> и нажми <b>«Пополнить»</b> (кнопка появляется у базы, как «Собрать»).</p>
+          <h3 data-i18n="wiki.repairer.h">🛟 Ремонтник</h3>
+          <p data-i18n-html="wiki.repairer.p1">Опорный корабль: вместо стрельбы <b>чинит союзный флот</b>. Выбери его, нажми «Чинить» → ткни в свой подбитый корабль в <b>жёлтом радиусе</b> (чуть меньше дальности хода) — он восстановит <b>≈15% его прочности</b> (жёлтый луч). За ход — либо проплыть, либо починить один корабль. Размером и ходом — как бриг, но <b>сам не воюет</b>: держи его за спинами боевых кораблей.</p>
+          <p data-i18n-html="wiki.repairer.p2">🔧 <b>Запас материалов</b> — жёлтая шкала под полоской HP: ремонтник чинит ограниченное число раз (по делению за починку, независимо от корабля). Кончились материалы — <b>вернись к своей базе</b> и нажми <b>«Пополнить»</b> (кнопка появляется у базы, как «Собрать»).</p>
         </section>
 
         <section class="info-card">
-          <h3>💰 Добыча и экономика</h3>
+          <h3 data-i18n="wiki.econ.h">💰 Добыча и экономика</h3>
           <ul>
-            <li>🐟 <b>Рыбные места</b> — баркас, стоящий в зоне, сам приносит золото в начале каждого твоего хода (действие не тратится). Место кормит ограниченное число судов: <b>4</b>, а крупные зоны — <b>5</b>. Синий счётчик под зоной (напр. <b>2/4</b>) показывает занято/лимит. Рыба <b>очень медленно мигрирует</b> — косяк блуждает вокруг своих мест, следи и переставляй баркасы.</li>
-            <li>🏝 <b>Острова с кладом</b> — любой корабль, дотянувшийся до острова, лутает клад.</li>
-            <li>💥 <b>Обломки</b> — за потопленный корабль ≈50% его цены.</li>
-            <li>🏴‍☠️ <b>Куш</b> — разбил порт: забираешь 100–1000 золота, тем больше, чем крупнее партию отыграл выбывший (заработал, навоевал, потопил).</li>
-            <li>🏰 <b>Доход порта</b> — немного золота в начале каждого твоего хода. Остался <b>совсем без кораблей</b> — порт даёт на <b>50% больше</b>, чтобы было на что отстроиться.</li>
+            <li data-i18n-html="wiki.econ.fish">🐟 <b>Рыбные места</b> — баркас, стоящий в зоне, сам приносит золото в начале каждого твоего хода (действие не тратится). Место кормит ограниченное число судов: <b>4</b>, а крупные зоны — <b>5</b>. Синий счётчик под зоной (напр. <b>2/4</b>) показывает занято/лимит. Рыба <b>очень медленно мигрирует</b> — косяк блуждает вокруг своих мест, следи и переставляй баркасы.</li>
+            <li data-i18n-html="wiki.econ.loot">🏝 <b>Острова с кладом</b> — любой корабль, дотянувшийся до острова, лутает клад.</li>
+            <li data-i18n-html="wiki.econ.wreck">💥 <b>Обломки</b> — за потопленный корабль ≈50% его цены.</li>
+            <li data-i18n-html="wiki.econ.tribute">🏴‍☠️ <b>Куш</b> — разбил порт: забираешь 100–1000 золота, тем больше, чем крупнее партию отыграл выбывший (заработал, навоевал, потопил).</li>
+            <li data-i18n-html="wiki.econ.port">🏰 <b>Доход порта</b> — немного золота в начале каждого твоего хода. Остался <b>совсем без кораблей</b> — порт даёт на <b>50% больше</b>, чтобы было на что отстроиться.</li>
           </ul>
         </section>
 
         <section class="info-card">
-          <h3>⛺ Аванпосты на островах</h3>
-          <p>Залутал остров — он твой плацдарм: подведи корабль вплотную и нажми <b>«⛺ Аванпост»</b>. Дальше корабль не нужен: <b>кликай по своему аванпосту</b> — откроется панель с перками и кнопкой <b>«⬆ Улучшить»</b>. Перки действуют <b>в радиусе</b> вокруг острова, доход растёт с уровнем:</p>
+          <h3 data-i18n="wiki.outpost.h">⛺ Аванпосты на островах</h3>
+          <p data-i18n-html="wiki.outpost.p1">Залутал остров — он твой плацдарм: подведи корабль вплотную и нажми <b>«⛺ Аванпост»</b>. Дальше корабль не нужен: <b>кликай по своему аванпосту</b> — откроется панель с перками и кнопкой <b>«⬆ Улучшить»</b>. Перки действуют <b>в радиусе</b> вокруг острова, доход растёт с уровнем:</p>
           <ul>
-            <li>⛺ <b>Аванпост</b> (150) — <b>дозор</b>: снимает туман вокруг острова + доход <b>3</b>/ход.</li>
-            <li>🏪 <b>Фактория</b> (250) — доход <b>8</b>/ход + <b>чинит твои корабли</b> рядом (≈3% прочности за ход).</li>
-            <li>🏰 <b>Форт</b> (400) — доход <b>12</b>/ход + <b>береговая пушка</b>: сама бьёт врагов и пиратов в радиусе.</li>
+            <li data-i18n-html="wiki.outpost.lvl1">⛺ <b>Аванпост</b> (150) — <b>дозор</b>: снимает туман вокруг острова + доход <b>3</b>/ход.</li>
+            <li data-i18n-html="wiki.outpost.lvl2">🏪 <b>Фактория</b> (250) — доход <b>8</b>/ход + <b>чинит твои корабли</b> рядом (≈3% прочности за ход).</li>
+            <li data-i18n-html="wiki.outpost.lvl3">🏰 <b>Форт</b> (400) — доход <b>12</b>/ход + <b>береговая пушка</b>: сама бьёт врагов и пиратов в радиусе.</li>
           </ul>
-          <p>Чужой аванпост <b>разрушается только 🎯 мортирой</b> (фрегат/линкор): выбери корабль → «Мортира» → ткни в остров. Разрушенный остров снова ничей — стройте заново. В мирное время «Развития» чужие постройки не тронуть.</p>
+          <p data-i18n-html="wiki.outpost.p2">Чужой аванпост <b>разрушается только 🎯 мортирой</b> (фрегат/линкор): выбери корабль → «Мортира» → ткни в остров. Разрушенный остров снова ничей — стройте заново. В мирное время «Развития» чужие постройки не тронуть.</p>
         </section>
 
         <section class="info-card">
-          <h3>🏰 Порт</h3>
-          <p>Твоя база с портом. Порт очень прочный (840 HP) и <b>огрызается</b> по тому, кто его атакует (наносит ответный урон, обломки достаются тебе). В одиночку лёгким кораблём базу не взять; даже <b>линкор</b> (главный осадный корабль, бьёт <b>мортирой</b> по порту в 1.5 раза сильнее) дробит порт не за пару тычков, а несколькими выстрелами — и всё это время получает сдачи (по линкору порт бьёт на <b>20% больнее</b>). Эффективнее давить базу несколькими кораблями. Разбили порт — выбываешь.</p>
+          <h3 data-i18n="wiki.port.h">🏰 Порт</h3>
+          <p data-i18n-html="wiki.port.p">Твоя база с портом. Порт очень прочный (840 HP) и <b>огрызается</b> по тому, кто его атакует (наносит ответный урон, обломки достаются тебе). В одиночку лёгким кораблём базу не взять; даже <b>линкор</b> (главный осадный корабль, бьёт <b>мортирой</b> по порту в 1.5 раза сильнее) дробит порт не за пару тычков, а несколькими выстрелами — и всё это время получает сдачи (по линкору порт бьёт на <b>20% больнее</b>). Эффективнее давить базу несколькими кораблями. Разбили порт — выбываешь.</p>
         </section>
 
         <section class="info-card">
-          <h3>⛵ Флот</h3>
-          <p class="muted" style="margin:0 0 8px">❤️ прочность · ⚔️ урон · 🎯 дальность огня · 🧭 ход (в клетках)</p>
+          <h3 data-i18n="wiki.fleet.h">⛵ Флот</h3>
+          <p class="muted" style="margin:0 0 8px" data-i18n-html="wiki.fleet.legend">❤️ прочность · ⚔️ урон · 🎯 дальность огня · 🧭 ход (в клетках)</p>
           <div id="infoFleet"></div>
         </section>
 
         <section class="info-card">
-          <h3>🌫 Туман войны</h3>
-          <p>Если включён при создании игры — карта затянута туманом. Базы соперников видны <b>тускло</b>, но их HP и судьба (цела/разбита) обновляются лишь когда ты <b>разведаешь</b> это место. Вражеский флот, лут-острова и рыбные зоны не видно, пока не подойдёшь. Туман рассеивают твоя база и каждый корабль (чуть дальше своего радиуса) — потопили корабль, и там снова сгущается мгла. На одном устройстве недоступно.</p>
+          <h3 data-i18n="wiki.fog.h">🌫 Туман войны</h3>
+          <p data-i18n-html="wiki.fog.p">Если включён при создании игры — карта затянута туманом. Базы соперников видны <b>тускло</b>, но их HP и судьба (цела/разбита) обновляются лишь когда ты <b>разведаешь</b> это место. Вражеский флот, лут-острова и рыбные зоны не видно, пока не подойдёшь. Туман рассеивают твоя база и каждый корабль (чуть дальше своего радиуса) — потопили корабль, и там снова сгущается мгла. На одном устройстве недоступно.</p>
         </section>
 
         <section class="info-card">
-          <h3>🏴‍☠️ Пираты</h3>
-          <p>Нейтральные корабли дрейфуют по морю между ходами, могут растворяться в тумане и появляться вновь. Потопи — забери <b>награду</b>. Мелкие пираты щиплют всех подряд, <b>включая рыбацкие баркасы</b>. Изредка приходит жирный <b>👑-босс</b> с большим кушем — он <b>агрессивен</b>: завидев подбитый корабль рядом, идёт добивать, не считаясь со сдачей. Осторожно: задетые пираты <b>огрызаются</b> в ответ на чужих ходах.</p>
+          <h3 data-i18n="wiki.pirates.h">🏴‍☠️ Пираты</h3>
+          <p data-i18n-html="wiki.pirates.p">Нейтральные корабли дрейфуют по морю между ходами, могут растворяться в тумане и появляться вновь. Потопи — забери <b>награду</b>. Мелкие пираты щиплют всех подряд, <b>включая рыбацкие баркасы</b>. Изредка приходит жирный <b>👑-босс</b> с большим кушем — он <b>агрессивен</b>: завидев подбитый корабль рядом, идёт добивать, не считаясь со сдачей. Осторожно: задетые пираты <b>огрызаются</b> в ответ на чужих ходах.</p>
         </section>
 
       </div>
@@ -340,13 +337,15 @@
       <div class="coach-foot">
         <span id="coachStep" class="muted"></span>
         <span style="flex:1"></span>
-        <button class="small" id="coachSkip">Пропустить</button>
-        <button class="small primary" id="coachNext">Далее →</button>
+        <button class="small" id="coachSkip" data-i18n="game.coach.skip">Пропустить</button>
+        <button class="small primary" id="coachNext" data-i18n="game.coach.next">Далее →</button>
       </div>
     </div>
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
+  <script src="/vendor/i18next.min.js"></script>
+  <script src="/js/i18n.js"></script>
   <script src="/js/favicon.js"></script>
   <script src="/js/palette.js"></script>
   <script src="/js/fx-params.js"></script>

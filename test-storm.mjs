@@ -87,7 +87,7 @@ check('реалтайм доступен во ВСЕХ режимах', ['classi
   const sh = put(g, 0, 'shkhuna', c.x + 120, c.y); // move=170; в коридоре есть вода и на восток, и на запад
   setWind(g, 0, 1); // ветер строго на восток, сила 1: по ветру 170×1.35=229.5, против 170×0.65=110.5
   const far = applyAction(g, 'p0', { type: 'move', shipId: sh.id, x: sh.x - 130, y: sh.y }); // против ветра, 130 > 110.5
-  check('против ветра дальше эффективной дальности — отказ', !far.ok && /ветра/.test(far.error), far.error || '');
+  check('против ветра дальше эффективной дальности — отказ', !far.ok && far.error === 'err.windTooFar', far.error || '');
   const okUp = applyAction(g, 'p0', { type: 'move', shipId: sh.id, x: sh.x - 100, y: sh.y }); // 100 < 110.5
   check('против ветра ближе — можно', okUp.ok, okUp.error || '');
   setWind(g, 0, 1); // дрейф после хода мог сдвинуть — вернём для чистоты
@@ -237,7 +237,7 @@ check('реалтайм доступен во ВСЕХ режимах', ['classi
   const r1 = applyAction(g, 'p0', { type: 'broadside', shipId: me.id, tx: north.x, ty: north.y });
   check('залп борт №1 — ок', r1.ok, r1.error || '');
   const r2 = applyAction(g, 'p0', { type: 'broadside', shipId: me.id, tx: north.x, ty: north.y });
-  check('тот же борт сразу — «перезаряжается»', !r2.ok && /перезаряжается/.test(r2.error), r2.error || '');
+  check('тот же борт сразу — «перезаряжается»', !r2.ok && /^err\.sideCd/.test(r2.error), r2.error || '');
   const r3 = applyAction(g, 'p0', { type: 'broadside', shipId: me.id, tx: south.x, ty: south.y });
   check('другой борт — стреляет сразу (кулдауны независимы)', r3.ok, r3.error || '');
   me.cd = {};
@@ -246,7 +246,7 @@ check('реалтайм доступен во ВСЕХ режимах', ['classi
   const fr = put(g, 0, 'fregat', c.x, c.y - 60);
   const m1 = applyAction(g, 'p0', { type: 'attack', shipId: fr.id, targetType: 'ship', targetId: north.id });
   const m2 = applyAction(g, 'p0', { type: 'attack', shipId: fr.id, targetType: 'ship', targetId: north.id });
-  check('мортира: выстрел ок, повтор — «перезаряжается»', m1.ok && !m2.ok && /перезаряжается/.test(m2.error || ''), (m1.error || '') + ' / ' + (m2.error || ''));
+  check('мортира: выстрел ок, повтор — «перезаряжается»', m1.ok && !m2.ok && m2.error === 'err.mortarCd', (m1.error || '') + ' / ' + (m2.error || ''));
 }
 
 // ═══════════════ ⚡ Реалтайм: экономика/лут/бот/финал ═══════════════
@@ -367,7 +367,7 @@ check('реалтайм доступен во ВСЕХ режимах', ['classi
   check('развитие+реалтайм: мир идёт (меряется временем)', isPeace(g));
   const a = put(g, 0, 'fregat', 500, 500), b = put(g, 1, 'shkhuna', 560, 500);
   const r1 = applyAction(g, 'p0', { type: 'attack', shipId: a.id, targetType: 'ship', targetId: b.id });
-  check('в мирное время атака игрока отклонена', !r1.ok && /Мирное/.test(r1.error || ''), r1.error || '');
+  check('в мирное время атака игрока отклонена', !r1.ok && /^err\.peace/.test(r1.error || ''), r1.error || '');
   const st = publicState(g, 'p0');
   check('стейт шлёт обратный отсчёт мира (leftMs)',
     st.peace.active && st.peace.leftMs > 0 && st.peace.leftMs <= GAME_MODES.develop.peaceRounds * RT.PEACE_MS_PER_ROUND,
@@ -435,7 +435,7 @@ check('реалтайм доступен во ВСЕХ режимах', ['classi
   const r0 = applyAction(g, 'p0', { type: 'rtPause' });
   check('пауза ставится (любым живым участником)', r0.ok && !!g.rt.paused && g.rt.paused.by === 0, r0.error || '');
   const rMove = applyAction(g, 'p0', { type: 'move', shipId: a.id, x: 600, y: 500 });
-  check('на паузе приказы отбиваются', !rMove.ok && /пауз/i.test(rMove.error || ''), rMove.error || '');
+  check('на паузе приказы отбиваются', !rMove.ok && rMove.error === 'err.paused', rMove.error || '');
   const st = publicState(g, 'p0');
   check('стейт несёт паузу (pausedAt/pausedBy)', st.rt.pausedAt > 0 && st.rt.pausedBy === 0);
   // пауза «длилась 2с» → при снятии все часы сдвигаются на её длительность

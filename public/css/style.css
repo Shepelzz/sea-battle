@@ -743,3 +743,17 @@ body.debug-on { padding-bottom: var(--dbg-h); }
 }
 .page-footer .dot-sep { opacity: .5; }
 .page-footer .build { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+/* ─── выбор языка (public/js/i18n.js ставит сюда селект) ─────────────────── */
+.lang-box { position: absolute; top: 10px; left: 12px; z-index: 40; }
+.lang-box.inline { position: static; }
+.lang-pick {
+  font-family: var(--font-hand); font-size: 15px; color: var(--ink);
+  background: var(--paper); border: 1.5px solid var(--ink-light);
+  border-radius: 999px; padding: 4px 10px; box-shadow: var(--shadow); cursor: pointer;
+}
+.lang-pick:hover { border-color: var(--ink); }
+@media (max-width: 520px) {
+  .lang-box { top: 6px; left: 6px; }
+  .lang-pick { font-size: 14px; padding: 3px 8px; }
+}

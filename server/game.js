@@ -8,7 +8,7 @@ import {
   FISH_ZONE_CAP, movesBudget, SHIP_ACTIONS, CHEATS_ENABLED, DEBUG_GOLD_LOG, DEBUG, REPAIR_CHARGES, REPAIR_DOCK_REACH,
   CONVOY_MAX, CONVOY_PICK_MULT, convoyCost, convoyCosts, shipRank,
   modeStartGold, modeOf, isPeace, modePeaceRounds, isDuel, isRealtime, RT, cheapestShipPrice, GAME_MODES, DEFAULT_MODE,
-  WIND_STRENGTH, WIND_TURN_STEP, WIND_STR_STEP, windMoveMult, REALTIME_NAME,
+  WIND_STRENGTH, WIND_TURN_STEP, WIND_STR_STEP, windMoveMult, REALTIME_TAG,
   OUTPOST_LEVELS, OUTPOST_RADIUS, OUTPOST_BUILD_REACH,
   FISH_DRIFT_PER_TURN, FISH_HOME_RADIUS, FISH_MIN_GAP, FISH_BASE_GAP,
   MAP_EDGE_MARGIN, ISLAND_BLOCK_GAP, SPAWN_FAN_N, SPAWN_FAN_RINGS, SPAWN_FAN_R0, SPAWN_FAN_RING_STEP,
@@ -73,10 +73,16 @@ export function createGame(id, config) {
   };
 }
 
-function pushLog(game, text, type = 'info') {
-  game.log.push({ t: Date.now(), type, text });
+// Запись журнала — {k, p}: ключ словаря и параметры. Фразу собирает КЛИЕНТ на своём языке
+// (в одной партии игроки с разными языками, а сервер один). Простой строкой передаём только
+// служебное — дебаг и читы: такую запись клиент показывает как есть.
+function pushLog(game, entry, type = 'info') {
+  const row = typeof entry === 'string' ? { text: entry } : { k: entry.k, ...(entry.p ? { p: entry.p } : {}) };
+  game.log.push({ t: Date.now(), type, ...row });
   if (game.log.length > 80) game.log.splice(0, game.log.length - 80);
 }
+// короткая запись: L('move', { nick }) → { k: 'log.move', p: {...} }
+const L = (k, p) => (p ? { k: 'log.' + k, p } : { k: 'log.' + k });
 
 // Журнал при тумане войны — абстрактные события без деталей (что/где/сколько),
 // чтобы не палить позиции и экономику. Без тумана — подробный текст.
@@ -110,8 +116,8 @@ export function addPlayer(game, playerId, nick, color = null) {
     if (color) existing.color = pickColor(game, color, playerId); // смена цвета при перезаходе
     return { ok: true, rejoined: true };
   }
-  if (game.status !== 'lobby') return { ok: false, error: 'Игра уже началась' };
-  if (game.players.length >= game.config.maxPlayers) return { ok: false, error: 'Все слоты заняты' };
+  if (game.status !== 'lobby') return { ok: false, error: 'err.gameStarted' };
+  if (game.players.length >= game.config.maxPlayers) return { ok: false, error: 'err.slotsFull' };
   game.players.push({
     id: playerId, nick,
     color: pickColor(game, color),
@@ -119,14 +125,14 @@ export function addPlayer(game, playerId, nick, color = null) {
     alive: true, placement: null,
     stats: newStats()
   });
-  pushLog(game, `${nick} присоединился к баттлу (${game.players.length}/${game.config.maxPlayers})`);
+  pushLog(game, L('joined', { nick, n: game.players.length, max: game.config.maxPlayers }));
   return { ok: true };
 }
 
 export function startGame(game, playerId) {
-  if (game.status !== 'lobby') return { ok: false, error: 'Игра уже идёт' };
-  if (game.players[0]?.id !== playerId) return { ok: false, error: 'Начать игру может только создатель' };
-  if (game.players.length < 2) return { ok: false, error: 'Нужно минимум 2 игрока' };
+  if (game.status !== 'lobby') return { ok: false, error: 'err.gameRunning' };
+  if (game.players[0]?.id !== playerId) return { ok: false, error: 'err.hostStartsOnly' };
+  if (game.players.length < 2) return { ok: false, error: 'err.needTwoPlayers' };
 
   const md = modeOf(game);
   // ── Дуэль: маленькая карта без баз/островов, стартового флота нет — игроки скупаются
@@ -138,7 +144,7 @@ export function startGame(game, playerId) {
     game.status = 'active';
     game.phase = 'buy';
     game.turn = { idx: 0, number: 0, round: 1, deadline: null, nudged: false, moves: 0, actedShips: [] };
-    pushLog(game, '🛒 Дуэль: соберите флот в верфи — на всё золото! — затем в бой', 'battle');
+    pushLog(game, L('duelBuy'), 'battle');
     return { ok: true };
   }
 
@@ -159,7 +165,7 @@ export function startGame(game, playerId) {
   for (let i = 0; i < Math.min(PIRATE_MAX, game.players.length); i++) spawnPirate(game, true, false, i);
   game.status = 'active';
   game.turn = { idx: 0, number: 1, round: 1, deadline: turnDeadline(game), nudged: false, moves: 0, actedShips: [] };
-  pushLog(game, `⚔️ Баттл начался! Первым ходит ${game.players[0].nick}`, 'battle');
+  pushLog(game, L('started', { nick: game.players[0].nick }), 'battle');
   return { ok: true };
 }
 
@@ -197,9 +203,7 @@ function spawnPirate(game, silent = false, allowBoss = true, slot = null) {
     bornTurn: game.turn?.number ?? 0                       // для минимального срока жизни (5 ходов)
   });
   if (!silent) {
-    pushLog(game, boss
-      ? '👑🏴‍☠️ В водах объявился ПИРАТСКИЙ БОСС с богатой добычей!'
-      : '🏴‍☠️ На горизонте появился пиратский корабль!', boss ? 'battle' : 'info');
+    pushLog(game, L(boss ? 'bossCame' : 'pirateCame'), boss ? 'battle' : 'info');
   }
 }
 
@@ -218,7 +222,7 @@ export function spawnShipAt(game, owner, type, x, y) {
     ...(st.repairer ? { repairCharges: REPAIR_CHARGES } : {})
   };
   game.ships.push(ship);
-  pushLog(game, `🐞 Отладка: ${st.name} → ${game.players[owner].nick}`, 'info');
+  pushLog(game, `🐞 Отладка: ${type} → ${game.players[owner].nick}`, 'info');
   return ship;
 }
 
@@ -288,8 +292,8 @@ export function pirateVolley(game, pir, target) {
   pir.angryAt = target.owner;
   pushEvent(game, { type: 'volley', fx: pir.x, fy: pir.y, sideDir, cannons: pir.boss ? 3 : 2, full: false, shipType: 'pirate', hits: evHits });
   logEvent(game,
-    `🏴‍☠️ ${pir.boss ? 'БОСС-пират даёт бортовой залп' : 'Пираты дают бортовой залп'} по ${hits.length} цел. (−${PIRATE.dmg} HP)`,
-    `🏴‍☠️ Пираты дали залп по игроку ${game.players[target.owner].nick}`, 'battle');
+    L(pir.boss ? 'bossVolley' : 'pirateVolley', { count: hits.length, dmg: PIRATE.dmg }),
+    L('pirateVolleyFog', { nick: game.players[target.owner].nick }), 'battle');
   for (const s of [...hits]) if (s.hp <= 0) sinkShip(game, s, null);
   return hits.length;
 }
@@ -367,7 +371,7 @@ function movePirates(game) {
     const piratesLeft = game.ships.filter(s => s.owner === -1).length;
     if (piratesLeft > 1 && game.turn.number - (pir.bornTurn || 0) >= PIRATE_MIN_LIFETIME && Math.random() < PIRATE_DESPAWN_CHANCE) {
       game.ships = game.ships.filter(s => s.id !== pir.id);
-      pushLog(game, '🌫 Пиратский корабль растворился в тумане…');
+      pushLog(game, L('pirateGone'));
       continue;
     }
     if (Math.random() > PIRATE_MOVE_CHANCE) continue;
@@ -540,8 +544,10 @@ export function applyOutpostPerks(game, pIdx) {
         if (!isHumanFoe(game, t.owner)) p.stats.npcDamage += lvl.gun;
         pushEvent(game, { type: 'shot', fx: isl.x, fy: isl.y, tx: t.x, ty: t.y, dmg: lvl.gun });
         logEvent(game,
-          `🏰 Форт игрока ${p.nick} бьёт по ${t.owner === -1 ? 'пиратам' : SHIP_TYPES[t.type].name + ' игрока ' + game.players[t.owner].nick} (−${lvl.gun} HP)`,
-          `🏰 Форт игрока ${p.nick} дал залп`, 'battle');
+          t.owner === -1
+            ? L('fortShotPirate', { nick: p.nick, dmg: lvl.gun })
+            : L('fortShotShip', { nick: p.nick, ship: `ship.${t.type}.name`, foe: game.players[t.owner].nick, dmg: lvl.gun }),
+          L('fortShotFog', { nick: p.nick }), 'battle');
         if (t.hp <= 0) sinkShip(game, t, p);
         else if (t.owner === -1) t.angryAt = pIdx;
       }
@@ -554,11 +560,11 @@ export function shipPlacementBlocked(game, x, y, ignoreShipId) {
   // ignoreShipId — id ИЛИ Set из id: конвой переставляет несколько судов разом, и «занято»
   // собственным соседом по строю блокировать не должно (строй жёсткий, сами в себя не влезут)
   const skip = ignoreShipId instanceof Set ? ignoreShipId : new Set([ignoreShipId]);
-  if (x < MAP_EDGE_MARGIN || y < MAP_EDGE_MARGIN || x > m.w - MAP_EDGE_MARGIN || y > m.h - MAP_EDGE_MARGIN) return 'За краем карты';
-  for (const b of m.bases) if (!b.noPort && dist(x, y, b.x, b.y) < b.radius + ISLAND_BLOCK_GAP) return 'Нельзя встать на остров';
-  for (const o of m.lootIslands) if (dist(x, y, o.x, o.y) < o.radius + ISLAND_BLOCK_GAP) return 'Нельзя встать на остров';
+  if (x < MAP_EDGE_MARGIN || y < MAP_EDGE_MARGIN || x > m.w - MAP_EDGE_MARGIN || y > m.h - MAP_EDGE_MARGIN) return 'err.blocked.offMap';
+  for (const b of m.bases) if (!b.noPort && dist(x, y, b.x, b.y) < b.radius + ISLAND_BLOCK_GAP) return 'err.blocked.island';
+  for (const o of m.lootIslands) if (dist(x, y, o.x, o.y) < o.radius + ISLAND_BLOCK_GAP) return 'err.blocked.island';
   for (const s of game.ships) {
-    if (!skip.has(s.id) && dist(x, y, s.x, s.y) < SHIP_COLLISION_DIST) return 'Слишком близко к другому кораблю';
+    if (!skip.has(s.id) && dist(x, y, s.x, s.y) < SHIP_COLLISION_DIST) return 'err.blocked.tooClose';
   }
   return null;
 }
@@ -596,8 +602,8 @@ function sinkShip(game, ship, killer) {
     pushEvent(game, { type: 'gold', x: ship.x, y: ship.y, amount: ship.bounty });
     debugGold(game, killer, ship.bounty, 'награда за пирата');
     logEvent(game,
-      `💥 Пиратский корабль потоплен! ${killer.nick} забирает награду ${ship.bounty} золота`,
-      `💥 ${killer.nick} потопил пиратский корабль`, 'battle');
+      L('pirateSunk', { nick: killer.nick, gold: ship.bounty }),
+      L('pirateSunkFog', { nick: killer.nick }), 'battle');
     return;
   }
   const owner = game.players[ship.owner];
@@ -608,8 +614,8 @@ function sinkShip(game, ship, killer) {
     killer.stats.shipsSunk++;
     if (npcFoe) killer.stats.npcSunk++;
     logEvent(game,
-      `💥 ${SHIP_TYPES[ship.type].name} игрока ${owner.nick} потоплен! (${killer.nick})`,
-      `💥 ${killer.nick} потопил корабль игрока ${owner.nick}`, 'battle');
+      L('shipSunk', { ship: `ship.${ship.type}.name`, owner: owner.nick, killer: killer.nick }),
+      L('shipSunkFog', { killer: killer.nick, owner: owner.nick }), 'battle');
   } else if (killer) {
     // реалтайм: лут скромнее (война не должна окупаться) — пошаговый баланс не трогаем
     const plunder = Math.round(SHIP_TYPES[ship.type].price * (isRealtime(game) ? RT.WRECK_LOOT_FRAC : WRECK_LOOT_FRAC));
@@ -617,14 +623,14 @@ function sinkShip(game, ship, killer) {
     killer.stats.shipsSunk++; killer.stats.goldCollected += plunder;
     if (npcFoe) { killer.stats.npcSunk++; killer.stats.npcGold += plunder; }
     pushEvent(game, { type: 'gold', x: ship.x, y: ship.y, amount: plunder });
-    debugGold(game, killer, plunder, `лут с обломков (${SHIP_TYPES[ship.type].name})`);
+    debugGold(game, killer, plunder, `лут с обломков (${ship.type})`);
     logEvent(game,
-      `💥 ${SHIP_TYPES[ship.type].name} игрока ${owner.nick} потоплен! ${killer.nick} лутает ${plunder} золота с обломков`,
-      `💥 ${killer.nick} потопил корабль игрока ${owner.nick}`, 'battle');
+      L('shipSunkLoot', { ship: `ship.${ship.type}.name`, owner: owner.nick, killer: killer.nick, gold: plunder }),
+      L('shipSunkFog', { killer: killer.nick, owner: owner.nick }), 'battle');
   } else {
     logEvent(game,
-      `💥 ${SHIP_TYPES[ship.type].name} игрока ${owner.nick} потоплен пиратами!`,
-      `💥 Пираты потопили корабль игрока ${owner.nick}`, 'battle');
+      L('shipSunkPirates', { ship: `ship.${ship.type}.name`, owner: owner.nick }),
+      L('shipSunkPiratesFog', { owner: owner.nick }), 'battle');
   }
   // Дуэль: флот игрока полностью уничтожен → он выбывает (баз нет; последний с флотом побеждает).
   if (isDuel(game) && owner.alive && !game.ships.some(s => s.owner === ship.owner)) {
@@ -653,12 +659,10 @@ function eliminatePlayer(game, victimIdx, killer) {
       pushEvent(game, { type: 'gold', x: base.x, y: base.y, amount: tribute });
     }
     logEvent(game,
-      duel ? `🏴‍☠️ Флот игрока ${victim.nick} разбит! ${killer.nick} забирает остатки казны (${tribute}) и побеждает`
-           : `🏴‍☠️ Порт игрока ${victim.nick} разрушен! ${killer.nick} забирает ${tribute} золота. ${victim.nick} выбывает`,
-      duel ? `🏴‍☠️ ${killer.nick} разбил флот игрока ${victim.nick}`
-           : `🏴‍☠️ ${killer.nick} разбил базу игрока ${victim.nick} — ${victim.nick} выбывает`, 'battle');
+      L(duel ? 'fleetWiped' : 'portDown', { victim: victim.nick, killer: killer.nick, gold: tribute }),
+      L(duel ? 'fleetWipedFog' : 'portDownFog', { victim: victim.nick, killer: killer.nick }), 'battle');
   } else {
-    pushLog(game, `🏳️ ${victim.nick} ${duel ? 'теряет весь флот и' : 'спускает флаг и'} покидает баттл`, 'battle');
+    pushLog(game, L(duel ? 'leftDuel' : 'leftFlag', { nick: victim.nick }), 'battle');
   }
   // Флот побеждённого уходит на дно вместе с портом.
   game.ships = game.ships.filter(s => s.owner !== victimIdx);
@@ -669,7 +673,7 @@ function eliminatePlayer(game, victimIdx, killer) {
     game.winner = game.players.indexOf(alive[0]);
     game.status = 'finished';
     game.turn.deadline = null;
-    pushLog(game, `👑 ${alive[0].nick} побеждает в баттле!`, 'battle');
+    pushLog(game, L('winner', { nick: alive[0].nick }), 'battle');
   }
 }
 
@@ -695,11 +699,11 @@ export const isRanked = game => !!(game?.config?.listed) && !isRealtime(game);
 
 // Смена цвета в лобби (валидируем: из палитры и не занят другим игроком).
 export function setColor(game, playerId, color) {
-  if (game.status !== 'lobby') return { ok: false, error: 'Цвет можно менять только в лобби' };
+  if (game.status !== 'lobby') return { ok: false, error: 'err.colorLobbyOnly' };
   const p = game.players.find(x => x.id === playerId);
-  if (!p) return { ok: false, error: 'Вы не участник' };
-  if (!PALETTE.includes(color)) return { ok: false, error: 'Неизвестный цвет' };
-  if (game.players.some(x => x.id !== playerId && x.color === color)) return { ok: false, error: 'Цвет уже занят' };
+  if (!p) return { ok: false, error: 'err.notInGame' };
+  if (!PALETTE.includes(color)) return { ok: false, error: 'err.badColor' };
+  if (game.players.some(x => x.id !== playerId && x.color === color)) return { ok: false, error: 'err.colorTaken' };
   p.color = color;
   return { ok: true };
 }
@@ -708,18 +712,18 @@ export function setColor(game, playerId, color) {
 export function leaveGame(game, playerId) {
   if (game.status === 'lobby') {
     const idx = game.players.findIndex(p => p.id === playerId);
-    if (idx === -1) return { ok: false, error: 'Вы не участник' };
+    if (idx === -1) return { ok: false, error: 'err.notInGame' };
     const [left] = game.players.splice(idx, 1);
     // цвета НЕ переиндексируем — каждый сохраняет выбранный; освободившийся просто доступен снова
-    pushLog(game, `🚪 ${left.nick} покинул лобби`);
+    pushLog(game, L('leftLobby', { nick: left.nick }));
     return { ok: true };
   }
-  if (game.status !== 'active') return { ok: false, error: 'Игра уже завершена' };
+  if (game.status !== 'active') return { ok: false, error: 'err.gameFinished' };
   let idx = game.players.findIndex(p => p.id === playerId);
   // хотсит: «сдаться» сдаёт того, чей сейчас ход
   if (idx === -1 && game.config.hotseat && playerId === game.hotseatOwner) idx = game.turn.idx;
-  if (idx === -1) return { ok: false, error: 'Вы не участник' };
-  if (!game.players[idx].alive) return { ok: false, error: 'Вы уже выбыли' };
+  if (idx === -1) return { ok: false, error: 'err.notInGame' };
+  if (!game.players[idx].alive) return { ok: false, error: 'err.alreadyOut' };
   const wasTheirTurn = game.turn.idx === idx;
   freshEvents(game);
   eliminatePlayer(game, idx, null);
@@ -756,7 +760,7 @@ export function myGameSummary(game, viewerPid) {
   const cur = game.players[game.turn?.idx];
   return {
     id: game.id,
-    mode: GAME_MODES[game.config?.mode]?.name || GAME_MODES[DEFAULT_MODE]?.name || 'Игра',
+    mode: `mode.${GAME_MODES[game.config?.mode] ? game.config.mode : DEFAULT_MODE}.name`,
     online, hotseat: !!game.config?.hotseat, bot: !!game.config?.botGame,
     canFinish: online ? game.hostPid === viewerPid : true,   // оффлайн — всегда моя; онлайн — только хост
     turnNick: cur?.nick || '',
@@ -768,34 +772,36 @@ export function myGameSummary(game, viewerPid) {
 
 // Метки-ОТКЛОНЕНИЯ от стандарта для строки лобби в СПИСКЕ. Дефолты не пишем:
 // классика · туман войны ВКЛ · ход тремя судами · без таймера. Пишем только то, что отличается.
+// Метки — не фразы, а {k, p}: язык у каждого зрителя списка свой (клиент рисует через tr()).
 export function lobbyTags(game) {
   const c = game.config || {}, tags = [];
-  if (c.realtime) tags.push(REALTIME_NAME + ' βeta');                            // ⚡ реалтайм-партия
-  if (c.mode && c.mode !== DEFAULT_MODE) tags.push(GAME_MODES[c.mode]?.name);   // режим ≠ классики
-  if (c.turnTimer) tags.push(`таймер ${c.turnTimer / 60} мин`);                  // дефолт — без таймера
+  if (c.realtime) tags.push({ k: REALTIME_TAG });                                // ⚡ реалтайм-партия
+  if (c.mode && c.mode !== DEFAULT_MODE && GAME_MODES[c.mode])
+    tags.push({ k: `mode.${c.mode}.name` });                                     // режим ≠ классики
+  if (c.turnTimer) tags.push({ k: 'tag.timer', p: { min: c.turnTimer / 60 } });   // дефолт — без таймера
   if (!isDuel(game)) {                                                           // в дуэли туман/ход-3 неприменимы
-    if (c.fog === false) tags.push('без тумана');                                // дефолт — туман ВКЛ
-    if (c.multiMove === false && !c.realtime) tags.push('по одному ходу');       // дефолт — ход-3; в реалтайме ходов нет вовсе
+    if (c.fog === false) tags.push({ k: 'tag.noFog' });                          // дефолт — туман ВКЛ
+    if (c.multiMove === false && !c.realtime) tags.push({ k: 'tag.singleMove' }); // дефолт — ход-3; в реалтайме ходов нет вовсе
   }
-  return tags.filter(Boolean);
+  return tags;
 }
 
 // «Поторопить» AFK-игрока: письмо + жёсткие 10 минут на ход.
 export const NUDGE_MS = 10 * 60 * 1000;
 export function nudge(game, playerId) {
-  if (game.status !== 'active') return { ok: false, error: 'Игра не активна' };
-  if (isRealtime(game)) return { ok: false, error: 'В реалтайме некого торопить — все ходят одновременно' };
-  if (game.config.hotseat) return { ok: false, error: 'В игре на одном устройстве это не нужно' };
+  if (game.status !== 'active') return { ok: false, error: 'err.gameNotActive' };
+  if (isRealtime(game)) return { ok: false, error: 'err.nudgeRtPointless' };
+  if (game.config.hotseat) return { ok: false, error: 'err.nudgeHotseatPointless' };
   const requester = game.players.find(p => p.id === playerId);
-  if (!requester || !requester.alive) return { ok: false, error: 'Вы не участник' };
+  if (!requester || !requester.alive) return { ok: false, error: 'err.notInGame' };
   const targetIdx = game.turn.idx;
-  if (game.players[targetIdx].id === playerId) return { ok: false, error: 'Сейчас ваш ход' };
-  if (game.turn.nudged) return { ok: false, error: 'Игрока уже поторопили — таймер идёт' };
+  if (game.players[targetIdx].id === playerId) return { ok: false, error: 'err.itIsYourTurn' };
+  if (game.turn.nudged) return { ok: false, error: 'err.alreadyNudged' };
   if (game.turn.deadline && game.turn.deadline - Date.now() <= NUDGE_MS)
-    return { ok: false, error: 'Таймер хода и так меньше 10 минут' };
+    return { ok: false, error: 'err.timerAlreadyShort' };
   game.turn.nudged = true;
   game.turn.deadline = Date.now() + NUDGE_MS;
-  pushLog(game, `📯 ${requester.nick} торопит игрока ${game.players[targetIdx].nick} — 10 минут на ход!`);
+  pushLog(game, L('nudge', { who: requester.nick, target: game.players[targetIdx].nick }));
   return { ok: true, targetIdx };
 }
 
@@ -804,15 +810,15 @@ export function nudge(game, playerId) {
 // Когда оба игрока готовы — переключаем в фазу боя 'battle' и стартуем ходы.
 function duelBuyFleet(game, pIdx, action) {
   const player = game.players[pIdx];
-  if (player.ready) return { ok: false, error: 'Флот уже собран — ждём соперника' };
+  if (player.ready) return { ok: false, error: 'err.fleetReady' };
   const list = Array.isArray(action.ships) ? action.ships : [];
-  if (!list.length) return { ok: false, error: 'Собери флот: добавь корабли в верфи' };
+  if (!list.length) return { ok: false, error: 'err.buildFleetFirst' };
   if (list.some(t => !SHIP_TYPES[t] || SHIP_TYPES[t].cheat || SHIP_TYPES[t].fishing || !(SHIP_TYPES[t].price > 0)))
-    return { ok: false, error: 'Недопустимый корабль для дуэли' };
+    return { ok: false, error: 'err.badDuelShip' };
   const cost = list.reduce((sum, t) => sum + SHIP_TYPES[t].price, 0);
-  if (cost > player.gold) return { ok: false, error: 'Не хватает золота' };
+  if (cost > player.gold) return { ok: false, error: 'err.noGold' };
   if (player.gold - cost >= cheapestShipPrice(true))
-    return { ok: false, error: 'Скупись на всё золото — ещё можно купить корабль' };
+    return { ok: false, error: 'err.spendAllGold' };
   const spots = duelFleetSpots(game.map, pIdx, list.length);
   list.forEach((type, i) => {
     game.ships.push({
@@ -823,11 +829,11 @@ function duelBuyFleet(game, pIdx, action) {
   });
   player.gold -= cost;
   player.ready = true;
-  pushLog(game, `⚓ ${player.nick} собрал флот (${list.length} суд., −${cost} зол.) — готов к бою`, 'battle');
+  pushLog(game, L('fleetBought', { nick: player.nick, count: list.length, cost }), 'battle');
   if (game.players.every(p => p.ready)) {  // оба готовы → бой
     game.phase = 'battle';
     game.turn = { idx: 0, number: 1, round: 1, deadline: turnDeadline(game), nudged: false, moves: 0, actedShips: [], broadsideSides: {} };
-    pushLog(game, `⚔️ Флоты собраны — бой! Первым ходит ${game.players[0].nick}`, 'battle');
+    pushLog(game, L('duelStart', { nick: game.players[0].nick }), 'battle');
   }
   return { ok: true, bought: list.length };
 }
@@ -877,31 +883,31 @@ export function terrainBlocked(game, x, y) {
 
 // Применение хода. action.type: buy | collect | move | attack | skip | buyFleet (дуэль)
 export function applyAction(game, playerId, action) {
-  if (game.status !== 'active') return { ok: false, error: 'Игра не активна' };
+  if (game.status !== 'active') return { ok: false, error: 'err.gameNotActive' };
   let pIdx = game.players.findIndex(p => p.id === playerId);
   // хотсит: владелец устройства ходит за того, чья очередь
   if (pIdx === -1 && game.config.hotseat && playerId === game.hotseatOwner) pIdx = game.turn.idx;
-  if (pIdx === -1) return { ok: false, error: 'Вы не участник игры' };
+  if (pIdx === -1) return { ok: false, error: 'err.notInGame' };
   // Дуэль, фаза закупки: оба игрока скупаются ОДНОВРЕМЕННО (вне очереди ходов), затем начинается бой.
   if (game.phase === 'buy') {
-    if (action.type !== 'buyFleet') return { ok: false, error: 'Идёт закупка — собери флот в верфи' };
+    if (action.type !== 'buyFleet') return { ok: false, error: 'err.buyPhase' };
     return duelBuyFleet(game, pIdx, action);
   }
-  if (action.type === 'buyFleet') return { ok: false, error: 'Закупка флота уже завершена' };
+  if (action.type === 'buyFleet') return { ok: false, error: 'err.buyDone' };
   // ⛈️ Реалтайм («Шторм»): очереди ходов нет — действуешь когда хочешь, стрельба по перезарядке.
   // Кейсы ниже ветвятся по rt: движение = приказ «плыть» (тик в rt.js везёт), борта/мортира/ремонт
   // проверяют и взводят кулдауны вместо «уже ходил в этом ходу». События НЕ сбрасываются на каждое
   // действие — копятся и уходят пачкой в рассылке тика (rt.js двигает eventSeq).
   const rt = isRealtime(game);
-  if (!rt && pIdx !== game.turn.idx) return { ok: false, error: 'Сейчас не ваш ход' };
+  if (!rt && pIdx !== game.turn.idx) return { ok: false, error: 'err.notYourTurn' };
   const player = game.players[pIdx];
-  if (rt && !player.alive) return { ok: false, error: 'Ты выбыл из баттла' };
+  if (rt && !player.alive) return { ok: false, error: 'err.youAreOut' };
   // ⏸ пауза реалтайма: мир заморожен, приказы не принимаются — только снятие паузы (любым игроком)
   if (rt && game.rt?.paused && action.type !== 'rtPause')
-    return { ok: false, error: '⏸ Игра на паузе' };
+    return { ok: false, error: 'err.paused' };
   // режим «ход тремя судами»: одним кораблём за ход ходить можно только раз
   if (!rt && SHIP_ACTION_SET.has(action.type) && (game.turn.actedShips || []).includes(action.shipId))
-    return { ok: false, error: 'Этот корабль уже ходил' };
+    return { ok: false, error: 'err.shipActed' };
   if (!rt) freshEvents(game); // события этого хода для анимаций на клиенте
 
   let convoyDone = null; // ⛵ конвой считает манёвры сам: он стоит по манёвру за каждое судно строя
@@ -909,25 +915,25 @@ export function applyAction(game, playerId, action) {
   switch (action.type) {
     case 'buy': {
       const list = Array.isArray(action.ships) ? action.ships : [];
-      if (!list.length) return { ok: false, error: 'Выберите корабли для покупки' };
+      if (!list.length) return { ok: false, error: 'err.pickShips' };
       const cost = list.reduce((sum, t) => sum + (SHIP_TYPES[t]?.price ?? 1e9), 0);
-      if (cost > player.gold) return { ok: false, error: 'Не хватает золота' };
+      if (cost > player.gold) return { ok: false, error: 'err.noGold' };
       const base = game.map.bases[pIdx];
       const bought = [];
       for (const type of list) {
         const spot = findFreeSpotNearBase(game, base);
-        if (!spot) return { ok: false, error: 'Возле порта нет места для новых кораблей' };
+        if (!spot) return { ok: false, error: 'err.noRoomNearPort' };
         game.ships.push({
           id: 's' + (shipSeq++) + '_' + Math.random().toString(36).slice(2, 6),
           owner: pIdx, type, x: spot.x, y: spot.y, hp: SHIP_TYPES[type].hp,
           ...(SHIP_TYPES[type].repairer ? { repairCharges: REPAIR_CHARGES } : {})
         });
-        bought.push(SHIP_TYPES[type].name);
+        bought.push(`ship.${type}.name`);   // список — ключами, имена подставит клиент
       }
       player.gold -= cost;
       logEvent(game,
-        `🛠 ${player.nick} покупает: ${bought.join(', ')} (−${cost} зол.)`,
-        `🛠 ${player.nick} сходил на верфь`);
+        L('buy', { nick: player.nick, ships: bought, cost }),
+        L('buyFog', { nick: player.nick }));
       break;
     }
 
@@ -952,20 +958,20 @@ export function applyAction(game, playerId, action) {
           ships.forEach(s => reachers.add(s.id));
         }
       }
-      if (!gained) return { ok: false, error: 'Нечего собирать: нет (ещё не ходивших) кораблей у нелутанных островов' };
+      if (!gained) return { ok: false, error: 'err.nothingToCollect' };
       player.gold += gained;
       player.stats.goldCollected += gained;
       debugGold(game, player, gained, 'клад с острова');
       if (!rt) reachers.forEach(id => (game.turn.actedShips ??= []).push(id)); // собравшие — походили этим ходом
       logEvent(game,
-        `💰 ${player.nick} собирает добычу: +${gained} зол. (${notes.join(', ')})`,
-        `💰 ${player.nick} собирает добычу`);
+        L('collect', { nick: player.nick, gold: gained, count: notes.length }),
+        L('collectFog', { nick: player.nick }));
       break;
     }
 
     case 'move': {
       const ship = game.ships.find(s => s.id === action.shipId);
-      if (!ship || ship.owner !== pIdx) return { ok: false, error: 'Это не ваш корабль' };
+      if (!ship || ship.owner !== pIdx) return { ok: false, error: 'err.notYourShip' };
       if (rt) { // реалтайм: приказ «плыть» — без лимита дистанции; корабль плывёт сам (тик rt.js, ветер влияет)
         const m = game.map;
         ship.dest = {
@@ -974,12 +980,12 @@ export function applyAction(game, playerId, action) {
         };
         break;
       }
-      if (game.turn.broadsideSides?.[ship.id]?.length) return { ok: false, error: 'Корабль уже даёт залп — добей вторым бортом или жди' };
+      if (game.turn.broadsideSides?.[ship.id]?.length) return { ok: false, error: 'err.shipBroadsiding' };
       const x = Math.round(action.x), y = Math.round(action.y);
       // 🌬 дальность хода зависит от курса: по ветру дальше, против — меньше (каплевидный контур)
       const range = SHIP_TYPES[ship.type].move * windMoveMult(game.wind, Math.atan2(y - ship.y, x - ship.x));
       if (dist(ship.x, ship.y, x, y) > range + 0.5)
-        return { ok: false, error: dist(ship.x, ship.y, x, y) <= SHIP_TYPES[ship.type].move + 0.5 ? '🌬 Против ветра так далеко не уплыть' : 'Слишком далеко: линейка не дотягивается' };
+        return { ok: false, error: dist(ship.x, ship.y, x, y) <= SHIP_TYPES[ship.type].move + 0.5 ? 'err.windTooFar' : 'err.tooFar' };
       const blocked = shipPlacementBlocked(game, x, y, ship.id);
       if (blocked) return { ok: false, error: blocked };
       if (dist(ship.x, ship.y, x, y) > 1) ship.heading = Math.atan2(y - ship.y, x - ship.x); // курс — для определения бортов залпа
@@ -987,59 +993,61 @@ export function applyAction(game, playerId, action) {
       if (isPeace(game)) {
         const keep = modeOf(game).peaceBaseKeepout || 0;
         if (keep && game.map.bases.some((b, bi) => bi !== pIdx && game.players[bi]?.alive && dist(x, y, b.x, b.y) < keep))
-          return { ok: false, error: '🕊 Мирное время: к чужой базе подходить нельзя' };
+          return { ok: false, error: 'err.peaceNoApproach' };
       }
       pushEvent(game, { type: 'move', shipId: ship.id, fx: ship.x, fy: ship.y, tx: x, ty: y });
       ship.x = x; ship.y = y;
       logEvent(game,
-        `🧭 ${player.nick} ведёт ${SHIP_TYPES[ship.type].name} на новую позицию`,
-        `🧭 ${player.nick} сделал ход`);
+        L('move', { nick: player.nick, ship: `ship.${ship.type}.name` }),
+        L('moveFog', { nick: player.nick }));
       break;
     }
 
     // ⛵ КОНВОЙ: строй идёт ОДНИМ жестом — флагман ведёт, остальные повторяют его смещение.
     // Правила и цена — в config.js (CONVOY_MAX / CONVOY_PICK_MULT / convoyCost).
     case 'convoy': {
-      if (rt) return { ok: false, error: '⛈ В шторме строй не водят — суда плывут сами' };
-      if (!game.config.multiMove) return { ok: false, error: 'Конвой — только в режиме «ход тремя судами»' };
+      if (rt) return { ok: false, error: 'err.convoyInRt' };
+      if (!game.config.multiMove) return { ok: false, error: 'err.convoyMultiOnly' };
       const ids = [...new Set([action.shipId, ...(Array.isArray(action.ships) ? action.ships : [])].filter(Boolean))];
-      if (ids.length < 2) return { ok: false, error: 'В строю должно быть минимум два судна' };
-      if (ids.length > CONVOY_MAX) return { ok: false, error: `В строю не больше ${CONVOY_MAX} судов` };
+      if (ids.length < 2) return { ok: false, error: 'err.convoyMinTwo' };
+      if (ids.length > CONVOY_MAX) return { ok: false, error: 'err.convoyTooMany', params: { count: CONVOY_MAX } };
       const crew = ids.map(id => game.ships.find(s => s.id === id));
-      if (crew.some(s => !s || s.owner !== pIdx)) return { ok: false, error: 'В строй берут только свои корабли' };
+      if (crew.some(s => !s || s.owner !== pIdx)) return { ok: false, error: 'err.convoyOwnOnly' };
       const actedNow = new Set(game.turn.actedShips || []);
-      if (crew.some(s => actedNow.has(s.id))) return { ok: false, error: 'Судно из строя уже ходило в этом ходу' };
-      if (crew.some(s => game.turn.broadsideSides?.[s.id]?.length)) return { ok: false, error: 'Судно из строя уже даёт залп' };
+      if (crew.some(s => actedNow.has(s.id))) return { ok: false, error: 'err.convoyShipActed' };
+      if (crew.some(s => game.turn.broadsideSides?.[s.id]?.length)) return { ok: false, error: 'err.convoyShipFiring' };
       const cost = convoyCost(crew.length);
       const left = movesBudget(game.config) - (game.turn.moves || 0);
-      if (cost > left) return { ok: false, error: `На строй не хватает манёвров: нужно ${cost}, осталось ${left}` };
+      if (cost > left) return { ok: false, error: 'err.convoyNoMoves', params: { need: cost, left } };
       const lead = crew[0];
       const pickR = SHIP_TYPES[lead.type].move * CONVOY_PICK_MULT;
       if (crew.some(s => dist(lead.x, lead.y, s.x, s.y) > pickR + 0.5))
-        return { ok: false, error: 'В строй берут только суда рядом с флагманом' };
+        return { ok: false, error: 'err.convoyNear' };
       // флагман не может быть младше ведомых: иначе баркас (ход 180 = самый широкий радиус
       // набора) уводил бы за собой фрегаты и линкоры
       const senior = crew.find(s => shipRank(s.type) > shipRank(lead.type));
       if (senior)
-        return { ok: false, error: `⚓ Флагман не может быть младше: ${SHIP_TYPES[lead.type].name} не поведёт ${SHIP_TYPES[senior.type].name}` };
-      if (convoyContact(game, crew)) return { ok: false, error: '⚔️ Рядом враг — строем от боя не уйти' };
+        // имена судов — тоже ключами: клиент подставит их на своём языке (см. tr() в i18n.js)
+        return { ok: false, error: 'err.convoyRank', params: { lead: `ship.${lead.type}.name`, senior: `ship.${senior.type}.name` } };
+      if (convoyContact(game, crew)) return { ok: false, error: 'err.convoyContact' };
       const cx = Math.round(action.x), cy = Math.round(action.y);
       const ddx = cx - lead.x, ddy = cy - lead.y;
       const cang = Math.atan2(ddy, ddx);
       // строй идёт по САМОМУ МЕДЛЕННОМУ — линкор в конвое режет дальность всем
       const slow = Math.min(...crew.map(s => SHIP_TYPES[s.type].move));
       if (Math.hypot(ddx, ddy) > slow * windMoveMult(game.wind, cang) + 0.5)
-        return { ok: false, error: '⛵ Строй идёт по самому медленному — так далеко не дотянуть' };
+        return { ok: false, error: 'err.convoySlow' };
       const dests = crew.map(s => ({ s, x: Math.round(s.x + ddx), y: Math.round(s.y + ddy) }));
       const crewSet = new Set(ids);
       for (const d of dests) {
         const blocked = shipPlacementBlocked(game, d.x, d.y, crewSet);
-        if (blocked) return { ok: false, error: `${SHIP_TYPES[d.s.type].name}: ${blocked.toLowerCase()}` };
+        // и судно, и причина — ключами: фразу собирает клиент на своём языке
+        if (blocked) return { ok: false, error: 'err.convoyBlocked', params: { ship: `ship.${d.s.type}.name`, reason: blocked } };
       }
       if (isPeace(game)) {
         const keep = modeOf(game).peaceBaseKeepout || 0;
         if (keep && dests.some(d => game.map.bases.some((b, bi) => bi !== pIdx && game.players[bi]?.alive && dist(d.x, d.y, b.x, b.y) < keep)))
-          return { ok: false, error: '🕊 Мирное время: к чужой базе подходить нельзя' };
+          return { ok: false, error: 'err.peaceNoApproach' };
       }
       // group — метка для клиента: суда строя анимируются ОДНОВРЕМЕННО, а не по очереди
       const gid = 'c' + (game.turn.moves || 0) + '_' + lead.id;
@@ -1050,28 +1058,28 @@ export function applyAction(game, playerId, action) {
       }
       convoyDone = { ids, cost };
       logEvent(game,
-        `⛵ ${player.nick} ведёт строй из ${crew.length} судов (${crew.map(s => SHIP_TYPES[s.type].name).join(', ')})`,
-        `⛵ ${player.nick} ведёт строй из ${crew.length} судов`);
+        L('convoy', { nick: player.nick, count: crew.length, ships: crew.map(s => `ship.${s.type}.name`) }),
+        L('convoyFog', { nick: player.nick, count: crew.length }));
       break;
     }
 
     case 'attack': {
       const ship = game.ships.find(s => s.id === action.shipId);
-      if (!ship || ship.owner !== pIdx) return { ok: false, error: 'Это не ваш корабль' };
+      if (!ship || ship.owner !== pIdx) return { ok: false, error: 'err.notYourShip' };
       const st = SHIP_TYPES[ship.type];
       // 🎯 МОРТИРА (прицельный одиночный выстрел) — только у фрегата/линкора (+ чит-авианосец)
-      if (!MORTAR_SHIPS.includes(ship.type) && !st.cheat) return { ok: false, error: 'Мортира только у фрегата и линкора' };
-      if (!rt && game.turn.broadsideSides?.[ship.id]?.length) return { ok: false, error: 'Корабль уже даёт залп — добей вторым бортом или жди' };
-      if (rt && !rtReady(ship, 'm')) return { ok: false, error: '🎯 Мортира перезаряжается' };
+      if (!MORTAR_SHIPS.includes(ship.type) && !st.cheat) return { ok: false, error: 'err.mortarOnlyHeavy' };
+      if (!rt && game.turn.broadsideSides?.[ship.id]?.length) return { ok: false, error: 'err.shipBroadsiding' };
+      if (rt && !rtReady(ship, 'm')) return { ok: false, error: 'err.mortarCd' };
       const volley = st.volley || 1; // авианосец (чит) бьёт залпом из нескольких снарядов подряд
 
       if (action.targetType === 'ship') {
         const target = game.ships.find(s => s.id === action.targetId);
-        if (!target || target.owner === pIdx) return { ok: false, error: 'Неверная цель' };
+        if (!target || target.owner === pIdx) return { ok: false, error: 'err.badTarget' };
         // мирное время: на игроков нападать нельзя (пиратов — можно)
-        if (target.owner >= 0 && isPeace(game)) return { ok: false, error: '🕊 Мирное время: на игроков нападать нельзя' };
+        if (target.owner >= 0 && isPeace(game)) return { ok: false, error: 'err.peaceNoAttack' };
         if (dist(ship.x, ship.y, target.x, target.y) > st.fireRange + 0.5)
-          return { ok: false, error: 'Цель вне дальности стрельбы' };
+          return { ok: false, error: 'err.targetOutOfRange' };
         const hit = Math.max(1, Math.round(st.dmg * MORTAR_SHIP_MULT)); // мортира по СУДАМ — половина (её дело осада, не размен в море)
         const total = hit * volley;
         target.hp -= total;
@@ -1080,24 +1088,26 @@ export function applyAction(game, playerId, action) {
         if (!isHumanFoe(game, target.owner)) player.stats.npcDamage += total; // урон по пирату/боту → из лидерборда вычтется
         for (let i = 0; i < volley; i++) // снаряды — клиент проигрывает их один за другим (auto=скорострельная очередь)
           pushEvent(game, { type: 'shot', fx: ship.x, fy: ship.y, tx: target.x, ty: target.y, dmg: hit, auto: volley > 1 });
-        const targetName = target.owner === -1
-          ? 'пиратскому кораблю'
-          : `${SHIP_TYPES[target.type].name} игрока ${game.players[target.owner].nick}`;
-        const abstractFoe = target.owner === -1 ? 'пиратов' : `флот игрока ${game.players[target.owner].nick}`;
+        const shot = { nick: player.nick, ship: `ship.${ship.type}.name`, dmg: total };
         logEvent(game,
-          `🔥 ${player.nick}: ${st.name} бьёт по ${targetName} (−${total} HP${volley > 1 ? ` залпом ×${volley}` : ''})`,
-          `🔥 ${player.nick} напал на ${abstractFoe}`, 'battle');
+          target.owner === -1
+            ? L(volley > 1 ? 'mortarPirateVolley' : 'mortarPirate', { ...shot, volley })
+            : L(volley > 1 ? 'mortarShipVolley' : 'mortarShip',
+                { ...shot, volley, foeShip: `ship.${target.type}.name`, foe: game.players[target.owner].nick }),
+          target.owner === -1
+            ? L('attackPiratesFog', { nick: player.nick })
+            : L('attackFleetFog', { nick: player.nick, foe: game.players[target.owner].nick }), 'battle');
         if (target.hp <= 0) sinkShip(game, target, player);
         else if (target.owner === -1) target.angryAt = pIdx; // пираты запоминают обидчика
       } else if (action.targetType === 'port') {
-        if (isDuel(game)) return { ok: false, error: 'В дуэли баз нет — бей по кораблям' };
+        if (isDuel(game)) return { ok: false, error: 'err.duelNoBases' };
         const targetIdx = action.targetId;
         const victim = game.players[targetIdx];
-        if (!victim || targetIdx === pIdx || !victim.alive) return { ok: false, error: 'Неверная цель' };
-        if (isPeace(game)) return { ok: false, error: '🕊 Мирное время: базы трогать нельзя' };
+        if (!victim || targetIdx === pIdx || !victim.alive) return { ok: false, error: 'err.badTarget' };
+        if (isPeace(game)) return { ok: false, error: 'err.peaceNoBases' };
         const base = game.map.bases[targetIdx];
         if (dist(ship.x, ship.y, base.x, base.y) > st.fireRange + base.radius * 0.5)
-          return { ok: false, error: 'Порт вне дальности стрельбы' };
+          return { ok: false, error: 'err.portOutOfRange' };
         const portDmg = Math.round(st.dmg * (st.portBonus || 1)); // линкор бьёт по порту сильнее (portBonus)
         const totalPort = portDmg * volley;
         victim.portHp -= totalPort;
@@ -1107,8 +1117,8 @@ export function applyAction(game, playerId, action) {
         for (let i = 0; i < volley; i++)
           pushEvent(game, { type: 'shot', fx: ship.x, fy: ship.y, tx: base.x, ty: base.y, dmg: portDmg, auto: volley > 1 });
         logEvent(game,
-          `🔥 ${player.nick} обстреливает порт игрока ${victim.nick} (−${totalPort} HP, осталось ${Math.max(0, victim.portHp)})`,
-          `🔥 ${player.nick} напал на базу игрока ${victim.nick}`, 'battle');
+          L('mortarPort', { nick: player.nick, victim: victim.nick, dmg: totalPort, left: Math.max(0, victim.portHp) }),
+          L('mortarPortFog', { nick: player.nick, victim: victim.nick }), 'battle');
         if (victim.portHp <= 0) {
           victim.portHp = 0;
           eliminatePlayer(game, targetIdx, player);
@@ -1118,18 +1128,18 @@ export function applyAction(game, playerId, action) {
           ship.hp -= retDmg;
           pushEvent(game, { type: 'shot', fx: base.x, fy: base.y, tx: ship.x, ty: ship.y, dmg: retDmg });
           logEvent(game,
-            `🏰 Порт игрока ${victim.nick} огрызается по ${SHIP_TYPES[ship.type].name} (−${retDmg} HP)`,
-            `🏰 База игрока ${victim.nick} даёт отпор`, 'battle');
+            L('portReturn', { victim: victim.nick, ship: `ship.${ship.type}.name`, dmg: retDmg }),
+            L('portReturnFog', { victim: victim.nick }), 'battle');
           if (ship.hp <= 0) sinkShip(game, ship, victim); // защитник забирает обломки
         }
       } else if (action.targetType === 'outpost') {
         // 🎯 мортира — ЕДИНСТВЕННОЕ, что разрушает чужой аванпост (осада — дело тяжёлых)
         const isl = (game.map.lootIslands || [])[action.targetId];
         const op = isl?.outpost;
-        if (!op || op.owner === pIdx) return { ok: false, error: 'Неверная цель' };
-        if (isPeace(game)) return { ok: false, error: '🕊 Мирное время: чужие постройки трогать нельзя' };
+        if (!op || op.owner === pIdx) return { ok: false, error: 'err.badTarget' };
+        if (isPeace(game)) return { ok: false, error: 'err.peaceNoBuildings' };
         if (dist(ship.x, ship.y, isl.x, isl.y) > st.fireRange + isl.radius * 0.5)
-          return { ok: false, error: 'Аванпост вне дальности стрельбы' };
+          return { ok: false, error: 'err.outpostOutOfRange' };
         const total = st.dmg * volley; // по строению мортира бьёт полным уроном
         op.hp -= total;
         player.stats.shotsFired++;
@@ -1143,15 +1153,16 @@ export function applyAction(game, playerId, action) {
           isl.outpost = null; // остров снова ничей — можно строить заново
           pushEvent(game, { type: 'explosion', x: isl.x, y: isl.y, big: true });
           logEvent(game,
-            `💥 ${player.nick} разрушает ${def.icon} ${def.name} игрока ${victimNick}!`,
-            `💥 ${player.nick} разрушил чужую постройку`, 'battle');
+            L('outpostDown', { nick: player.nick, icon: def.icon, building: `outpost.${op.level - 1}.name`, victim: victimNick }),
+            L('outpostDownFog', { nick: player.nick }), 'battle');
         } else {
           logEvent(game,
-            `🔥 ${player.nick}: ${st.name} бьёт по ${def.icon} ${def.name} игрока ${victimNick} (−${total} HP, осталось ${op.hp})`,
-            `🔥 ${player.nick} обстреливает чужую постройку`, 'battle');
+            L('outpostHit', { nick: player.nick, ship: `ship.${ship.type}.name`, icon: def.icon,
+                              building: `outpost.${op.level - 1}.name`, victim: victimNick, dmg: total, left: op.hp }),
+            L('outpostHitFog', { nick: player.nick }), 'battle');
         }
       } else {
-        return { ok: false, error: 'Неизвестная цель' };
+        return { ok: false, error: 'err.unknownTarget' };
       }
       if (rt) rtArm(ship, 'm', RT.CD_MORTAR_MS); // реалтайм: мортира ушла на перезарядку
       break;
@@ -1160,18 +1171,18 @@ export function applyAction(game, playerId, action) {
     case 'repair': {
       // Ремонтник латает ОДИН свой корабль в радиусе (как выстрел, но восстанавливает HP).
       const ship = game.ships.find(s => s.id === action.shipId);
-      if (!ship || ship.owner !== pIdx) return { ok: false, error: 'Это не ваш корабль' };
+      if (!ship || ship.owner !== pIdx) return { ok: false, error: 'err.notYourShip' };
       const st = SHIP_TYPES[ship.type];
-      if (!st.repairer) return { ok: false, error: 'Этот корабль не умеет чинить' };
-      if (rt && !rtReady(ship, 'r')) return { ok: false, error: '🛟 Ремонт перезаряжается' };
-      if ((ship.repairCharges ?? REPAIR_CHARGES) <= 0) return { ok: false, error: 'Нет материалов — вернись на базу и пополни' };
+      if (!st.repairer) return { ok: false, error: 'err.notRepairer' };
+      if (rt && !rtReady(ship, 'r')) return { ok: false, error: 'err.repairCd' };
+      if ((ship.repairCharges ?? REPAIR_CHARGES) <= 0) return { ok: false, error: 'err.noMaterials' };
       const target = game.ships.find(s => s.id === action.targetId);
-      if (!target || target.owner !== pIdx) return { ok: false, error: 'Чинить можно только свои корабли' };
-      if (target.id === ship.id) return { ok: false, error: 'Ремонтник не чинит сам себя' };
+      if (!target || target.owner !== pIdx) return { ok: false, error: 'err.healOwnOnly' };
+      if (target.id === ship.id) return { ok: false, error: 'err.noSelfRepair' };
       if (dist(ship.x, ship.y, target.x, target.y) > st.fireRange + 0.5)
-        return { ok: false, error: 'Цель вне радиуса ремонта' };
+        return { ok: false, error: 'err.healOutOfRange' };
       const maxHp = SHIP_TYPES[target.type].hp;
-      if (target.hp >= maxHp) return { ok: false, error: 'Этот корабль и так целёхонек' };
+      if (target.hp >= maxHp) return { ok: false, error: 'err.shipFull' };
       // ремонт = доля от МАКСИМАЛЬНОГО HP цели (healFrac), не больше недостающего
       const healed = Math.min(Math.round(maxHp * st.healFrac), maxHp - target.hp);
       target.hp += healed;
@@ -1179,35 +1190,35 @@ export function applyAction(game, playerId, action) {
       ship.repairCharges = (ship.repairCharges ?? REPAIR_CHARGES) - 1; // потратили один заряд материалов (undefined=полный для старых сейвов)
       pushEvent(game, { type: 'repair', fx: ship.x, fy: ship.y, tx: target.x, ty: target.y, heal: healed });
       logEvent(game,
-        `🛟 ${player.nick}: ${st.name} латает ${SHIP_TYPES[target.type].name} (+${healed} HP, осталось зарядов ${ship.repairCharges})`,
-        `🛟 ${player.nick} ремонтирует свой флот`);
+        L('repair', { nick: player.nick, ship: `ship.${ship.type}.name`, target: `ship.${target.type}.name`, hp: healed, left: ship.repairCharges }),
+        L('repairFog', { nick: player.nick }));
       break;
     }
 
     case 'recharge': {
       // 🔧 Ремонтник у СВОЕЙ базы пополняет запас материалов (как «собрать», но восстанавливает заряды ремонта).
       const ship = game.ships.find(s => s.id === action.shipId);
-      if (!ship || ship.owner !== pIdx) return { ok: false, error: 'Это не ваш корабль' };
+      if (!ship || ship.owner !== pIdx) return { ok: false, error: 'err.notYourShip' };
       const st = SHIP_TYPES[ship.type];
-      if (!st.repairer) return { ok: false, error: 'Пополнять материалы умеет только ремонтник' };
-      if ((ship.repairCharges ?? REPAIR_CHARGES) >= REPAIR_CHARGES) return { ok: false, error: 'Запас материалов уже полный' };
+      if (!st.repairer) return { ok: false, error: 'err.rechargeRepairerOnly' };
+      if ((ship.repairCharges ?? REPAIR_CHARGES) >= REPAIR_CHARGES) return { ok: false, error: 'err.materialsFull' };
       const base = game.map.bases[pIdx];
       if (dist(ship.x, ship.y, base.x, base.y) > base.radius + REPAIR_DOCK_REACH)
-        return { ok: false, error: 'Пополнить материалы можно только у своей базы' };
+        return { ok: false, error: 'err.rechargeAtBase' };
       ship.repairCharges = REPAIR_CHARGES;
       logEvent(game,
-        `🔧 ${player.nick}: ${st.name} пополнил материалы на базе (зарядов ${REPAIR_CHARGES})`,
-        `🔧 ${player.nick} пополняет ремонтника`);
+        L('recharge', { nick: player.nick, ship: `ship.${ship.type}.name`, count: REPAIR_CHARGES }),
+        L('rechargeFog', { nick: player.nick }));
       break;
     }
 
     case 'broadside': {
       // 💥 БОРТОВОЙ ЗАЛП: по КАЖДОЙ цели с борта dmg = st.dmg × angle(положение в секторе) × falloff(дистанция).
       const ship = game.ships.find(s => s.id === action.shipId);
-      if (!ship || ship.owner !== pIdx) return { ok: false, error: 'Это не ваш корабль' };
+      if (!ship || ship.owner !== pIdx) return { ok: false, error: 'err.notYourShip' };
       const st = SHIP_TYPES[ship.type];
       const cannons = BROADSIDE_CANNONS[ship.type] || 0;
-      if (!cannons) return { ok: false, error: 'Этот корабль не даёт бортовой залп' };
+      if (!cannons) return { ok: false, error: 'err.noBroadside' };
       const cx = game.map.w / 2, cy = game.map.h / 2;
       const norm = a => Math.atan2(Math.sin(a), Math.cos(a));
       const heading = (typeof ship.heading === 'number') ? ship.heading : Math.atan2(cy - ship.y, cx - ship.x);
@@ -1220,7 +1231,8 @@ export function applyAction(game, playerId, action) {
       const sides = rt
         ? ['port', 'starboard'].filter(sd => !rtReady(ship, sd === 'port' ? 'p' : 's'))
         : ((game.turn.broadsideSides ||= {})[ship.id] ||= []);
-      if (sides.includes(side)) return { ok: false, error: (side === 'port' ? 'Левый' : 'Правый') + ' борт ' + (rt ? 'перезаряжается' : 'уже стрелял в этом ходу') };
+      if (sides.includes(side))
+        return { ok: false, error: rt ? (side === 'port' ? 'err.sideCdPort' : 'err.sideCdStar') : (side === 'port' ? 'err.sideUsedPort' : 'err.sideUsedStar') };
       const range = st.fireRange, full = !!st.cheat; // чит-авианосец — круговой залп (без сектора)
       const peace = isPeace(game);
       // цели-корабли с этого борта в радиусе — все, урон только по дистанции (ближе = больнее)
@@ -1250,7 +1262,7 @@ export function applyAction(game, playerId, action) {
         portHit = { i, base, dmg: Math.max(1, Math.round(st.dmg * angle * falloff * BROADSIDE_PORT_MULT)) };
         break;
       }
-      if (!shipHits.length && !portHit) return { ok: false, error: 'С этого борта нет целей в радиусе' };
+      if (!shipHits.length && !portHit) return { ok: false, error: 'err.noTargetsOnSide' };
       // ПРИМЕНЯЕМ
       if (rt) rtArm(ship, side === 'port' ? 'p' : 's', RT.CD_BROADSIDE_MS); // борт на перезарядку
       else sides.push(side);
@@ -1283,8 +1295,10 @@ export function applyAction(game, playerId, action) {
         if (ship.hp <= 0) sinkShip(game, ship, game.players[portHit.i]);
       }
       logEvent(game,
-        `💥 ${player.nick}: ${st.name} — бортовой залп (${side === 'port' ? 'левый' : 'правый'} борт) по ${shipHits.length} цел.` + (toSink.length ? ` — потоплено ${toSink.length}!` : ''),
-        `💥 ${player.nick} даёт бортовой залп`, 'battle');
+        L(toSink.length ? 'broadsideSank' : 'broadside',
+          { nick: player.nick, ship: `ship.${ship.type}.name`, side: side === 'port' ? 'log.sidePort' : 'log.sideStar',
+            count: shipHits.length, sank: toSink.length }),
+        L('broadsideFog', { nick: player.nick }), 'battle');
       break;
     }
 
@@ -1292,26 +1306,27 @@ export function applyAction(game, playerId, action) {
       // ⛺ аванпост на ЗАЛУТАННОМ острове. ПЕРВАЯ постройка — свой корабль вплотную (он привозит
       // гарнизон); АПГРЕЙД — кликом по самому аванпосту, корабль не нужен (гарнизон строит сам).
       const isl = (game.map.lootIslands || [])[action.islandId];
-      if (!isl) return { ok: false, error: 'Остров не найден' };
-      if (!isl.looted) return { ok: false, error: 'Сначала забери клад — аванпост ставят на залутанном острове' };
+      if (!isl) return { ok: false, error: 'err.islandNotFound' };
+      if (!isl.looted) return { ok: false, error: 'err.lootFirst' };
       if (isl.outpost && isl.outpost.owner !== pIdx)
-        return { ok: false, error: 'Тут чужой аванпост — сначала разрушь его 🎯 мортирой' };
+        return { ok: false, error: 'err.enemyOutpost' };
       if (!isl.outpost) { // первая постройка: нужен корабль-строитель у берега
         const ship = game.ships.find(s => s.id === action.shipId);
-        if (!ship || ship.owner !== pIdx) return { ok: false, error: 'Это не ваш корабль' };
-        if (!rt && game.turn.broadsideSides?.[ship.id]?.length) return { ok: false, error: 'Корабль уже даёт залп — добей вторым бортом или жди' };
+        if (!ship || ship.owner !== pIdx) return { ok: false, error: 'err.notYourShip' };
+        if (!rt && game.turn.broadsideSides?.[ship.id]?.length) return { ok: false, error: 'err.shipBroadsiding' };
         if (dist(ship.x, ship.y, isl.x, isl.y) > isl.radius + OUTPOST_BUILD_REACH)
-          return { ok: false, error: 'Подведи корабль вплотную к острову' };
+          return { ok: false, error: 'err.comeCloserToIsland' };
       }
       const level = (isl.outpost?.level || 0) + 1;
-      if (level > OUTPOST_LEVELS.length) return { ok: false, error: 'Аванпост уже прокачан до предела' };
+      if (level > OUTPOST_LEVELS.length) return { ok: false, error: 'err.outpostMaxed' };
       const def = OUTPOST_LEVELS[level - 1];
-      if (player.gold < def.price) return { ok: false, error: `Не хватает золота (нужно ${def.price})` };
+      if (player.gold < def.price) return { ok: false, error: 'err.noGoldFor', params: { price: def.price } };
       player.gold -= def.price;
       isl.outpost = { owner: pIdx, level, hp: def.hp }; // апгрейд заодно отстраивает до полной прочности
       logEvent(game,
-        `${def.icon} ${player.nick} ${level === 1 ? 'ставит' : 'прокачивает до'}: ${def.name} (−${def.price} зол.)`,
-        `⛺ ${player.nick} строит на острове`);
+        L(level === 1 ? 'outpostBuild' : 'outpostUp',
+          { icon: def.icon, nick: player.nick, building: `outpost.${level - 1}.name`, cost: def.price }),
+        L('outpostBuildFog', { nick: player.nick }));
       break;
     }
 
@@ -1319,15 +1334,15 @@ export function applyAction(game, playerId, action) {
       // ⏸ пауза реалтайма: ставит любой живой участник, снимает ТОЖЕ ЛЮБОЙ (анти-грифинг:
       // вечной паузой не запереть — оппонент просто снимет). На время паузы тик спит (rt.js),
       // при снятии ВСЕ часы (кулдауны, доходы, мир, агро ботов, пираты) сдвигаются на её длительность.
-      if (!rt) return { ok: false, error: 'Пауза — только в «Полном вперёд»' };
+      if (!rt) return { ok: false, error: 'err.pauseRtOnly' };
       const rts = (game.rt ??= {});
       if (!rts.paused) {
         rts.paused = { by: pIdx, at: Date.now() };
-        pushLog(game, `⏸ ${player.nick} ставит игру на паузу`, 'battle');
+        pushLog(game, L('paused', { nick: player.nick }), 'battle');
       } else {
         rtShift(game, Date.now() - rts.paused.at);
         rts.paused = null;
-        pushLog(game, `▶️ ${player.nick} снимает паузу — полный вперёд!`, 'battle');
+        pushLog(game, L('resumed', { nick: player.nick }), 'battle');
       }
       break;
     }
@@ -1336,13 +1351,11 @@ export function applyAction(game, playerId, action) {
     case 'endTurn':
       if (rt) break; // реалтайм: ходов нет — тихий no-op (страховка для старых кнопок/ботов)
       // в многоходовом режиме после сделанных ходов это «завершить ход», а не «пропустить»
-      pushLog(game, game.turn.moves > 0
-        ? `✅ ${player.nick} завершает ход`
-        : `⏭ ${player.nick} пропускает ход`);
+      pushLog(game, L(game.turn.moves > 0 ? 'endTurn' : 'skipTurn', { nick: player.nick }));
       break;
 
     default:
-      return { ok: false, error: 'Неизвестное действие' };
+      return { ok: false, error: 'err.unknownAction' };
   }
 
   if (rt) return { ok: true }; // реалтайм: без бюджета ходов/actedShips/advanceTurn — время течёт само (rt.js)
@@ -1431,7 +1444,7 @@ export function timeoutTurn(game) {
   if (game.status !== 'active' || !game.turn.deadline) return false;
   if (Date.now() < game.turn.deadline) return false;
   freshEvents(game);
-  pushLog(game, `⏰ Время вышло — ход игрока ${currentPlayer(game).nick} пропущен`);
+  pushLog(game, L('timeout', { nick: currentPlayer(game).nick }));
   advanceTurn(game);
   return true;
 }
@@ -1481,11 +1494,10 @@ export function publicState(game, viewerPid) {
     // ⛵ конвой: размер строя и радиус набора соседей (клиент считает те же правила у себя)
     convoy: { max: CONVOY_MAX, pickMult: CONVOY_PICK_MULT, costs: convoyCosts(), on: !!game.config.multiMove && !isRealtime(game) },
     palette: PALETTE,
-    // режим партии + мирный период (для баннера и подсказок клиента)
-    mode: game.config.mode || 'classic',
+    // режим партии — КЛЮЧОМ: имя и описание клиент берёт из словаря (mode.<ключ>.name)
+    mode: GAME_MODES[game.config?.mode] ? game.config.mode : DEFAULT_MODE,
     // дуэль: фаза ('buy' закупка | 'battle' бой) + цена самого дешёвого корабля (для правила «скупись на всё»)
     duel: isDuel(game), phase: game.phase || null, minShipPrice: cheapestShipPrice(isDuel(game)),
-    modeName: GAME_MODES[game.config?.mode]?.name || GAME_MODES[DEFAULT_MODE]?.name, // человекочитаемое имя режима для клиента
     peace: {
       active: isPeace(game), round: game.turn?.round || 1, until: modePeaceRounds(game), keepout: modeOf(game).peaceBaseKeepout || 0,
       // реалтайм: мир меряется временем — клиент показывает обратный отсчёт вместо раундов

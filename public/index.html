@@ -3,149 +3,151 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Морской бой на листке в клетку</title>
+  <title data-i18n="home.title">Морской бой на листке в клетку</title>
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
   <!-- бейдж входа: кто залогинен + выход (показывается, если на сервере включён Google-вход) -->
   <div id="authBadge" class="auth-badge hidden"></div>
+  <!-- выбор языка: сюда i18n.js ставит селект (public/js/i18n.js) -->
+  <div class="lang-box" data-lang-switch></div>
   <div class="wrap">
-    <h1>⚓ Морской бой <span class="muted" style="font-size:.45em; white-space:nowrap">на листке в клетку</span></h1>
-    <p class="muted">Тот самый улучшенный морской бой с задней парты: листок, линейка, карандаш — острова, флот и добыча. Теперь по интернету.</p>
+    <h1><span data-i18n="home.h1">⚓ Морской бой</span> <span class="muted" style="font-size:.45em; white-space:nowrap" data-i18n="home.h1sub">на листке в клетку</span></h1>
+    <p class="muted" data-i18n="home.tagline">Тот самый улучшенный морской бой с задней парты: листок, линейка, карандаш — острова, флот и добыча. Теперь по интернету.</p>
     <div class="ruler"></div>
 
     <div class="note taped tilt-l">
-      <h2>✏️ Новый баттл</h2>
+      <h2 data-i18n="home.newBattle">✏️ Новый баттл</h2>
 
       <!-- выбор режима -->
       <div class="mode-btns" id="modeBtns">
         <div class="online-row">
-          <button class="mode-btn" data-mode="online">🌐 Онлайн
-            <span class="muted">создай баттл и зови друзей</span></button>
-          <button class="mode-btn join-btn" id="browseLobbiesBtn" title="Открытые лобби">👥<span class="lobby-badge hidden" id="lobbyBadge"></span>
-            <span class="muted">найти игру</span></button>
+          <button class="mode-btn" data-mode="online"><span data-i18n="home.mode.online">🌐 Онлайн</span>
+            <span class="muted" data-i18n="home.mode.onlineHint">создай баттл и зови друзей</span></button>
+          <button class="mode-btn join-btn" id="browseLobbiesBtn" title="Открытые лобби" data-i18n-attr="title:home.mode.browse">👥<span class="lobby-badge hidden" id="lobbyBadge"></span>
+            <span class="muted" data-i18n="home.mode.browseHint">найти игру</span></button>
         </div>
-        <button class="mode-btn" data-mode="hotseat">📱 На одном устройстве
-          <span class="muted">передавайте телефон по кругу</span></button>
-        <button class="mode-btn" data-mode="bot">🤖 Против компьютера
-          <span class="muted">одиночная игра с ботами</span></button>
+        <button class="mode-btn" data-mode="hotseat"><span data-i18n="home.mode.hotseat">📱 На одном устройстве</span>
+          <span class="muted" data-i18n="home.mode.hotseatHint">передавайте телефон по кругу</span></button>
+        <button class="mode-btn" data-mode="bot"><span data-i18n="home.mode.bot">🤖 Против компьютера</span>
+          <span class="muted" data-i18n="home.mode.botHint">одиночная игра с ботами</span></button>
       </div>
 
       <!-- редактор: онлайн -->
       <div id="editorOnline" class="hidden">
-        <button class="small" data-back type="button">← Режимы</button>
-        <label for="nick">Твой ник и цвет</label>
+        <button class="small" data-back type="button" data-i18n="home.back">← Режимы</button>
+        <label for="nick" data-i18n="home.nickColor">Твой ник и цвет</label>
         <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap">
-          <input type="text" id="nick" maxlength="20" placeholder="Капитан..." style="flex:1; min-width:150px">
+          <input type="text" id="nick" maxlength="20" placeholder="Капитан..." data-i18n-attr="placeholder:home.nickPh" style="flex:1; min-width:150px">
           <div class="swatches" id="onlineColors"></div>
         </div>
         <div style="display:flex; gap:24px; flex-wrap:wrap">
           <div style="flex:1; min-width:140px" id="maxPlayersBox">
-            <label for="maxPlayers">Игроков</label>
+            <label for="maxPlayers" data-i18n="home.players">Игроков</label>
             <select id="maxPlayers">
-              <option value="2">2 игрока</option>
-              <option value="3">3 игрока</option>
-              <option value="4">4 игрока</option>
+              <option value="2" data-i18n="home.p2">2 игрока</option>
+              <option value="3" data-i18n="home.p3">3 игрока</option>
+              <option value="4" data-i18n="home.p4">4 игрока</option>
             </select>
           </div>
           <div style="flex:1; min-width:140px">
-            <label for="turnTimer">Таймер на ход</label>
+            <label for="turnTimer" data-i18n="home.turnTimer">Таймер на ход</label>
             <select id="turnTimer">
-              <option value="0">Без таймера (неспешно)</option>
-              <option value="60">1 минута</option>
-              <option value="120">2 минуты</option>
-              <option value="300">5 минут</option>
+              <option value="0" data-i18n="home.timer0">Без таймера (неспешно)</option>
+              <option value="60" data-i18n="home.timer60">1 минута</option>
+              <option value="120" data-i18n="home.timer120">2 минуты</option>
+              <option value="300" data-i18n="home.timer300">5 минут</option>
             </select>
           </div>
         </div>
-        <label class="fog-toggle"><input type="checkbox" id="onlineFog" checked><span class="fog-label">🌫 Туман войны</span><span class="muted">— врага не видно, пока не подойдёшь</span></label>
-        <label class="fog-toggle"><input type="checkbox" id="onlineMulti" checked><span class="fog-label">⚓ Ход тремя судами</span><span class="muted">— до 3 действий за ход</span></label>
-        <label class="fog-toggle"><input type="checkbox" id="onlineRealtime"><span class="fog-label">⚡ Полный вперёд!<b class="beta-badge">бета</b></span><span class="muted rt-note">— реалтайм без ходов, стрельба по перезарядке (вне рейтинга)</span></label>
-        <div class="mode-row"><span class="fog-label">🎮 Режим</span><span id="onlineMode" class="mode-dd"></span><span class="muted mode-desc"></span></div>
+        <label class="fog-toggle"><input type="checkbox" id="onlineFog" checked><span class="fog-label" data-i18n="home.opt.fog">🌫 Туман войны</span><span class="muted" data-i18n="home.opt.fogHint">— врага не видно, пока не подойдёшь</span></label>
+        <label class="fog-toggle"><input type="checkbox" id="onlineMulti" checked><span class="fog-label" data-i18n="home.opt.multi">⚓ Ход тремя судами</span><span class="muted" data-i18n="home.opt.multiHint">— до 3 действий за ход</span></label>
+        <label class="fog-toggle"><input type="checkbox" id="onlineRealtime"><span class="fog-label"><span data-i18n="home.opt.rt">⚡ Полный вперёд!</span><b class="beta-badge" data-i18n="home.opt.beta">бета</b></span><span class="muted rt-note" data-i18n="home.opt.rtHint">— реалтайм без ходов, стрельба по перезарядке (вне рейтинга)</span></label>
+        <div class="mode-row"><span class="fog-label" data-i18n="home.opt.mode">🎮 Режим</span><span id="onlineMode" class="mode-dd"></span><span class="muted mode-desc"></span></div>
         <p class="error" id="createError"></p>
-        <button class="primary" id="createBtn">Создать баттл и получить ссылку</button>
+        <button class="primary" id="createBtn" data-i18n="home.createBtn">Создать баттл и получить ссылку</button>
       </div>
 
       <!-- редактор: на одном устройстве -->
       <div id="editorHotseat" class="hidden">
-        <button class="small" data-back type="button">← Режимы</button>
-        <label for="hotseatCount">Сколько игроков</label>
+        <button class="small" data-back type="button" data-i18n="home.back">← Режимы</button>
+        <label for="hotseatCount" data-i18n="home.hotseatCount">Сколько игроков</label>
         <select id="hotseatCount">
-          <option value="2">2 игрока</option>
-          <option value="3">3 игрока</option>
-          <option value="4">4 игрока</option>
+          <option value="2" data-i18n="home.p2">2 игрока</option>
+          <option value="3" data-i18n="home.p3">3 игрока</option>
+          <option value="4" data-i18n="home.p4">4 игрока</option>
         </select>
         <div id="hotseatNames"></div>
-        <p class="muted" style="margin-top:10px">Без таймера: ходите по очереди и передавайте устройство.</p>
-        <label class="fog-toggle"><input type="checkbox" id="hotseatMulti" checked><span class="fog-label">⚓ Ход тремя судами</span><span class="muted">— до 3 действий за ход</span></label>
-        <div class="mode-row"><span class="fog-label">🎮 Режим</span><span id="hotseatMode" class="mode-dd"></span><span class="muted mode-desc"></span></div>
+        <p class="muted" style="margin-top:10px" data-i18n="home.hotseatNote">Без таймера: ходите по очереди и передавайте устройство.</p>
+        <label class="fog-toggle"><input type="checkbox" id="hotseatMulti" checked><span class="fog-label" data-i18n="home.opt.multi">⚓ Ход тремя судами</span><span class="muted" data-i18n="home.opt.multiHint">— до 3 действий за ход</span></label>
+        <div class="mode-row"><span class="fog-label" data-i18n="home.opt.mode">🎮 Режим</span><span id="hotseatMode" class="mode-dd"></span><span class="muted mode-desc"></span></div>
         <p class="error" id="hotseatError"></p>
-        <button class="primary" id="hotseatBtn">⚔️ Начать баттл</button>
+        <button class="primary" id="hotseatBtn" data-i18n="home.hotseatBtn">⚔️ Начать баттл</button>
       </div>
 
       <!-- редактор: против компьютера -->
       <div id="editorBot" class="hidden">
-        <button class="small" data-back type="button">← Режимы</button>
-        <label for="botNick">Твой ник и цвет</label>
+        <button class="small" data-back type="button" data-i18n="home.back">← Режимы</button>
+        <label for="botNick" data-i18n="home.nickColor">Твой ник и цвет</label>
         <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap">
-          <input type="text" id="botNick" maxlength="20" placeholder="Капитан..." style="flex:1; min-width:150px">
+          <input type="text" id="botNick" maxlength="20" placeholder="Капитан..." data-i18n-attr="placeholder:home.nickPh" style="flex:1; min-width:150px">
           <div class="swatches" id="botColors"></div>
         </div>
-        <p class="muted" style="margin:6px 0 0; font-size:13px">Ботам цвета достанутся случайно из оставшихся.</p>
+        <p class="muted" style="margin:6px 0 0; font-size:13px" data-i18n="home.botColorsNote">Ботам цвета достанутся случайно из оставшихся.</p>
         <div style="display:flex; gap:24px; flex-wrap:wrap; margin-top:10px">
           <div style="flex:1; min-width:140px" id="botCountBox">
-            <label for="botCount">Противников</label>
+            <label for="botCount" data-i18n="home.botCount">Противников</label>
             <select id="botCount">
-              <option value="1">1 бот</option>
-              <option value="2">2 бота</option>
-              <option value="3">3 бота</option>
+              <option value="1" data-i18n="home.bot1">1 бот</option>
+              <option value="2" data-i18n="home.bot2">2 бота</option>
+              <option value="3" data-i18n="home.bot3">3 бота</option>
             </select>
           </div>
           <div style="flex:1; min-width:140px">
-            <label for="botLevel">Сложность</label>
+            <label for="botLevel" data-i18n="home.botLevel">Сложность</label>
             <select id="botLevel">
-              <option value="easy">🐣 Юнга — для разминки</option>
-              <option value="mid" selected>⚓ Боцман — честный бой</option>
-              <option value="hard">💀 Адмирал — придётся попотеть</option>
+              <option value="easy" data-i18n="home.lvlEasy">🐣 Юнга — для разминки</option>
+              <option value="mid" selected data-i18n="home.lvlMid">⚓ Боцман — честный бой</option>
+              <option value="hard" data-i18n="home.lvlHard">💀 Адмирал — придётся попотеть</option>
             </select>
           </div>
         </div>
-        <label class="fog-toggle"><input type="checkbox" id="botFog" checked><span class="fog-label">🌫 Туман войны</span><span class="muted">— врага не видно, пока не подойдёшь</span></label>
-        <label class="fog-toggle"><input type="checkbox" id="botMulti" checked><span class="fog-label">⚓ Ход тремя судами</span><span class="muted">— до 3 действий за ход</span></label>
-        <label class="fog-toggle"><input type="checkbox" id="botRealtime"><span class="fog-label">⚡ Полный вперёд!<b class="beta-badge">бета</b></span><span class="muted rt-note">— реалтайм без ходов, стрельба по перезарядке (вне рейтинга)</span></label>
-        <div class="mode-row"><span class="fog-label">🎮 Режим</span><span id="botMode" class="mode-dd"></span><span class="muted mode-desc"></span></div>
+        <label class="fog-toggle"><input type="checkbox" id="botFog" checked><span class="fog-label" data-i18n="home.opt.fog">🌫 Туман войны</span><span class="muted" data-i18n="home.opt.fogHint">— врага не видно, пока не подойдёшь</span></label>
+        <label class="fog-toggle"><input type="checkbox" id="botMulti" checked><span class="fog-label" data-i18n="home.opt.multi">⚓ Ход тремя судами</span><span class="muted" data-i18n="home.opt.multiHint">— до 3 действий за ход</span></label>
+        <label class="fog-toggle"><input type="checkbox" id="botRealtime"><span class="fog-label"><span data-i18n="home.opt.rt">⚡ Полный вперёд!</span><b class="beta-badge" data-i18n="home.opt.beta">бета</b></span><span class="muted rt-note" data-i18n="home.opt.rtHint">— реалтайм без ходов, стрельба по перезарядке (вне рейтинга)</span></label>
+        <div class="mode-row"><span class="fog-label" data-i18n="home.opt.mode">🎮 Режим</span><span id="botMode" class="mode-dd"></span><span class="muted mode-desc"></span></div>
         <p class="error" id="botError"></p>
-        <button class="primary" id="botBtn">⚔️ В бой!</button>
+        <button class="primary" id="botBtn" data-i18n="home.botBtn">⚔️ В бой!</button>
       </div>
     </div>
 
     <div class="note tilt-r">
-      <h2>📖 Правила (как на уроке)</h2>
+      <h2 data-i18n="home.rules.title">📖 Правила (как на уроке)</h2>
       <ul style="line-height:1.6; padding-left: 20px">
-        <li>У каждого — база-остров с портом и стартовый флот: 2 шхуны и фрегат. Порт приносит немного золота каждый ход и 🏰 огрызается по атакующему его кораблю — в одиночку базу не взять.</li>
-        <li>За ход — <b>одно</b> действие: купить корабли, собрать добычу, передвинуть один корабль «по линейке» или выстрелить. С опцией <b>«Ход тремя судами»</b> (включается при создании) за ход делаешь до <b>трёх</b> действий разными кораблями — динамичнее и быстрее.</li>
-        <li>⛵ С «Ходом тремя судами» соседние корабли можно вести <b>строем</b>: отметил флагмана и пару соседей — и весь конвой идёт одним жестом, за <b>один</b> манёвр (по самому медленному в строю, флагманом — старший). В боевом контакте строй не собрать — удирать эскадрой нельзя.</li>
-        <li>Баркас, стоящий в рыбном месте, сам приносит золото каждый ход — действие на это не тратится. Остров с кладом лутает любой корабль, что дотянется (кнопкой «Собрать»).</li>
-        <li>Потопил корабль — лутаешь золото с обломков. Разбил порт — соперник выбывает, а ты забираешь половину его казны.</li>
-        <li>По морю бродят нейтральные пираты 🏴‍☠️ — они медленно дрейфуют между ходами, могут исчезать в тумане и появляться вновь. Потопи пирата и забери награду, а за жирным 👑-боссом — большой куш!</li>
-        <li>Линкор 🛳 бьёт по вражескому порту в 1.5 раза сильнее — главный осадный корабль, но и ему нужно несколько залпов, чтобы свалить базу.</li>
-        <li>Любой боевой корабль даёт 💥 бортовой залп — но бьёт <b>только в борт</b> (нос и корма не достают): наводишь в сторону, и весь борт накрывает вражеские корабли в секторе разом. Сильнее всего, когда враг точно сбоку, и слабеет к краям и с дистанцией. Спасает, когда обступила стая. Рыбацкие баркасы залп не трогает.</li>
-        <li>Застрял соперник? «📯 Поторопить» — и у него останется 10 минут на ход. Сам застрял безнадёжно — можно спустить флаг 🏳️.</li>
-        <li>Последний выживший порт побеждает. 👑</li>
+        <li data-i18n-html="home.rules.li1">У каждого — база-остров с портом и стартовый флот: 2 шхуны и фрегат. Порт приносит немного золота каждый ход и 🏰 огрызается по атакующему его кораблю — в одиночку базу не взять.</li>
+        <li data-i18n-html="home.rules.li2">За ход — <b>одно</b> действие: купить корабли, собрать добычу, передвинуть один корабль «по линейке» или выстрелить. С опцией <b>«Ход тремя судами»</b> (включается при создании) за ход делаешь до <b>трёх</b> действий разными кораблями — динамичнее и быстрее.</li>
+        <li data-i18n-html="home.rules.li3">⛵ С «Ходом тремя судами» соседние корабли можно вести <b>строем</b>: отметил флагмана и пару соседей — и весь конвой идёт одним жестом, за <b>один</b> манёвр (по самому медленному в строю, флагманом — старший). В боевом контакте строй не собрать — удирать эскадрой нельзя.</li>
+        <li data-i18n-html="home.rules.li4">Баркас, стоящий в рыбном месте, сам приносит золото каждый ход — действие на это не тратится. Остров с кладом лутает любой корабль, что дотянется (кнопкой «Собрать»).</li>
+        <li data-i18n-html="home.rules.li5">Потопил корабль — лутаешь золото с обломков. Разбил порт — соперник выбывает, а ты забираешь половину его казны.</li>
+        <li data-i18n-html="home.rules.li6">По морю бродят нейтральные пираты 🏴‍☠️ — они медленно дрейфуют между ходами, могут исчезать в тумане и появляться вновь. Потопи пирата и забери награду, а за жирным 👑-боссом — большой куш!</li>
+        <li data-i18n-html="home.rules.li7">Линкор 🛳 бьёт по вражескому порту в 1.5 раза сильнее — главный осадный корабль, но и ему нужно несколько залпов, чтобы свалить базу.</li>
+        <li data-i18n-html="home.rules.li8">Любой боевой корабль даёт 💥 бортовой залп — но бьёт <b>только в борт</b> (нос и корма не достают): наводишь в сторону, и весь борт накрывает вражеские корабли в секторе разом. Сильнее всего, когда враг точно сбоку, и слабеет к краям и с дистанцией. Спасает, когда обступила стая. Рыбацкие баркасы залп не трогает.</li>
+        <li data-i18n-html="home.rules.li9">Застрял соперник? «📯 Поторопить» — и у него останется 10 минут на ход. Сам застрял безнадёжно — можно спустить флаг 🏳️.</li>
+        <li data-i18n-html="home.rules.li10">Последний выживший порт побеждает. 👑</li>
       </ul>
     </div>
 
     <div class="note tilt-l">
-      <h2>🏆 Лидерборд</h2>
+      <h2 data-i18n="home.lb.title">🏆 Лидерборд</h2>
       <div class="table-scroll">
         <table id="leaderboard">
           <thead>
-            <tr><th>#</th><th>Капитан</th><th>Очки</th><th>Победы</th><th>Игры</th><th>Урон</th><th>Потоплено</th><th>Золото</th></tr>
+            <tr><th data-i18n="home.lb.rank">#</th><th data-i18n="home.lb.captain">Капитан</th><th data-i18n="home.lb.points">Очки</th><th data-i18n="home.lb.wins">Победы</th><th data-i18n="home.lb.games">Игры</th><th data-i18n="home.lb.damage">Урон</th><th data-i18n="home.lb.sunk">Потоплено</th><th data-i18n="home.lb.gold">Золото</th></tr>
           </thead>
-          <tbody><tr><td colspan="8" class="muted">Пока никто не сыграл ни одного баттла…</td></tr></tbody>
+          <tbody><tr><td colspan="8" class="muted" data-i18n="home.lb.empty">Пока никто не сыграл ни одного баттла…</td></tr></tbody>
         </table>
       </div>
-      <p class="muted" style="margin-top:8px">Очки: победа — 3, второе место — 1.</p>
+      <p class="muted" style="margin-top:8px" data-i18n="home.lb.note">Очки: победа — 3, второе место — 1.</p>
     </div>
   </div>
 
@@ -153,10 +155,10 @@
   <div class="overlay hidden" id="loginOverlay">
     <div class="note taped" style="max-width:360px">
       <div style="display:flex; align-items:center; gap:10px">
-        <h2 style="margin:0; flex:1">🔑 Вход</h2>
-        <button class="small" id="loginClose">✖</button>
+        <h2 style="margin:0; flex:1" data-i18n="home.login.title">🔑 Вход</h2>
+        <button class="small" id="loginClose" data-i18n="common.close">✖</button>
       </div>
-      <p class="muted" style="margin:6px 0 14px">Войди через Google, чтобы играть онлайн — так статистика привязывается к твоему аккаунту, а не к устройству. В одиночные игры и «на одном устройстве» можно и без входа.</p>
+      <p class="muted" style="margin:6px 0 14px" data-i18n="home.login.text">Войди через Google, чтобы играть онлайн — так статистика привязывается к твоему аккаунту, а не к устройству. В одиночные игры и «на одном устройстве» можно и без входа.</p>
       <div id="loginBtnBox"></div>
       <p class="error" id="loginError"></p>
     </div>
@@ -166,22 +168,24 @@
   <div class="overlay hidden" id="lobbiesOverlay">
     <div class="note taped">
       <div style="display:flex; align-items:center; gap:10px">
-        <h2 style="margin:0; flex:1">👥 Открытые лобби</h2>
-        <button class="small" id="lobbiesClose">✖</button>
+        <h2 style="margin:0; flex:1" data-i18n="home.lobbies.title">👥 Открытые лобби</h2>
+        <button class="small" id="lobbiesClose" data-i18n="common.close">✖</button>
       </div>
       <div id="myGamesList"></div>
-      <p class="muted" style="margin:6px 0 10px">Зайди в чужой баттл — попадёшь в его лобби. Когда хост начнёт, игра стартует у всех.</p>
+      <p class="muted" style="margin:6px 0 10px" data-i18n="home.lobbies.note">Зайди в чужой баттл — попадёшь в его лобби. Когда хост начнёт, игра стартует у всех.</p>
       <div id="lobbiesList"></div>
     </div>
   </div>
 
   <footer class="page-footer">
-    <span>© 2026 «Морской бой на листке в клетку»</span>
+    <span data-i18n="home.footer">© 2026 «Морской бой на листке в клетку»</span>
     <span class="dot-sep">·</span>
-    <span id="buildVersion" class="build">версия…</span>
+    <span id="buildVersion" class="build" data-i18n="home.version">версия…</span>
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
+  <script src="/vendor/i18next.min.js"></script>
+  <script src="/js/i18n.js"></script>
   <script src="/js/favicon.js"></script>
   <script src="/js/palette.js"></script>
   <script src="/js/home.js"></script>

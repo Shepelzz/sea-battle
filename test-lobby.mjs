@@ -63,20 +63,20 @@ eq('TTL полного = 24 ч', LOBBY_TTL_FULL_MS, 24 * H);
 // === режим: человекочитаемое имя в publicState (для строки конфига лобби) ===
 {
   const g = lobby(2, 2); g.config.mode = 'deathmatch';
-  eq('publicState.modeName = имя режима', publicState(g, 'p0').modeName, 'Дезматч');
+  eq('publicState.mode = ключ режима', publicState(g, 'p0').mode, 'deathmatch');
   const g2 = lobby(2, 2);   // без явного режима → классика по умолчанию
-  eq('publicState.modeName дефолт = Классический', publicState(g2, 'p0').modeName, 'Классический');
+  eq('publicState.mode дефолт = classic', publicState(g2, 'p0').mode, 'classic');
 }
 
 // === метки лобби в СПИСКЕ: только отклонения от стандарта (дефолты не пишем) ===
 {
   eq('дефолтный батл (классика/туман/ход-3/без таймера) — меток нет', lobbyTags(lobby(2, 2)), []);
   const g2 = lobby(2, 2); g2.config.mode = 'develop'; g2.config.fog = false; g2.config.multiMove = true;
-  eq('режим + выкл. туман (ход-3 дефолт скрыт)', lobbyTags(g2), ['Развитие', 'без тумана']);
+  eq('режим + выкл. туман (ход-3 дефолт скрыт)', lobbyTags(g2), [{ k: 'mode.develop.name' }, { k: 'tag.noFog' }]);
   const g3 = lobby(2, 2); g3.config.multiMove = false; g3.config.turnTimer = 120;
-  eq('таймер 2 мин + по одному ходу', lobbyTags(g3), ['таймер 2 мин', 'по одному ходу']);
+  eq('таймер 2 мин + по одному ходу', lobbyTags(g3), [{ k: 'tag.timer', p: { min: 2 } }, { k: 'tag.singleMove' }]);
   const g4 = lobby(2, 2); g4.config.mode = 'duel'; g4.config.fog = false; g4.config.multiMove = false;
-  eq('дуэль: только режим (туман/ход-3 неприменимы)', lobbyTags(g4), ['Дуэль']);
+  eq('дуэль: только режим (туман/ход-3 неприменимы)', lobbyTags(g4), [{ k: 'mode.duel.name' }]);
 }
 
 // === Заброшенная игра: авто-уборка через 7 дней (gameStale) ===

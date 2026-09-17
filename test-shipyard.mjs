@@ -28,7 +28,7 @@ const buyAsFirstAction = (g, ships) => {
   for (let i = 0; i < 120; i++) {
     const r = buyAsFirstAction(g, ['barkas']);
     if (r.ok) bought++;
-    else if (r.error === 'Возле порта нет места для новых кораблей') noRoom++;
+    else if (r.error === 'err.noRoomNearPort') noRoom++;
   }
   check('120 покупок подряд проходят (флот разросся)', bought === 120, `(куплено ${bought}/120)`);
   check('ни одного отказа «нет места»', noRoom === 0, `(отказов ${noRoom})`);
@@ -38,7 +38,7 @@ const buyAsFirstAction = (g, ships) => {
 {
   const g = game2();
   g.players[0].gold = 50; // дешевле барки (60) — не хватает
-  check('мало золота → честный отказ', buyAsFirstAction(g, ['barkas']).error === 'Не хватает золота');
+  check('мало золота → честный отказ', buyAsFirstAction(g, ['barkas']).error === 'err.noGold');
   g.players[0].gold = 60;
   check('ровно на барку → покупка проходит', buyAsFirstAction(g, ['barkas']).ok === true);
 }
