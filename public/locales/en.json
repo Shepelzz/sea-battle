@@ -659,7 +659,7 @@
     "collect": "💰 {{nick}} collects loot: +{{gold}} gold (islands: {{count}})",
     "collectFog": "💰 {{nick}} collects loot",
     "move": "🧭 {{nick}} — move: {{ship}}",
-    "moveFog": "🧭 {{nick}} made a move",
+    "moveFog": "🧭 {{nick}} — move: {{ship}}",
     "convoy": "⛵ {{nick}} leads a convoy of {{count}} ships: {{ships}}",
     "convoyFog": "⛵ {{nick}} leads a convoy of {{count}} ships",
     "mortarPirate": "🔥 {{nick}} — mortar: {{ship}} at the pirates (−{{dmg}} HP)",
@@ -687,7 +687,11 @@
     "broadsideFog": "💥 {{nick}} fires a broadside",
     "outpostBuild": "{{icon}} {{nick}} builds: {{building}} (−{{cost}} gold)",
     "outpostUp": "{{icon}} {{nick}} upgrades to: {{building}} (−{{cost}} gold)",
-    "outpostBuildFog": "⛺ {{nick}} is building on an island"
+    "outpostBuildFog": "⛺ {{nick}} builds an outpost on an island",
+    "income": "💰 Income this turn: {{parts}} — {{total}} gold in total",
+    "convoyWar": "⛵ {{nick}} leads a convoy of {{count}} warships: {{ships}}",
+    "convoyWarFog": "⛵ {{nick}} leads a convoy of {{count}} warships",
+    "outpostUpFog": "{{icon}} {{nick}} upgrades an island building to \"{{building}}\""
   },
   "mail": {
     "nudge": {
@@ -713,5 +717,16 @@
       "2": "Admiral Crow"
     },
     "extra": "Bot"
+  },
+  "income": {
+    "port": "port",
+    "fishing": "fishing",
+    "outpost": "outposts",
+    "bounty": "pirate bounties",
+    "wreck": "wrecks",
+    "tribute": "tribute from a base",
+    "loot": "treasure",
+    "cheat": "cheat",
+    "support": "port bonus"
   }
 }

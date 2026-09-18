@@ -10,6 +10,8 @@
   --ink-light: #5b6f93;
   --pencil: #6b6f76;         /* простой карандаш */
   --red-pen: #c0392b;        /* красная ручка */
+  --gold-ink: #8a6410;       /* золото: доход в журнале. Темнее «настоящего» золота (#b8860b) —
+                                то даёт контраст 3.1 к бумаге и читается мутно; у этого 5.2 */
   --sand: #e8d9a8;
   --sea-hl: rgba(120, 170, 210, 0.18);
   --margin-line: rgba(214, 92, 92, 0.6);
@@ -241,7 +243,10 @@ aside.panel {
   overflow-y: auto;
 }
 #log .battle { color: var(--red-pen); }
-#log .debug { opacity: .55; font-size: .92em; } /* 🐞 дебаг-лог экономики (DEBUG_GOLD_LOG в config.js) */
+#log .debug { opacity: .55; font-size: .92em; }  /* 🐞 служебные записи режима отладки */
+/* 💰 сводка доходов за ход — видна только своему игроку. Цвет вместо приглушения:
+   строка полезная, гасить её незачем, а золотистый сразу отличает её от событий боя. */
+#log .gold  { color: var(--gold-ink); font-size: .94em; }
 #log div { padding: 2px 0; border-bottom: 1px dotted var(--grid); }
 
 .action-bar {

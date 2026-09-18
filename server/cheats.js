@@ -9,7 +9,7 @@
 // ║    nofog      — переключить туман войны (клиентский визуал)                   ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 import { CHEATS_ENABLED } from './config.js';
-import { spawnCheatShip, debugGold } from './game.js';
+import { spawnCheatShip, earn } from './game.js';
 
 // code -> функция(game, pIdx) -> { ok, msg?, broadcast?, effect? }
 //   broadcast: true  — чит изменил состояние игры, нужно разослать стейт/сохранить
@@ -17,7 +17,7 @@ import { spawnCheatShip, debugGold } from './game.js';
 const CHEATS = {
   motherlode(game, pIdx) {
     game.players[pIdx].gold += 1000;
-    debugGold(game, game.players[pIdx], 1000, 'чит motherlode');
+    earn(game, game.players[pIdx], 1000, 'cheat');
     return { ok: true, msg: '💰 +1000 золота', broadcast: true };
   },
   geraldford(game, pIdx) {

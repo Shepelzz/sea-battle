@@ -666,7 +666,7 @@
     "collect": "💰 {{nick}} собирает добычу: +{{gold}} зол. (островов: {{count}})",
     "collectFog": "💰 {{nick}} собирает добычу",
     "move": "🧭 {{nick}} — ход: {{ship}}",
-    "moveFog": "🧭 {{nick}} сделал ход",
+    "moveFog": "🧭 {{nick}} — ход: {{ship}}",
     "convoy": "⛵ {{nick}} ведёт строй из {{count}} судов: {{ships}}",
     "convoyFog": "⛵ {{nick}} ведёт строй из {{count}} судов",
     "mortarPirate": "🔥 {{nick}} — мортира: {{ship}} по пиратам (−{{dmg}} HP)",
@@ -694,7 +694,11 @@
     "broadsideFog": "💥 {{nick}} даёт бортовой залп",
     "outpostBuild": "{{icon}} {{nick}} ставит: {{building}} (−{{cost}} зол.)",
     "outpostUp": "{{icon}} {{nick}} прокачивает до: {{building}} (−{{cost}} зол.)",
-    "outpostBuildFog": "⛺ {{nick}} строит на острове"
+    "outpostBuildFog": "⛺ {{nick}} ставит аванпост на острове",
+    "income": "💰 Доход за ход: {{parts}} — итого +{{total}} зол.",
+    "convoyWar": "⛵ {{nick}} ведёт строй из {{count}} боевых судов: {{ships}}",
+    "convoyWarFog": "⛵ {{nick}} ведёт строй из {{count}} боевых судов",
+    "outpostUpFog": "{{icon}} {{nick}} улучшает постройку на острове до «{{building}}»"
   },
   "mail": {
     "nudge": {
@@ -720,5 +724,16 @@
       "2": "Адмирал Кроу"
     },
     "extra": "Бот"
+  },
+  "income": {
+    "port": "порт",
+    "fishing": "рыбалка",
+    "outpost": "аванпосты",
+    "bounty": "награды за пиратов",
+    "wreck": "обломки",
+    "tribute": "дань с базы",
+    "loot": "клады",
+    "cheat": "чит",
+    "support": "надбавка порта"
   }
 }

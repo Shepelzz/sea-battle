@@ -9,13 +9,13 @@
 // Всё реалтайм-состояние живёт в game.rt (обычный объект — переживает сохранение в БД).
 import {
   SHIP_TYPES, PIRATE, PIRATE_MAX, PIRATE_MOVE_CHANCE, PIRATE_ENGAGE_MULT, MAP_EDGE_MARGIN,
-  PORT_INCOME, PORT_NO_SHIP_INCOME_MULT, MORTAR_SHIPS, LOOT_REACH, FISH_ZONE_CAP,
+  PORT_INCOME, portIncome, MORTAR_SHIPS, LOOT_REACH, FISH_ZONE_CAP,
   OUTPOST_LEVELS, OUTPOST_BUILD_REACH, RT_OUTPOST_MS, FISH_DRIFT_RT,
   RT, isRealtime, isDuel, isPeace, windMoveMult
 } from './config.js';
 import {
   applyAction, pushEvent, pushLog, logEvent, spawnPirate, sinkShip, pirateVolley,
-  fishEarners, terrainBlocked, dist, applyOutpostPerks, driftFishZones, debugGold
+  fishEarners, terrainBlocked, dist, applyOutpostPerks, driftFishZones, earn, flushEarnings
 } from './game.js';
 
 const norm = a => Math.atan2(Math.sin(a), Math.cos(a));
@@ -206,12 +206,14 @@ export function tickEconomy(game, now) {
     // в дуэли дохода нет (как и «за ход» в пошаговой) — золото только за пиратов
     if (!isDuel(game)) game.players.forEach((p, i) => {
       if (!p.alive) return;
-      const hasShips = game.ships.some(s => s.owner === i);
-      // как в пошаговом: порт без единого корабля приносит на 50% больше — легче встать на ноги
-      const inc = hasShips ? PORT_INCOME : Math.round(PORT_INCOME * PORT_NO_SHIP_INCOME_MULT);
+      // как в пошаговом: чем беднее флот, тем щедрее порт (см. portIncome в config.js)
+      const inc = portIncome(game, i);
       p.gold += inc;
-      debugGold(game, p, inc, hasShips ? 'доход порта' : 'доход порта (без флота, +50%)');
+      earn(game, p, Math.min(inc, PORT_INCOME), 'port');
+      earn(game, p, inc - PORT_INCOME, 'support');
     });
+    // ходов тут нет — сводим доходы по тику порта: одна строка каждому, кому накапало
+    game.players.forEach((_, i) => flushEarnings(game, i));
   }
   if (now >= rt.nextFish) {
     rt.nextFish = now + RT.FISH_MS;
@@ -223,7 +225,7 @@ export function tickEconomy(game, now) {
         p.gold += inc;
         p.stats.goldCollected += inc;
         pushEvent(game, { type: 'gold', x: s.x, y: s.y, amount: inc });
-        debugGold(game, p, inc, 'рыбалка');
+        earn(game, p, inc, 'fishing');
       }
     }
   }

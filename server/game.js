@@ -2,10 +2,10 @@
 import { generateMap, spawnPoints, duelFleetSpots } from './mapgen.js';
 import {
   SHIP_TYPES, START_FLEET, START_GOLD, PORT_HP, PORT_RETURN_DMG, PORT_INCOME,
-  PORT_RETURN_LINKOR_MULT, PORT_NO_SHIP_INCOME_MULT,
+  PORT_RETURN_LINKOR_MULT, portIncome,
   SHIP_COLLISION_DIST, LOOT_REACH, WRECK_LOOT_FRAC, tributeFor,
   BROADSIDE_CANNONS, BROADSIDE_HALF_ARC, BROADSIDE_FALLOFF_MIN, BROADSIDE_SIDE_MIN, BROADSIDE_PORT_MULT, MORTAR_SHIPS, MORTAR_SHIP_MULT,
-  FISH_ZONE_CAP, movesBudget, SHIP_ACTIONS, CHEATS_ENABLED, DEBUG_GOLD_LOG, DEBUG, REPAIR_CHARGES, REPAIR_DOCK_REACH,
+  FISH_ZONE_CAP, movesBudget, SHIP_ACTIONS, CHEATS_ENABLED, DEBUG, REPAIR_CHARGES, REPAIR_DOCK_REACH,
   CONVOY_MAX, CONVOY_PICK_MULT, convoyCost, convoyCosts, shipRank,
   modeStartGold, modeOf, isPeace, modePeaceRounds, isDuel, isRealtime, RT, cheapestShipPrice, GAME_MODES, DEFAULT_MODE,
   WIND_STRENGTH, WIND_TURN_STEP, WIND_STR_STEP, windMoveMult, REALTIME_TAG,
@@ -77,7 +77,9 @@ export function createGame(id, config) {
 // (в одной партии игроки с разными языками, а сервер один). Простой строкой передаём только
 // служебное — дебаг и читы: такую запись клиент показывает как есть.
 function pushLog(game, entry, type = 'info') {
-  const row = typeof entry === 'string' ? { text: entry } : { k: entry.k, ...(entry.p ? { p: entry.p } : {}) };
+  const row = typeof entry === 'string'
+    ? { text: entry }
+    : { k: entry.k, ...(entry.p ? { p: entry.p } : {}), ...(entry.to ? { to: entry.to } : {}) };
   game.log.push({ t: Date.now(), type, ...row });
   if (game.log.length > 80) game.log.splice(0, game.log.length - 80);
 }
@@ -90,11 +92,31 @@ function logEvent(game, detailed, abstract, type = 'info') {
   pushLog(game, game.config.fog ? abstract : detailed, type);
 }
 
-// 🐞 Дебаг-лог экономики (флаг DEBUG_GOLD_LOG в config.js): каждое начисление золота —
-// в журнал партии. Пишет мимо тумана войны (доходы всех видны всем) — только для отладки.
-export function debugGold(game, player, amount, reason) {
-  if (!DEBUG_GOLD_LOG || !amount || !player) return;
-  pushLog(game, `🐞 +${amount} зол. → ${player.nick}: ${reason}`, 'debug');
+// 💰 ДОХОДЫ. Раньше каждое начисление падало в журнал отдельной строкой и ВСЕМ — то есть
+// соперник видел твою экономику, а журнал забивался. Теперь копим за ход по статьям
+// (рыбалка, порт, аванпосты, награды, обломки, дань, клады) и отдаём ОДНОЙ записью,
+// помеченной адресатом: publicState покажет её только ему.
+export function earn(game, player, amount, kind) {
+  if (!amount || !player) return;
+  (player.earned ??= {})[kind] = (player.earned[kind] || 0) + amount;
+}
+// Свести накопленное в одну строку. Зовётся в конце хода игрока (и по тику дохода в реалтайме).
+export function flushEarnings(game, pIdx) {
+  const p = game.players?.[pIdx];
+  const acc = p?.earned;
+  if (!acc) return;
+  delete p.earned;
+  const parts = Object.entries(acc).filter(([, v]) => v > 0);
+  if (!parts.length) return;
+  pushLog(game, {
+    k: 'log.income',
+    p: {
+      total: parts.reduce((sum, [, v]) => sum + v, 0),
+      // массив {k, v} — клиент соберёт «рыбалка +35, аванпосты +20» на своём языке
+      parts: parts.map(([kind, v]) => ({ k: 'income.' + kind, v }))
+    },
+    to: p.id
+  }, 'gold');
 }
 
 // События последнего хода — клиент проигрывает по ним анимации
@@ -460,6 +482,7 @@ function driftWind(game, newRound) {
 }
 
 function advanceTurn(game) {
+  flushEarnings(game, game.turn.idx);   // итог доходов игрока, чей ход закончился — одной строкой ему
   movePirates(game);
   const n = game.players.length;
   let next = game.turn.idx;
@@ -484,11 +507,13 @@ function advanceTurn(game) {
   // иначе в долгой партии золото переставало капать и в верфи становилось нечего купить.)
   const np = game.players[next];
   if (np?.alive && !isDuel(game)) {   // в дуэли дохода за ход НЕТ (золото — только за пиратов)
-    // порт без единого корабля приносит на 50% больше золота — игроку, потерявшему флот, легче встать на ноги.
-    const hasShips = game.ships.some(s => s.owner === next);
-    const income = hasShips ? PORT_INCOME : Math.round(PORT_INCOME * PORT_NO_SHIP_INCOME_MULT);
+    // чем беднее флот, тем щедрее порт — чтобы потерявший всё не ждал 13 ходов до первой шхуны
+    // (плавный спад, а не ступенька: см. portIncome в config.js)
+    const income = portIncome(game, next);
     np.gold += income;
-    debugGold(game, np, income, hasShips ? 'доход порта' : 'доход порта (без флота, +50%)');
+    // в журнал — двумя статьями: сколько дал порт сам и сколько сверху добавила поддержка
+    earn(game, np, Math.min(income, PORT_INCOME), 'port');
+    earn(game, np, income - PORT_INCOME, 'support');
   }
 
   // пассивная рыбалка: каждый баркас игрока, стоящий в рыбном месте, сам приносит улов
@@ -506,7 +531,7 @@ function advanceTurn(game) {
       np.gold += catch_;
       np.stats.goldCollected += catch_;
       // нотиф про улов не пишем — это шум; остаётся всплывающее «+золото» на карте
-      debugGold(game, np, catch_, 'рыбалка');
+      earn(game, np, catch_, 'fishing');
     }
   }
 
@@ -526,7 +551,7 @@ export function applyOutpostPerks(game, pIdx) {
     const lvl = OUTPOST_LEVELS[op.level - 1];
     p.gold += lvl.income;
     pushEvent(game, { type: 'gold', x: isl.x, y: isl.y, amount: lvl.income });
-    debugGold(game, p, lvl.income, `аванпост ур.${op.level}`);
+    earn(game, p, lvl.income, 'outpost');
     if (lvl.heal) { // 🏪 фактория: латает свои корабли в радиусе (доля их МАКСИМАЛЬНОЙ прочности)
       for (const s of game.ships.filter(s => s.owner === pIdx && dist(s.x, s.y, isl.x, isl.y) <= OUTPOST_RADIUS)) {
         const maxHp = SHIP_TYPES[s.type].hp;
@@ -600,7 +625,7 @@ function sinkShip(game, ship, killer) {
     killer.stats.shipsSunk++; killer.stats.goldCollected += ship.bounty;  // общий зачёт (рекап/сим)
     killer.stats.npcSunk++;   killer.stats.npcGold += ship.bounty;        // …но НПС → из лидерборда вычтется
     pushEvent(game, { type: 'gold', x: ship.x, y: ship.y, amount: ship.bounty });
-    debugGold(game, killer, ship.bounty, 'награда за пирата');
+    earn(game, killer, ship.bounty, 'bounty');
     logEvent(game,
       L('pirateSunk', { nick: killer.nick, gold: ship.bounty }),
       L('pirateSunkFog', { nick: killer.nick }), 'battle');
@@ -623,7 +648,7 @@ function sinkShip(game, ship, killer) {
     killer.stats.shipsSunk++; killer.stats.goldCollected += plunder;
     if (npcFoe) { killer.stats.npcSunk++; killer.stats.npcGold += plunder; }
     pushEvent(game, { type: 'gold', x: ship.x, y: ship.y, amount: plunder });
-    debugGold(game, killer, plunder, `лут с обломков (${ship.type})`);
+    earn(game, killer, plunder, 'wreck');
     logEvent(game,
       L('shipSunkLoot', { ship: `ship.${ship.type}.name`, owner: owner.nick, killer: killer.nick, gold: plunder }),
       L('shipSunkFog', { killer: killer.nick, owner: owner.nick }), 'battle');
@@ -651,7 +676,7 @@ function eliminatePlayer(game, victimIdx, killer) {
     victim.gold -= Math.min(victim.gold, tribute);   // в минус казну не уводим
     killer.gold += tribute;                       // дань-валюту забираем,
     killer.stats.goldCollected += tribute;
-    debugGold(game, killer, tribute, `дань с игрока ${victim.nick}`);
+    earn(game, killer, tribute, 'tribute');
     if (victim.isBot) killer.stats.npcGold += tribute; // дань с бота → из лидерборда вычтется
     const base = game.map.bases[victimIdx];
     if (base && !base.noPort) { // в дуэли порта/форта нет — взрыв уже сыгран на последнем корабле
@@ -961,7 +986,7 @@ export function applyAction(game, playerId, action) {
       if (!gained) return { ok: false, error: 'err.nothingToCollect' };
       player.gold += gained;
       player.stats.goldCollected += gained;
-      debugGold(game, player, gained, 'клад с острова');
+      earn(game, player, gained, 'loot');
       if (!rt) reachers.forEach(id => (game.turn.actedShips ??= []).push(id)); // собравшие — походили этим ходом
       logEvent(game,
         L('collect', { nick: player.nick, gold: gained, count: notes.length }),
@@ -999,7 +1024,7 @@ export function applyAction(game, playerId, action) {
       ship.x = x; ship.y = y;
       logEvent(game,
         L('move', { nick: player.nick, ship: `ship.${ship.type}.name` }),
-        L('moveFog', { nick: player.nick }));
+        L('moveFog', { nick: player.nick, ship: `ship.${ship.type}.name` }));
       break;
     }
 
@@ -1057,9 +1082,12 @@ export function applyAction(game, playerId, action) {
         d.s.x = d.x; d.s.y = d.y;
       }
       convoyDone = { ids, cost };
+      // «боевых судов» — если в строю НИ ОДНОГО вспомогательного: бриг и выше, ремонтник не в счёт
+      const allWar = crew.every(s => shipRank(s.type) >= shipRank('brig') && !SHIP_TYPES[s.type].repairer);
       logEvent(game,
-        L('convoy', { nick: player.nick, count: crew.length, ships: crew.map(s => `ship.${s.type}.name`) }),
-        L('convoyFog', { nick: player.nick, count: crew.length }));
+        L(allWar ? 'convoyWar' : 'convoy',
+          { nick: player.nick, count: crew.length, ships: crew.map(s => `ship.${s.type}.name`) }),
+        L(allWar ? 'convoyWarFog' : 'convoyFog', { nick: player.nick, count: crew.length }));
       break;
     }
 
@@ -1326,7 +1354,8 @@ export function applyAction(game, playerId, action) {
       logEvent(game,
         L(level === 1 ? 'outpostBuild' : 'outpostUp',
           { icon: def.icon, nick: player.nick, building: `outpost.${level - 1}.name`, cost: def.price }),
-        L('outpostBuildFog', { nick: player.nick }));
+        L(level === 1 ? 'outpostBuildFog' : 'outpostUpFog',
+          { nick: player.nick, icon: def.icon, building: `outpost.${level - 1}.name` }));
       break;
     }
 
@@ -1480,7 +1509,8 @@ export function publicState(game, viewerPid) {
       return netting.size ? game.ships.map(s => netting.has(s.id) ? { ...s, netting: true } : s) : game.ships;
     })(),
     turn: game.turn,
-    log: game.log,
+    // личные записи (сводка доходов) видит только их адресат — чужая казна не его дело
+    log: game.log.filter(l => !l.to || l.to === viewerPid),
     winner: game.winner,
     events: game.events || [],
     eventSeq: game.eventSeq || 0,

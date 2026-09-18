@@ -1,7 +1,7 @@
 // Точечная проверка правок: пассивная рыбалка (+лимит зоны), урон линкора по порту,
 // сдача базы линкору, доход порта у безфлотного игрока.
 import { createGame, addPlayer, startGame, applyAction } from './server/game.js';
-import { SHIP_TYPES, PORT_HP, PORT_INCOME, PORT_RETURN_DMG, FISH_ZONE_CAP } from './server/ships.js';
+import { SHIP_TYPES, PORT_HP, PORT_INCOME, PORT_POOR_MULT, PORT_RETURN_DMG, FISH_ZONE_CAP } from './server/ships.js';
 
 let ok = 0, fail = 0;
 const check = (n, c, extra='') => { c ? (ok++, console.log('✓', n, extra)) : (fail++, console.error('✗', n, extra)); };
@@ -100,21 +100,32 @@ function freshGame() {
     `(Δ=${delta}, ждали ${expected} — а не ${PORT_INCOME + (cap + 2) * SHIP_TYPES.barkas.fishing} за ${cap + 2})`);
 }
 
-// === 6. Безфлотный игрок: порт даёт на 50% больше ===
+// === 6. Поддержка отстающего: чем беднее флот, тем щедрее порт ===
+// Надбавка спадает ПЛАВНО по стоимости флота — ступенька «есть корабли / нет» делала покупку
+// первого баркаса невыгодной (доход падал сильнее, чем баркас ловит). См. portIncome в config.js.
 {
-  const g = freshGame();
-  g.ships = g.ships.filter(s => s.owner !== 1); // у Боба не осталось ни одного корабля
-  const before = g.players[1].gold;
-  applyAction(g, 'A', { type: 'skip' }); // → ход Боба
-  const delta = g.players[1].gold - before;
-  check('порт без флота даёт +50% золота', delta === Math.round(PORT_INCOME * 1.5),
-    `(Δ=${delta}, ждали ${Math.round(PORT_INCOME * 1.5)})`);
+  const income = (ships) => {                     // сколько порт принесёт Бобу с таким флотом
+    const g = freshGame();
+    g.ships = g.ships.filter(s => s.owner !== 1);
+    for (const t of ships) g.ships.push({ id: 'b_' + t + g.ships.length, owner: 1, type: t, x: 50, y: 50, hp: SHIP_TYPES[t].hp });
+    const before = g.players[1].gold;
+    applyAction(g, 'A', { type: 'skip' });         // → ход Боба
+    return g.players[1].gold - before;
+  };
 
-  // контроль: пока корабль есть — доход обычный
-  const g2 = freshGame();
-  const b0 = g2.players[1].gold;
-  applyAction(g2, 'A', { type: 'skip' });
-  check('порт с флотом — обычный доход', g2.players[1].gold - b0 === PORT_INCOME, `(Δ=${g2.players[1].gold - b0})`);
+  const bare = income([]);
+  const peak = Math.round(PORT_INCOME * PORT_POOR_MULT);   // от константы: крутилку можно менять
+  check('без единого судна — доход по множителю поддержки', bare === peak, `(Δ=${bare}, ждали ${peak})`);
+  check('флот от брига и дороже — обычный доход', income(['brig']) === PORT_INCOME, `(Δ=${income(['brig'])})`);
+  check('стартовый флот — обычный доход', income(['shkhuna', 'shkhuna', 'fregat']) === PORT_INCOME);
+
+  // главное: надбавка спадает ПОСТЕПЕННО и покупка первого судна не наказывает
+  const withBarkas = income(['barkas']);
+  check('баркас: доход между крайними', withBarkas < bare && withBarkas > PORT_INCOME, `(Δ=${withBarkas})`);
+  check('первое судно не в убыток: потеря дохода меньше улова',
+    bare - withBarkas < SHIP_TYPES.barkas.fishing, `(потеря ${bare - withBarkas}, улов ${SHIP_TYPES.barkas.fishing})`);
+  check('чем дороже флот, тем меньше надбавка', income(['shkhuna']) < withBarkas,
+    `(шхуна ${income(['shkhuna'])} < баркас ${withBarkas})`);
 }
 
 // === 7. База бьёт в ответ линкору на 20% сильнее, прочим — обычно ===

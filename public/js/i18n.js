@@ -64,14 +64,17 @@
   // может приехать и ЗНАЧЕНИЕМ параметра (имя корабля, причина отказа) — переводим и его.
   // Всё, что на ключ не похоже (ник игрока, число, запись из старой сохранённой партии,
   // сообщение чит-режима), отдаём как есть.
-  const KEYISH = /^(err|ship|mode|outpost|log|tag|bot)\.[\w.]+$/;
+  const KEYISH = /^(err|ship|mode|outpost|log|tag|bot|income)\.[\w.]+$/;
   function tr(key, params) {
     if (key === null || key === undefined) return '';
     if (typeof key !== 'string' || !KEYISH.test(key)) return String(key);
     const one = v => (typeof v === 'string' && KEYISH.test(v)) ? t(v) : v;
+    // массив приезжает двух видов: список ключей (суда в строю) и список статей дохода
+    // вида {k:'income.fishing', v:35} — второй собираем как «рыбалка +35».
+    const item = v => (v && typeof v === 'object' && v.k !== undefined) ? `${t(v.k)} +${v.v}` : one(v);
     const p = {};
     for (const [k, v] of Object.entries(params || {}))
-      p[k] = Array.isArray(v) ? v.map(one).join(', ') : one(v);   // список судов приезжает массивом ключей
+      p[k] = Array.isArray(v) ? v.map(item).join(', ') : one(v);
     return t(key, p);
   }
   // ответ сервера {ok:false, error, params} → готовая строка
