@@ -2413,7 +2413,16 @@ function handleTap(pos, isTouch) {
     }
   }
 
-  const clickedShip = state.ships.find(s => dist(pt.x, pt.y, s.x, s.y) < tapR);
+  // Корабли под тапом — ПО БЛИЗОСТИ, а не в порядке массива. Раньше тут был find(), то есть
+  // «первый подходящий»: на отзумленной карте радиус тапа разрастается до десятков единиц, под
+  // него попадает сразу несколько судов, и выигрывало то, что раньше в game.ships — почти всегда
+  // своё (свои добавляются первыми). Из-за этого мортира отказывалась бить врага, стоящего
+  // вплотную к своему кораблю, а тап вместо выстрела перевыбирал чужое судно.
+  const shipsUnderTap = state.ships
+    .map(s => ({ s, d: dist(pt.x, pt.y, s.x, s.y) }))
+    .filter(o => o.d < tapR)
+    .sort((a, b) => a.d - b.d);
+  const clickedShip = shipsUnderTap[0]?.s;
 
   // ⛵ НАБОР СТРОЯ: тапы по соседним судам цепляют/отцепляют их (жёлтые кольца с номерами),
   // тап по флагману — подсказка, тап по воде — выйти. Ведём строй тягой от флагмана.
@@ -2466,8 +2475,9 @@ function handleTap(pos, isTouch) {
     }
   }
 
-  if (mode === 'attack' && selectedShipId && !(clickedShip && clickedShip.owner === myIdx())) {
-    const asel = state.ships.find(s => s.id === selectedShipId);
+  if (mode === 'attack' && selectedShipId) {
+    // Цель — БЛИЖАЙШЕЕ судно под тапом. Чужое ближе моего → стреляем (своё рядом больше не
+    // отменяет выстрел); моё ближе → это осознанный тап по своему, проваливаемся в перевыбор.
     if (clickedShip && clickedShip.owner !== myIdx()) {
       sendAction({ type: 'attack', shipId: selectedShipId, targetType: 'ship', targetId: clickedShip.id });
       mode = 'idle'; render();
@@ -2487,9 +2497,11 @@ function handleTap(pos, isTouch) {
       mode = 'idle'; render();
       return;
     }
-    // тап мимо целей (или вне радиуса) — передумал: тихо закрываем прицел и штурвал
-    deselect();
-    return;
+    // тап по СВОЕМУ судну — это перевыбор корабля, а не отмена: уходим ниже, в общую ветку выбора
+    if (!(clickedShip && clickedShip.owner === myIdx())) {
+      deselect();   // тап мимо целей (или вне радиуса) — передумал: тихо закрываем прицел и штурвал
+      return;
+    }
   }
 
   if (mode === 'repair' && selectedShipId) {
