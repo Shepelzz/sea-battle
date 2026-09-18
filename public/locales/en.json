@@ -497,6 +497,16 @@
     "noFog": "no fog",
     "singleMove": "one action per turn"
   },
+  "og": {
+    "site": "Sea Battle",
+    "homeTitle": "⚓ Sea Battle on Squared Paper",
+    "homeDesc": "The classic back-of-the-class battle: islands, fleets and plunder. Play in your browser with friends.",
+    "gameTitle": "⚓ You are invited to a sea battle",
+    "players": "{{n}} players",
+    "duel": "1 v 1",
+    "fog": "fog of war",
+    "imageAlt": "Siege of a port: a squadron pounding a burning base"
+  },
   "err": {
     "noGame": "No such game",
     "notYourShip": "That is not your ship",

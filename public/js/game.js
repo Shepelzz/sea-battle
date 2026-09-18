@@ -3209,7 +3209,7 @@ function renderOverlays() {
         c => socket.emit('setColor', { color: c }, r => { if (!r.ok) $('#lobbyError').textContent = errText(r); }),
         taken);
     } else { $('#lobbyColors').innerHTML = ''; }
-    $('#inviteUrl').textContent = location.href;
+    $('#inviteUrl').textContent = shareUrl();
     const isCreator = (state.hostPid || state.players[0]?.id) === myId;
     $('#lobbySlots').innerHTML = Array.from({ length: cfg.maxPlayers }, (_, i) => {
       const p = state.players[i];
@@ -3260,8 +3260,19 @@ function renderOverlays() {
   }
 }
 
+// Ссылка-приглашение с языком ОТПРАВИТЕЛЯ: сервер не знает, кто её кинул (за превью
+// приходит бот мессенджера, анонимно и без кук), поэтому язык кладём прямо в ссылку.
+// Влияет ТОЛЬКО на карточку превью — открывший её человек увидит игру на своём языке.
+function shareUrl() {
+  try {
+    const u = new URL(location.href);
+    u.searchParams.set('l', window.SBI18n?.lang?.() || document.documentElement.lang || 'uk');
+    return u.toString();
+  } catch { return location.href; }
+}
+
 $('#copyBtn').addEventListener('click', async () => {
-  await navigator.clipboard.writeText(location.href);
+  await navigator.clipboard.writeText(shareUrl());
   $('#copyBtn').textContent = '✔';
   setTimeout(() => { $('#copyBtn').textContent = '📋'; }, 1500);
 });

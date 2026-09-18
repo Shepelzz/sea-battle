@@ -24,6 +24,7 @@ import {
 import { chooseBotAction, BOT_NAMES, duelFleetPlan } from './bot.js';
 import { LANGS, LANG_COOKIE, SOURCE_LANG, DEFAULT_LANG, normLang, pickLang, buildLangCookie } from './i18n.js';
 import { applyCheat } from './cheats.js';
+import { ogHead, gameFacts, previewLang, absUrl, OG_IMAGE, LANG_PARAM } from './og.js';
 import { VERSION, versionLabel } from './version.js';
 import { rtStart, rtStop } from './rt.js';
 import { CHEATS_ENABLED, DEBUG, GAME_MODES, enabledModes, DEFAULT_MODE, isDuel, isRealtime, realtimeAllowed, SHIP_TYPES, PIRATE } from './config.js';
@@ -97,9 +98,46 @@ async function reqLang(req) {
   return pickLang({ profile, cookie: parseCookies(req.headers.cookie)[LANG_COOKIE] });
 }
 
-async function renderPage(file, req, res) {
+// --- ПРЕВЬЮ ССЫЛКИ (Open Graph): что мессенджер покажет вместо голого URL ---
+// Правила и формат — в og.js. Тут только «достать данные и подставить текст».
+const CHARSET_META = '<meta charset="UTF-8">';   // якорь вставки: теги идут сразу за кодировкой
+const reqOrigin = req => process.env.BASE_URL
+  || `${req.get('x-forwarded-proto') || req.protocol}://${req.get('host')}`;
+
+async function ogBlock(req, game) {
+  // язык превью — из ссылки (?l=, его туда кладёт «скопировать» у отправителя),
+  // иначе язык создателя партии, иначе дефолт. На саму страницу это не влияет.
+  const hostLang = game?.hostPid ? (await db.getPlayer(game.hostPid))?.lang : null;
+  const lang = previewLang({ param: req.query?.[LANG_PARAM], hostLang });
+  const T = (k, p) => mailT(lang, k, p);                  // тот же резолвер, что у писем
+  const origin = reqOrigin(req);
+  const url = absUrl(origin, req.originalUrl.split('?')[0]);
+  const base = {
+    lang, url,
+    siteName: await T('og.site'),
+    image: absUrl(origin, OG_IMAGE),
+    imageAlt: await T('og.imageAlt')
+  };
+  if (!game) return ogHead({ ...base, title: await T('og.homeTitle'), description: await T('og.homeDesc') });
+  // описание — только НЕИЗМЕНЯЕМЫЕ приметы партии (см. предупреждение в og.js)
+  const facts = [];
+  for (const f of gameFacts(game)) facts.push(await T(f.k, f.p));
+  return ogHead({ ...base, title: await T('og.gameTitle'), description: facts.join(' · ') });
+}
+
+async function renderPage(file, req, res, game = null) {
   try {
-    res.type('html').set('Cache-Control', 'no-cache').send(await buildPage(file, await reqLang(req)));
+    let html = await buildPage(file, await reqLang(req));
+    // Вставляем В НАЧАЛО <head>, а не перед </head>: там уже лежит вшитый словарь на десятки
+    // килобайт, а краулеры читают только начало страницы — за ним теги можно и не найти.
+    // Но ПОСЛЕ <meta charset>: объявление кодировки обязано идти первым, иначе кириллица в
+    // самих тегах рискует быть разобранной не в той кодировке.
+    // Готовая страница в памяти при этом не меняется: правим копию перед самой отправкой.
+    const og = await ogBlock(req, game).catch(e => (console.error('og:', e.message), ''));
+    if (og) html = html.includes(CHARSET_META)
+      ? html.replace(CHARSET_META, CHARSET_META + '\n' + og.replace(/\n$/, ''))
+      : html.replace('<head>', '<head>\n' + og);
+    res.type('html').set('Cache-Control', 'no-cache').send(html);
   } catch (e) {
     console.error('page:', e.message);
     res.sendFile(path.join(PUBLIC, file));   // сломался рендер — отдаём как есть, на языке разметки
@@ -500,7 +538,7 @@ app.post('/api/games', (req, res) => {
 
 app.get('/api/leaderboard', async (_req, res) => res.json(await db.getLeaderboard()));
 
-app.get('/game/:id', (req, res) => renderPage('game.html', req, res));
+app.get('/game/:id', (req, res) => renderPage('game.html', req, res, getGame(req.params.id)));
 
 // --- WebSocket ---
 
