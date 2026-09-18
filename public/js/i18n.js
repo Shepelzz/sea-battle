@@ -31,7 +31,9 @@
   const DEFAULT = boot.def || 'uk';
   // Родные названия языков — единственное, что НЕ переводится: в списке каждый язык
   // подписан на себе самом, иначе его не найдёт тот, кто попал не на свой.
-  const NAMES = { uk: '🇺🇦 Українська', ru: '🇷🇺 Русский', en: '🇬🇧 English' };
+  // На кнопке — только флаг (она стоит в тесном ряду у бейджа входа), название видно в списке.
+  const FLAGS = { uk: '🇺🇦', ru: '🇷🇺', en: '🇬🇧' };
+  const NAMES = { uk: 'Українська', ru: 'Русский', en: 'English' };
 
   let lang = boot.lang || readCookie('sb_lang') || DEFAULT;
 
@@ -89,19 +91,15 @@
   }
 
   // --- переключатель ---
+  // Тот же дропдаун, что у режимов и цветов (public/js/palette.js): нативный <select> на мобиле
+  // всплывает не там, да и показать в кнопке одно, а в списке другое он не умеет.
   function mount(box) {
-    if (box.firstChild) box.replaceChildren();
-    const sel = document.createElement('select');
-    sel.className = 'lang-pick';
-    sel.title = t('lang.title');
-    sel.setAttribute('aria-label', t('lang.title'));
-    for (const code of LANGS) {
-      const o = document.createElement('option');
-      o.value = code; o.textContent = NAMES[code] || code; o.selected = code === lang;
-      sel.appendChild(o);
-    }
-    sel.addEventListener('change', () => set(sel.value));
-    box.appendChild(sel);
+    box.replaceChildren();
+    box.classList.add('lang-dd');
+    const opts = LANGS.map(code => ({ key: code, name: `${FLAGS[code] || ''} ${NAMES[code] || code}`.trim() }));
+    renderModeDropdown(box, opts, lang, code => set(code), m => FLAGS[m.key] || m.key);
+    const btn = box.querySelector('.mode-dd-btn');
+    if (btn) { btn.title = t('lang.title'); btn.setAttribute('aria-label', t('lang.title')); }
   }
 
   // --- смена языка на лету ---

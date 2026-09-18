@@ -7,10 +7,12 @@
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-  <!-- бейдж входа: кто залогинен + выход (показывается, если на сервере включён Google-вход) -->
-  <div id="authBadge" class="auth-badge hidden"></div>
-  <!-- выбор языка: сюда i18n.js ставит селект (public/js/i18n.js) -->
-  <div class="lang-box" data-lang-switch></div>
+  <!-- верхний правый угол: выбор языка + бейдж входа (кто залогинен и выход).
+       Бейдж перерисовывается целиком, поэтому язык — его СОСЕД, а не потомок. -->
+  <div class="top-bar">
+    <div data-lang-switch></div>
+    <div id="authBadge" class="auth-badge hidden"></div>
+  </div>
   <div class="wrap">
     <h1><span data-i18n="home.h1">⚓ Морской бой</span> <span class="muted" style="font-size:.45em; white-space:nowrap" data-i18n="home.h1sub">на листке в клетку</span></h1>
     <p class="muted" data-i18n="home.tagline">Тот самый улучшенный морской бой с задней парты: листок, линейка, карандаш — острова, флот и добыча. Теперь по интернету.</p>
@@ -185,9 +187,9 @@
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="/vendor/i18next.min.js"></script>
+  <script src="/js/palette.js"></script>
   <script src="/js/i18n.js"></script>
   <script src="/js/favicon.js"></script>
-  <script src="/js/palette.js"></script>
   <script src="/js/home.js"></script>
 </body>
 </html>

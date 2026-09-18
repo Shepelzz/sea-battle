@@ -33,10 +33,11 @@ function renderColorDropdown(host, palette, selected, onPick, taken) {
   host.append(btn, menu);
 }
 
-// Выпадающий выбор игрового режима — СВОЙ дропдаун (не нативный <select>): нативный на мобиле
-// всплывает не там (внутри повёрнутой .note), а этот позиционируется CSS под кнопкой.
-// renderModeDropdown(host, modes, selectedKey, onPick): modes = [{key,name,desc}].
-function renderModeDropdown(host, modes, selected, onPick) {
+// Выпадающий выбор — СВОЙ дропдаун (не нативный <select>): нативный на мобиле всплывает
+// не там (внутри повёрнутой .note), а этот позиционируется CSS под кнопкой.
+// renderModeDropdown(host, modes, selectedKey, onPick, labelOf?): modes = [{key,name,desc}].
+// labelOf(m) — что писать НА КНОПКЕ, если не полное имя (выбор языка показывает только флаг).
+function renderModeDropdown(host, modes, selected, onPick, labelOf) {
   host.innerHTML = '';
   host.classList.add('mode-dd');
   const cur = modes.find(m => m.key === selected) || modes[0];
@@ -45,7 +46,7 @@ function renderModeDropdown(host, modes, selected, onPick) {
   btn.type = 'button';
   btn.className = 'mode-dd-btn';
   btn.innerHTML = `<span class="dd-label"></span><span class="dd-caret">▾</span>`;
-  btn.querySelector('.dd-label').textContent = cur ? cur.name : '';
+  btn.querySelector('.dd-label').textContent = cur ? (labelOf ? labelOf(cur) : cur.name) : '';
 
   const menu = document.createElement('div');
   menu.className = 'mode-dd-menu hidden';

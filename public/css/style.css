@@ -744,16 +744,29 @@ body.debug-on { padding-bottom: var(--dbg-h); }
 .page-footer .dot-sep { opacity: .5; }
 .page-footer .build { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 
-/* ─── выбор языка (public/js/i18n.js ставит сюда селект) ─────────────────── */
-.lang-box { position: absolute; top: 10px; left: 12px; z-index: 40; }
-.lang-box.inline { position: static; }
-.lang-pick {
-  font-family: var(--font-hand); font-size: 15px; color: var(--ink);
-  background: var(--paper); border: 1.5px solid var(--ink-light);
-  border-radius: 999px; padding: 4px 10px; box-shadow: var(--shadow); cursor: pointer;
+/* ─── верхний правый угол: язык + бейдж входа в одном ряду ───────────────── */
+.top-bar {
+  position: absolute; top: 10px; right: 12px; z-index: 40;
+  display: flex; align-items: center; gap: 8px;
 }
-.lang-pick:hover { border-color: var(--ink); }
+.top-bar .auth-badge { position: static; }   /* бейдж встаёт в ряд, а не сам по себе */
+
+/* Выбор языка (public/js/i18n.js). На кнопке — ТОЛЬКО флаг, во всю её ширину:
+   стрелку прячем (что это список, видно по самому флагу), названия языков — в раскрытом
+   списке. Так кнопка не занимает полряда рядом с ником. */
+.lang-dd .mode-dd-btn {
+  padding: 4px 8px; gap: 0; font-size: 23px; line-height: 1.15;   /* по высоте вровень с бейджем входа */
+  border-radius: 999px; border: 1.5px solid var(--ink-light); background: var(--paper);
+}
+.lang-dd .mode-dd-btn:hover { border-color: var(--ink); }
+.lang-dd .mode-dd-btn .dd-caret { display: none; }
+/* Флаг визуально сидел выше центра: строка резервирует место под нижние выносные, а у
+   эмодзи их нет — краска глифа оказалась на 0.125em выше середины строки (замерено на
+   канве по границам непрозрачных пикселей). Сдвигаем ровно на эту долю; transform, а не
+   отступ, — чтобы не менять высоту кнопки. */
+.lang-dd .mode-dd-btn .dd-label { transform: translateY(0.125em); }
+.lang-dd .mode-dd-menu { left: auto; right: 0; }   /* у правого края — раскрываемся влево */
 @media (max-width: 520px) {
-  .lang-box { top: 6px; left: 6px; }
-  .lang-pick { font-size: 14px; padding: 3px 8px; }
+  .top-bar { top: 6px; right: 6px; gap: 6px; }
+  .lang-dd .mode-dd-btn { font-size: 21px; padding: 5px 7px; }   /* и на узком экране тоже вровень */
 }

@@ -317,7 +317,7 @@ $('#loginOverlay').addEventListener('click', e => { if (e.target.id === 'loginOv
     // селекторы игрового режима (из включённых на сервере) + показ описания выбранного
     const modes = (Array.isArray(cfg.modes) && cfg.modes.length ? cfg.modes : ['classic'])
       .map(key => ({ key, name: t(`mode.${key}.name`), desc: t(`mode.${key}.desc`) }));
-    document.querySelectorAll('.mode-dd').forEach(host => {
+    document.querySelectorAll('.mode-row .mode-dd').forEach(host => {
       // дуэль — только онлайн и против бота (строго 1на1); «на одном устройстве» её не предлагаем.
       const ms = host.id === 'hotseatMode' ? modes.filter(m => m.key !== 'duel') : modes;
       const desc = host.parentElement.querySelector('.mode-desc');
