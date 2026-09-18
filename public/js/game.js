@@ -192,7 +192,9 @@ socket.on('state', s => {
   updatePeaceBanner(prev, s); // баннер мирного времени (режим «Развитие»)
   updatePauseUI(s); // ⏸ пауза реалтайма: кнопка + оверлей
   if (anyBurning()) ensureAnimLoop(); // низкое HP базы → запустить анимацию огня/дыма
-  Sound.onState(prev, s, myIdx());
+  // Звук — украшение, и ронять им весь разбор состояния нельзя: однажды исключение отсюда
+  // унесло с собой и заголовок вкладки, и туториал, и авто-пропуск ходов (всё, что ниже).
+  try { Sound.onState(prev, s, myIdx()); } catch (e) { console.warn('звук:', e.message); }
   updateTab();
   // первый раз в активной игре и ты участник — показываем обучение (⛈️ шторм-бета — без тутора: там свой ритм)
   if (s.status === 'active' && s.map && !spectator && myIdx() >= 0 && !s.rt) Tutorial.start();

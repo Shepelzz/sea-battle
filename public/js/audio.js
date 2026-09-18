@@ -342,10 +342,18 @@ const Sound = (() => {
 
   // звуки по записям журнала — только то, у чего нет события-анимации
   // (бой, лут и движение озвучиваются из playEvents синхронно с анимацией)
-  const LOG_SOUNDS = [
-    ['🛠', 'coins'], ['📯', 'horn'], ['🏴‍☠️ На горизонте', 'pirate'],
-    ['🌫', 'pirate'], ['🏳️', 'horn'], ['⏰', 'horn'], ['⏭', 'click']
-  ];
+  // Звук подбираем по КЛЮЧУ записи журнала, а не по подстроке в тексте: текст приходит на
+  // языке игрока (сервер шлёт {k, p} — см. server/i18n.js), искать в нём эмодзи бессмысленно.
+  // Заодно ушёл давний казус: '👑' попадался и в записи о приходе БОССА, и на его появление
+  // играл звук победы/поражения.
+  const LOG_SOUNDS = {
+    'log.buy': 'coins', 'log.buyFog': 'coins',
+    'log.nudge': 'horn',
+    'log.pirateCame': 'pirate', 'log.pirateGone': 'pirate',
+    'log.leftFlag': 'horn', 'log.leftDuel': 'horn',
+    'log.timeout': 'horn',
+    'log.skipTurn': 'click'
+  };
   let lastLogT = Date.now(); // не озвучиваем историю при входе
 
   function onState(prev, next, myIdxVal) {
@@ -354,9 +362,9 @@ const Sound = (() => {
     if (next.log.length) lastLogT = Math.max(lastLogT, next.log[next.log.length - 1].t);
     let played = 0;
     for (const entry of fresh) {
-      if (entry.text.includes('👑')) { play(next.winner === myIdxVal ? 'win' : 'lose'); played++; continue; }
-      const hit = LOG_SOUNDS.find(([k]) => entry.text.includes(k));
-      if (hit && played < 3) { play(hit[1]); played++; }
+      if (entry.k === 'log.winner') { play(next.winner === myIdxVal ? 'win' : 'lose'); played++; continue; }
+      const snd = LOG_SOUNDS[entry.k];   // у служебных записей (дебаг/чит) ключа нет — молчим
+      if (snd && played < 3) { play(snd); played++; }
     }
     // мой ход настал
     if (next.status === 'active' && myIdxVal >= 0 &&
