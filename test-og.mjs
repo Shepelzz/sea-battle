@@ -6,7 +6,7 @@
 //   • в превью попал НИК — карточку видит любой, кому попала ссылка, включая ботов-пересыльщиков;
 //   • ключ описания есть не во всех словарях — игрок увидит голый `og.players`.
 import { readFileSync } from 'node:fs';
-import { ogHead, gameFacts, previewLang, absUrl, OG_IMAGE, LANG_PARAM } from './server/og.js';
+import { ogHead, gameFacts, previewLang, absUrl, canonicalPath, OG_IMAGE, LANG_PARAM } from './server/og.js';
 import { DEFAULT_LANG, LANGS } from './server/i18n.js';
 import { createGame, addPlayer, startGame } from './server/game.js';
 
@@ -118,6 +118,21 @@ for (const lang of LANGS) yes(`${lang}: og.players держит {{n}}`, /{{\s*n\
   const text = gameFacts(game).map(f => T('ru', f.k, f.p)).join(' · ') + JSON.stringify(gameFacts(game));
   yes('ника создателя в описании нет', !text.includes('СекретныйНик'));
   yes('ника соперника в описании нет', !text.includes('ДругойНик'));
+}
+
+// ═══ канонический адрес (og:url) ═══
+// Язык обязан оставаться в og:url: иначе мессенджер, считающий его каноническим, склеит
+// кэш превью для всех языков одной ссылки — и язык отправителя перестанет работать.
+eq('язык остаётся в каноне', canonicalPath('/game/aB3?l=en', 'en'), '/game/aB3?l=en');
+eq('локаль нормализуется', canonicalPath('/game/aB3?l=uk-UA', 'uk-UA'), '/game/aB3?l=uk');
+eq('без языка — чистый путь', canonicalPath('/game/aB3'), '/game/aB3');
+eq('мусорный язык не попадает в канон', canonicalPath('/game/aB3?l=zz', 'zz'), '/game/aB3');
+eq('прочие параметры отбрасываем', canonicalPath('/game/aB3?utm=vk&l=ru', 'ru'), '/game/aB3?l=ru');
+eq('якорь отбрасываем', canonicalPath('/game/aB3#x', null), '/game/aB3');
+eq('главная без хвостов', canonicalPath('/'), '/');
+{
+  const ru = canonicalPath('/game/aB3?l=ru', 'ru'), en = canonicalPath('/game/aB3?l=en', 'en');
+  yes('разные языки → разные канонические адреса', ru !== en);
 }
 
 // ═══ абсолютные адреса ═══

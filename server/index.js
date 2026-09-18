@@ -24,7 +24,7 @@ import {
 import { chooseBotAction, BOT_NAMES, duelFleetPlan } from './bot.js';
 import { LANGS, LANG_COOKIE, SOURCE_LANG, DEFAULT_LANG, normLang, pickLang, buildLangCookie } from './i18n.js';
 import { applyCheat } from './cheats.js';
-import { ogHead, gameFacts, previewLang, absUrl, OG_IMAGE, LANG_PARAM } from './og.js';
+import { ogHead, gameFacts, previewLang, absUrl, canonicalPath, OG_IMAGE, LANG_PARAM } from './og.js';
 import { VERSION, versionLabel } from './version.js';
 import { rtStart, rtStop } from './rt.js';
 import { CHEATS_ENABLED, DEBUG, GAME_MODES, enabledModes, DEFAULT_MODE, isDuel, isRealtime, realtimeAllowed, SHIP_TYPES, PIRATE } from './config.js';
@@ -111,7 +111,8 @@ async function ogBlock(req, game) {
   const lang = previewLang({ param: req.query?.[LANG_PARAM], hostLang });
   const T = (k, p) => mailT(lang, k, p);                  // тот же резолвер, что у писем
   const origin = reqOrigin(req);
-  const url = absUrl(origin, req.originalUrl.split('?')[0]);
+  // og:url = ровно тот адрес, по которому пришли (вместе с ?l=) — см. canonicalPath в og.js
+  const url = absUrl(origin, canonicalPath(req.originalUrl, req.query?.[LANG_PARAM]));
   const base = {
     lang, url,
     siteName: await T('og.site'),
@@ -178,10 +179,18 @@ if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
 
 // Письмо — ЕДИНСТВЕННОЕ место, где сервер знает конкретного адресата, а значит и его язык
 // (в игре-то он шлёт ключи — см. server/i18n.js). Поэтому тут словарь читает сам сервер.
+// Кэш словаря СЛЕДИТ ЗА mtime — как и готовые страницы (buildPage). Без этого правка перевода
+// подхватывалась страницей, но не письмами и превью ссылок: текст на сайте новый, в карточке
+// старый, и виноватым выглядит код. Файлов три, проверка — один stat на запрос.
 const dictCache = new Map();
 async function serverDict(lang) {
-  if (!dictCache.has(lang)) dictCache.set(lang, await langDict(lang).catch(() => ({})));
-  return dictCache.get(lang);
+  const file = path.join(PUBLIC, 'locales', lang + '.json');
+  const stamp = await mtime(file).catch(() => 0);
+  const hit = dictCache.get(lang);
+  if (hit && hit.stamp === stamp) return hit.dict;
+  const dict = await langDict(lang).catch(() => ({}));
+  dictCache.set(lang, { stamp, dict });
+  return dict;
 }
 // t() для сервера: достаём по точечному пути и подставляем {{плейсхолдеры}}
 const pick = (o, key) => key.split('.').reduce((x, k) => x?.[k], o);
