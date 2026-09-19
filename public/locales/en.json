@@ -529,7 +529,7 @@
     },
     "grapnels": {
       "name": "Grappling Hooks",
-      "desc": "You take 80% of a sunk ship price from the wreck instead of half."
+      "desc": "You take 10% more of a sunk ship price from the wreck — 60% instead of half."
     },
     "lateen": {
       "name": "Lateen Sail",
@@ -541,7 +541,7 @@
     },
     "fishery": {
       "name": "Fishery",
-      "desc": "Fishing boats in fishing grounds bring twice as much gold every turn."
+      "desc": "Every fishing boat in a fishing ground brings 1 more gold per turn."
     },
     "portRepair": {
       "name": "Port Repair",

@@ -276,12 +276,14 @@ export const PORT_DMG_TO_SHIPS = 0;         // порт не стреляет с
 // ни лута с судов — половина списка бессмысленна, а вторая ломает стартовый бюджет.
 export const PERKS = {
   // 🏰 порт
-  battery:    { icon: '🏰', gold: 600, coins: 3 },  // ответка порта: PORT_RETURN_DMG → BATTERY_RETURN_DMG
+  // hidden — перк доделан и покрыт тестами, но пока не показывается в верфи и не покупается.
+  // Снять флаг = вернуть в игру, выпиливать ничего не надо.
+  battery:    { icon: '🏰', gold: 600, coins: 3, hidden: true },  // ответка порта: PORT_RETURN_DMG → BATTERY_RETURN_DMG
   market:     { icon: '📈', gold: 500, coins: 1 },  // доход порта ×MARKET_INCOME_MULT (portIncome)
   drydock:    { icon: '⚓', gold: 450, coins: 1 },  // свои суда у базы чинятся каждый ход (applyBasePerks)
   lighthouse: { icon: '🗼', gold: 300, coins: 0 },  // обзор вокруг базы (туман — клиентский)
   // ⛺ аванпосты
-  garrison:   { icon: '🛡', gold: 350, coins: 1 },  // прочность построек ×GARRISON_HP_MULT
+  garrison:   { icon: '🛡', gold: 350, coins: 1, hidden: true },  // прочность построек ×GARRISON_HP_MULT
   warehouse:  { icon: '📦', gold: 400, coins: 1 },  // +WAREHOUSE_INCOME золота с каждого аванпоста
   bastion:    { icon: '🏯', gold: 600, coins: 2 },  // 🏰-форт стреляет ДВАЖДЫ за тик
   fishery:    { icon: '🐟', gold: 450, coins: 1 },  // улов баркасов ×FISHERY_MULT (fishIncomeFor)
@@ -293,6 +295,10 @@ export const PERKS = {
   shipyard:   { icon: '🛠', gold: 500, coins: 2 },  // корабли дешевле на SHIPYARD_DISCOUNT
 };
 export const PERK_KEYS = Object.keys(PERKS);
+// что реально показывается и покупается (скрытые доступны коду и тестам, но не игроку)
+export const isPerkHidden = (key) => !!PERKS[key]?.hidden;
+export const shopPerks = () => Object.fromEntries(
+  Object.entries(PERKS).filter(([k]) => !PERKS[k].hidden));
 // в дуэли экономики нет — ни монет, ни магазина перков
 export const perksEnabled = (game) => !isDuel(game);
 export const hasPerk = (game, pIdx, key) => !!game?.players?.[pIdx]?.perks?.[key];
@@ -305,9 +311,8 @@ export const DRYDOCK_HEAL = 0.05;        // …и доля МАКСИМАЛЬН�
 export const LIGHTHOUSE_EXTRA = 260;     // «маяк»: насколько дальше видно от базы
 export const GARRISON_HP_MULT = 1.5;     // «гарнизон»: прочность аванпостов
 export const WAREHOUSE_INCOME = 2;       // «склад»: добавка золота с каждого аванпоста
-export const GRAPNELS_LOOT_FRAC = 0.8;   // «абордажные крючья»: доля цены с обломков
 export const SHIPYARD_DISCOUNT = 0.1;    // «верфь на потоке»: скидка на корабли
-export const FISHERY_MULT = 2;           // «рыбный промысел»: множитель улова баркасов
+export const FISHERY_BONUS = 1;          // «рыбный промысел»: НАДБАВКА к улову баркаса за тик
 // «Ремонт порта» — РАСХОДНИК, поэтому чинит долю, а не всё: за 700 золота + монету возвращать
 // разом все 840 HP значило бы обнулять осаду одной кнопкой. Половина — это передышка, а не
 // отмена хода противника; вторую можно докупить, если монет не жалко.
@@ -316,7 +321,8 @@ export const PORT_REPAIR_FRAC = 0.5;
 // улов баркаса игрока за один тик рыбалки
 export const fishIncomeFor = (game, pIdx, type) => {
   const base = SHIP_TYPES[type]?.fishing || 0;
-  return hasPerk(game, pIdx, 'fishery') ? Math.round(base * FISHERY_MULT) : base;
+  // надбавка только тем, кто вообще ловит: не-рыбаку удваивать нечего
+  return (base > 0 && hasPerk(game, pIdx, 'fishery')) ? base + FISHERY_BONUS : base;
 };
 // расходники (instant) не запоминаются игроку — их можно брать снова
 export const isInstantPerk = (key) => !!PERKS[key]?.instant;
@@ -372,6 +378,10 @@ export const FISH_MIN_GAP = 240;        // мин. дистанция между
 export const SHIP_COLLISION_DIST = 26; // мин. дистанция между центрами кораблей
 export const LOOT_REACH = 55;           // насколько корабль «дотягивается» до лут-острова/обломков
 export const WRECK_LOOT_FRAC = 0.5;     // лут с обломков потопленного корабля (доля цены)
+// 🪝 «Абордажные крючья»: НАДБАВКА к этой доле, а не своя цифра — чтобы правка базовой доли не
+// разъехалась с описанием перка в словаре («на 10% цены больше»).
+export const GRAPNELS_LOOT_BONUS = 0.1;
+export const GRAPNELS_LOOT_FRAC = WRECK_LOOT_FRAC + GRAPNELS_LOOT_BONUS;
 // ─── 🏴‍☠️ КУШ ЗА РАЗБИТУЮ БАЗУ ───────────────────────────────────────────────
 // Первая версия правила («половина казны выбитого») и вторая («по его доходу в момент
 // гибели») мерили не то. Замер 12 партий: у проигравшего в казне НОЛЬ в 11 случаях из 12 —

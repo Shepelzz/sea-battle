@@ -11,7 +11,7 @@ import {
   windMoveMultFor, outpostMaxHp, portIncome, SHIP_TYPES, OUTPOST_LEVELS, PORT_RETURN_DMG,
   BATTERY_RETURN_DMG, MARKET_INCOME_MULT, GARRISON_HP_MULT, WAREHOUSE_INCOME,
   GRAPNELS_LOOT_FRAC, WRECK_LOOT_FRAC, SHIPYARD_DISCOUNT, DRYDOCK_HEAL, DRYDOCK_RADIUS, LIGHTHOUSE_EXTRA,
-  fishIncomeFor, isInstantPerk, FISHERY_MULT, PORT_REPAIR_FRAC, PORT_HP
+  fishIncomeFor, isInstantPerk, FISHERY_BONUS, PORT_REPAIR_FRAC, PORT_HP, isPerkHidden, shopPerks
 } from './server/config.js';
 
 let ok = 0, fail = 0;
@@ -42,6 +42,12 @@ const rich = (g, pIdx) => { g.players[pIdx].gold = 9999; g.players[pIdx].coins =
 
 // ═══════════ ВИТРИНА И ПОКУПКА ═══════════
 eq('перков ровно двенадцать', PERK_KEYS.length, 12);
+// Скрытые: доделаны и покрыты тестами, но игроку не показываются и не продаются.
+eq('скрыто ровно два', PERK_KEYS.filter(isPerkHidden).length, 2);
+yes('батарея скрыта', isPerkHidden('battery'));
+yes('гарнизон скрыт', isPerkHidden('garrison'));
+yes('в витрине скрытых нет', Object.keys(shopPerks()).every(k => !isPerkHidden(k)));
+eq('в витрине десять', Object.keys(shopPerks()).length, 10);
 yes('у каждого есть цена в золоте', PERK_KEYS.every(k => PERKS[k].gold > 0));
 yes('у каждого есть значок', PERK_KEYS.every(k => typeof PERKS[k].icon === 'string' && PERKS[k].icon));
 yes('монеты требует большинство', PERK_KEYS.filter(k => PERKS[k].coins > 0).length >= 10);
@@ -171,16 +177,19 @@ yes('монеты требует большинство', PERK_KEYS.filter(k => 
   give(g, 0, 'garrison');
   eq('с гарнизоном — в полтора раза', outpostMaxHp(g, 0, 1), Math.round(OUTPOST_LEVELS[0].hp * GARRISON_HP_MULT));
 }
-{ // покупка после стройки чинит уже построенное
+{ // скрытый перк не купить, даже зная ключ
   const g = game(); rich(g, 0);
+  eq('покупка скрытого отклоняется', applyAction(g, 'p0', { type: 'buyPerk', key: 'garrison' }).error, 'err.unknownPerk');
+  eq('и батареи тоже', applyAction(g, 'p0', { type: 'buyPerk', key: 'battery' }).error, 'err.unknownPerk');
+  eq('казна не тронута', g.players[0].gold, 9999);
+  yes('в стейте витрины скрытых нет', !('garrison' in publicState(g, 'p0').perkShop));
+}
+{ // сам механизм гарнизона остаётся рабочим — он просто спрятан
+  const g = game();
   const isl = g.map.lootIslands[0];
-  isl.looted = true;
-  const s = put(g, 0, 'brig', isl.x + isl.radius + 20, isl.y);
-  applyAction(g, 'p0', { type: 'outpost', islandId: 0, shipId: s.id });
-  eq('построен с обычной прочностью', isl.outpost.hp, OUTPOST_LEVELS[0].hp);
-  applyAction(g, 'p0', { type: 'buyPerk', key: 'garrison' });
-  eq('гарнизон укрепил уже стоящий', isl.outpost.hp, outpostMaxHp(g, 0, 1));
-  yes('и не выше потолка', isl.outpost.hp <= outpostMaxHp(g, 0, 1));
+  isl.looted = true; isl.outpost = { owner: 0, level: 1, hp: OUTPOST_LEVELS[0].hp };
+  give(g, 0, 'garrison');
+  eq('гарнизон по-прежнему считает прочность', outpostMaxHp(g, 0, 1), Math.round(OUTPOST_LEVELS[0].hp * GARRISON_HP_MULT));
 }
 
 // ═══════════ 📦 СКЛАД ═══════════
@@ -295,7 +304,7 @@ yes('монеты требует большинство', PERK_KEYS.filter(k => 
   const g = game();
   eq('без перка — паспортный улов', fishIncomeFor(g, 0, 'barkas'), SHIP_TYPES.barkas.fishing);
   give(g, 0, 'fishery');
-  eq('с промыслом — вдвое', fishIncomeFor(g, 0, 'barkas'), Math.round(SHIP_TYPES.barkas.fishing * FISHERY_MULT));
+  eq('с промыслом — плюс надбавка', fishIncomeFor(g, 0, 'barkas'), SHIP_TYPES.barkas.fishing + FISHERY_BONUS);
   eq('соседу не помогает', fishIncomeFor(g, 1, 'barkas'), SHIP_TYPES.barkas.fishing);
   eq('небаркасу удваивать нечего', fishIncomeFor(g, 0, 'brig'), 0);
 }

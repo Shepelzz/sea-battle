@@ -13,7 +13,7 @@ import {
   FISH_DRIFT_PER_TURN, FISH_HOME_RADIUS, FISH_MIN_GAP, FISH_BASE_GAP,
   MAP_EDGE_MARGIN, ISLAND_BLOCK_GAP, SPAWN_FAN_N, SPAWN_FAN_RINGS, SPAWN_FAN_R0, SPAWN_FAN_RING_STEP,
   PIRATE, PIRATE_MAX, PIRATE_ENGAGE_MULT, PIRATE_MIN_LIFETIME, PIRATE_STEP_MIN, pirateCoins,
-  PERKS, PERK_KEYS, perksEnabled, hasPerk, shipPrice, portReturnDmg, wreckLootFrac,
+  PERKS, PERK_KEYS, perksEnabled, hasPerk, shipPrice, portReturnDmg, wreckLootFrac, shopPerks,
   windMoveMultFor, outpostMaxHp, WAREHOUSE_INCOME, DRYDOCK_RADIUS, DRYDOCK_HEAL, GARRISON_HP_MULT,
   LIGHTHOUSE_EXTRA, fishIncomeFor, isInstantPerk, PORT_REPAIR_FRAC,
   PIRATE_DESPAWN_CHANCE, PIRATE_MOVE_CHANCE, PIRATE_BOSS_CHANCE, PIRATE_BOSS_HP,
@@ -999,7 +999,8 @@ export function applyAction(game, playerId, action) {
       if (!perksEnabled(game)) return { ok: false, error: 'err.perksOffHere' };
       const key = String(action.key || '');
       const def = PERKS[key];
-      if (!def) return { ok: false, error: 'err.unknownPerk' };
+      // скрытый перк для игрока не существует — ни в витрине, ни в покупке
+      if (!def || def.hidden) return { ok: false, error: 'err.unknownPerk' };
       // расходник можно брать снова, постоянный перк — только раз
       if (!isInstantPerk(key) && hasPerk(game, pIdx, key)) return { ok: false, error: 'err.perkOwned' };
       // 🔧 ремонт порта бессмысленен на целом порту — не даём слить золото впустую
@@ -1597,7 +1598,7 @@ export function publicState(game, viewerPid) {
     // ⛺ аванпосты: уровни/радиус перков/дистанция стройки (для кнопки, отрисовки и вики)
     outposts: { levels: OUTPOST_LEVELS, radius: OUTPOST_RADIUS, reach: OUTPOST_BUILD_REACH },
     // 🎖 витрина перков: ключ → цена. В дуэли перков нет — шлём null, и клиент прячет раздел.
-    perkShop: perksEnabled(game) ? PERKS : null,
+    perkShop: perksEnabled(game) ? shopPerks() : null,
     // числа перков, которые нужны КЛИЕНТУ для отрисовки (туман считается у него) — чтобы не
     // дублировать константу в двух местах и не разъехаться при правке баланса
     perkFx: { lighthouse: LIGHTHOUSE_EXTRA },

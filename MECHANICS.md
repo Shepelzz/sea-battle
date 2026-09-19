@@ -292,19 +292,21 @@ income = round(PORT_INCOME × (1 + (PORT_POOR_MULT − 1) × poor))
 
 | Ключ | Перк | Что меняет | Где врезано |
 |---|---|---|---|
-| `battery` | 🏰 Береговая батарея | ответка порта `PORT_RETURN_DMG` → `BATTERY_RETURN_DMG = 40` | `portReturnDmg` |
+| `battery` | 🏰 Береговая батарея ⛔ | ответка порта `PORT_RETURN_DMG` → `BATTERY_RETURN_DMG = 40` | `portReturnDmg` |
 | `market` | 📈 Торговый ряд | доход порта × `MARKET_INCOME_MULT = 1.5` | `portIncome` |
 | `drydock` | ⚓ Сухой док | свои суда у базы чинятся на `DRYDOCK_HEAL = 0.05` в радиусе `DRYDOCK_RADIUS = 240` | `applyBasePerks` |
 | `lighthouse` | 🗼 Маяк | обзор вокруг базы +`LIGHTHOUSE_EXTRA = 260` | клиент, `visionCircles` (число едет в `perkFx`) |
-| `garrison` | 🛡 Гарнизон | прочность аванпостов × `GARRISON_HP_MULT = 1.5`, включая уже стоящие | `outpostMaxHp` + докрутка при покупке |
+| `garrison` | 🛡 Гарнизон ⛔ | прочность аванпостов × `GARRISON_HP_MULT = 1.5`, включая уже стоящие | `outpostMaxHp` + докрутка при покупке |
 | `warehouse` | 📦 Склад | +`WAREHOUSE_INCOME = 2` золота с каждого аванпоста | `applyOutpostPerks` |
 | `bastion` | 🏯 Бастион | 🏰-форт стреляет дважды за тик, цель выбирается заново | `applyOutpostPerks` |
-| `fishery` | 🐟 Рыбный промысел | улов баркасов × `FISHERY_MULT = 2` | `fishIncomeFor` |
+| `fishery` | 🐟 Рыбный промысел | улов баркаса +`FISHERY_BONUS = 1` за тик | `fishIncomeFor` |
 | `portRepair` | 🔧 Ремонт порта | **расходник**: чинит порт на `PORT_REPAIR_FRAC = 0.5` от `PORT_HP` | `buyPerk`, применяется сразу |
-| `grapnels` | 🪝 Абордажные крючья | лут с обломков → `GRAPNELS_LOOT_FRAC = 0.8` | `wreckLootFrac` в `sinkShip` |
+| `grapnels` | 🪝 Абордажные крючья | лут с обломков +`GRAPNELS_LOOT_BONUS = 0.1` (итого 0.6) | `wreckLootFrac` в `sinkShip` |
 | `lateen` | ⛵ Косой парус | встречный ветер не режет ход (`max(1, k)`) | `windMoveMultFor`, `windMult` в rt |
 | `shipyard` | 🛠 Верфь на потоке | корабли дешевле на `SHIPYARD_DISCOUNT = 0.1` | `shipPrice` |
 
+- ⛔ — перк **скрыт** (`hidden: true`): код и тесты на месте, но в витрину он не попадает и
+  не покупается. Снять флаг = вернуть в игру.
 - **Расходники** (`instant: true`, сейчас это только 🔧 ремонт порта) в `player.perks` не пишутся:
   срабатывают в момент покупки и берутся сколько угодно раз. Постоянные перки — ровно по одному.
 - В `publicState` перки прячутся **как золото**: чужие приходят как `null`.

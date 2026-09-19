@@ -1,7 +1,8 @@
 // Бот: на своём ходу собирает все осмысленные действия, оценивает и берёт лучшее.
 // Уровни: easy (Юнга) — шумные оценки и случайные ходы, mid (Боцман) — лучший ход,
 // hard (Адмирал) — лучший ход + фокус раненых, удушение экономики, ранняя агрессия.
-import { movesBudget, convoyCost, CONVOY_MAX, CONVOY_PICK_MULT, shipRank, tributeFor, FISH_INCOME, FISH_ZONE_CAP, SHIP_TYPES, PIRATE, LOOT_REACH, PORT_RETURN_DMG, BROADSIDE_CANNONS, BROADSIDE_HALF_ARC, BROADSIDE_FALLOFF_MIN, BROADSIDE_SIDE_MIN, MORTAR_SHIPS, MORTAR_SHIP_MULT, OUTPOST_LEVELS, OUTPOST_BUILD_REACH, modeOf, isPeace, isDuel, cheapestShipPrice, windMoveMult } from './config.js';
+import { movesBudget, convoyCost, CONVOY_MAX, CONVOY_PICK_MULT, shipRank, tributeFor, FISH_INCOME, FISH_ZONE_CAP, SHIP_TYPES, PIRATE, LOOT_REACH, PORT_RETURN_DMG, BROADSIDE_CANNONS, BROADSIDE_HALF_ARC, BROADSIDE_FALLOFF_MIN, BROADSIDE_SIDE_MIN, MORTAR_SHIPS, MORTAR_SHIP_MULT, OUTPOST_LEVELS, OUTPOST_BUILD_REACH, modeOf, isPeace, isDuel, cheapestShipPrice, windMoveMult,
+  PERKS, perksEnabled, hasPerk, isPerkHidden, PORT_HP, DRYDOCK_RADIUS } from './config.js';
 import { shipPlacementBlocked, shipInContact, applyAction } from './game.js';
 
 const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
@@ -277,6 +278,35 @@ function buildCandidates(game, pIdx, level) {
     });
   });
 
+  // --- 🎖 перки (в дуэли их нет) ---
+  if (botPerksOn() && perksEnabled(game) && level !== 'easy') {
+    const canBuy = key => {
+      const def = PERKS[key];
+      return def && !def.hidden && !hasPerk(game, pIdx, key) &&
+        me.gold >= def.gold && (me.coins || 0) >= def.coins;
+    };
+    // 🔧 ПОРТУ ПЛОХО — чиним, и это перебивает почти любую другую покупку. Чем ближе к гибели,
+    // тем выше приоритет: терять базу нельзя ни при каком раскладе.
+    const hurt = 1 - me.portHp / PORT_HP;
+    if (hurt > 0.4 && me.gold >= PERKS.portRepair.gold && (me.coins || 0) >= PERKS.portRepair.coins)
+      cands.push({ score: 30 + hurt * 45, action: { type: 'buyPerk', key: 'portRepair' } });
+
+    // 📦 склад — добавка идёт с каждого аванпоста, значит нужен хотя бы пара построек
+    const myOutposts = (game.map.lootIslands || []).filter(i => i.outpost?.owner === pIdx).length;
+    if (myOutposts >= 2 && canBuy('warehouse'))
+      cands.push({ score: (12 + myOutposts * 4) * (underSiege ? 0.3 : 1), action: { type: 'buyPerk', key: 'warehouse' } });
+
+    // ⚓ сухой док — когда у базы действительно стоят свои подбитые (иначе чинить нечего)
+    const hurtAtHome = myShips.filter(s => dist(s.x, s.y, myBase.x, myBase.y) <= myBase.radius + DRYDOCK_RADIUS &&
+      s.hp < SHIP_TYPES[s.type].hp * 0.8).length;
+    if (hurtAtHome >= 2 && canBuy('drydock'))
+      cands.push({ score: 12 + hurtAtHome * 3, action: { type: 'buyPerk', key: 'drydock' } });
+
+    // 🐟 промысел — когда есть кому ловить
+    if (myFishersInZone.length >= 2 && canBuy('fishery'))
+      cands.push({ score: (8 + myFishersInZone.length * 3) * (underSiege ? 0.3 : 1), action: { type: 'buyPerk', key: 'fishery' } });
+  }
+
   // --- верфь (флот не раздуваем — место у порта и здравый смысл) ---
   const fishers = myShips.filter(s => SHIP_TYPES[s.type].fishing > 0).length;
   if (myShips.length < 8) {
@@ -430,13 +460,18 @@ function buildCandidates(game, pIdx, level) {
       addMove(ship, isl.x, isl.y, Math.min(30, 12 + isl.loot * 0.06) - turns * 2);
     }
 
-    // охота на пирата с наградой (боевыми кораблями) — особенно за 👑-боссом
+    // Охота на пирата с наградой (боевыми кораблями) — особенно за 👑-боссом.
+    // Вес подняли: пираты теперь несут не только золото, но и 🪙 монеты, а на них покупаются
+    // перки — значит гонять их стало объективно выгоднее, чем было.
+    // ⚠ Но НЕ в ущерб обороне: пока к своему порту идут чужие боевые корабли, охота почти
+    // обнуляется. Иначе бот уплывал за наградой, пока ему сносили базу.
     if (st.dmg > 0 && level !== 'easy') {
       const pirates = game.ships.filter(s => s.owner === -1);
       const prey = nearest(ship, pirates, pr => [pr.x, pr.y]);
       if (prey && dist(ship.x, ship.y, prey.x, prey.y) > st.fireRange) {
         const turns = Math.ceil(dist(ship.x, ship.y, prey.x, prey.y) / st.move);
-        addMove(ship, prey.x, prey.y, Math.min(28, 8 + prey.bounty * 0.03) - turns * 2);
+        const hunt = Math.min(34, 12 + prey.bounty * 0.04) - turns * 2;
+        addMove(ship, prey.x, prey.y, hunt * (underSiege ? 0.15 : 1));
       }
     }
 
@@ -561,6 +596,33 @@ function buildCandidates(game, pIdx, level) {
     }))
   };
   return cands;
+}
+
+// ═══════════════ 🎖 ПЕРКИ У БОТА ═══════════════
+// Никакой общей теории ценности: бот берёт короткий список того, что для него однозначно
+// полезно и не требует оценки плана на партию.
+//   🔧 ремонт порта — когда порту плохо. Это важнее почти всего остального;
+//   📦 склад        — когда аванпостов хотя бы пара (добавка идёт с КАЖДОГО);
+//   ⚓ сухой док    — когда у базы стоят свои подбитые;
+//   🐟 промысел     — когда есть кому ловить.
+// Остальное бот сознательно не покупает: выгода там зависит от замысла на партию, а строить
+// ему такую оценку — отдельная работа с длинными прогонами. Пробовал общую формулу «ценность
+// минус цена» — она уводила бота в экономику и мешала воевать, поэтому откатил к списку.
+//
+// ⚠ Замер длины партий парный, на фиксированных зёрнах: одиночные прогоны тут бесполезны —
+// одна и та же конфигурация без перков давала медиану от 318 до 506 ходов.
+const botPerksOn = () => Number(process.env.BOT_PERKS ?? 1) !== 0;   // BOT_PERKS=0 — для A/B-замеров
+
+// Вклад купленных перков в оценку позиции — ПЛОСКИЙ, по цене покупки. Нужен ровно для одного:
+// чтобы планировщик не видел в покупке чистый убыток (минус золото) и не запрещал её. Считать
+// здесь ситуативную ценность нельзя — пробовал: «верфь на потоке» делала дороже каждую монету
+// в казне, бот переставал тратить и партии растягивались.
+function perksValue(game, pIdx) {
+  const owned = game.players[pIdx]?.perks;
+  if (!owned) return 0;
+  let v = 0;
+  for (const k in owned) if (owned[k] && PERKS[k]) v += PERKS[k].gold * GOLD_W;
+  return v;
 }
 
 // ═══════════════ 🧩 ПЛАНИРОВАНИЕ ХОДА (просмотр на действие вперёд) ═══════════════
@@ -694,6 +756,10 @@ export function boardValue(game, pIdx) {
       v += st.dmg * q * BROAD_READY_W;         // цель под бортом в упор — позиция сама по себе ценна
     }
   }
+
+  // 🎖 уже купленные перки — часть позиции. Без этого планировщик видел бы в покупке только
+  // минус золота и не брал бы перки никогда (та же грабля, что когда-то с аванпостами).
+  v += perksValue(game, pIdx);
 
   for (const isl of game.map.lootIslands || []) {
     if (!isl.outpost) continue;
