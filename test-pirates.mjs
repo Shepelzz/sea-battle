@@ -1,6 +1,6 @@
 // Проверка новой логики пиратов (прямые вызовы game.js).
 import { createGame, addPlayer, startGame, applyAction } from './server/game.js';
-import { PIRATE, PIRATE_MAX, SHIP_TYPES } from './server/ships.js';
+import { PIRATE, PIRATE_MAX, SHIP_TYPES, PIRATE_RESPAWN_DELAY } from './server/ships.js';
 
 let ok = 0, fail = 0;
 const check = (n, c, extra = '') => { c ? (ok++, console.log('✓', n, extra)) : (fail++, console.error('✗', n, extra)); };
@@ -108,8 +108,11 @@ const myShip = (g, type, x, y, hp) => {
     if (pirs.length < PIRATE_MAX) belowMax++;                // состав просел ниже максимума
     if (pirs.some(s => !idsBefore.has(s.id))) replaced++;    // появился новый id → был despawn+refill
   }
-  check('пираты обновляются: старый растворяется, на замену спавнится новый', replaced > 0, `(обновлений ${replaced}/${N})`);
-  check('состав никогда не проседает ниже PIRATE_MAX (всегда полный)', belowMax === 0, `(просадок ${belowMax}/${N})`);
+  // Пополнение теперь НЕ мгновенное: после убыли выдерживается PIRATE_RESPAWN_DELAY ходов.
+  // Раньше здесь проверялось «состав всегда полный» — правило изменено сознательно, потому что
+  // мгновенный доспавн после каждого убийства выглядел как бесконечный конвейер пиратов.
+  check('состав проседает после растворения (пополнение отложено)', belowMax > 0, `(просадок ${belowMax}/${N})`);
+  check('но не мгновенно и не всегда — растворяется лишь часть', belowMax < N, `(просадок ${belowMax}/${N})`);
 }
 // === 6б. Море никогда не пустеет: даже из одного пирата состав добивается до PIRATE_MAX ===
 {
@@ -123,7 +126,19 @@ const myShip = (g, type, x, y, hp) => {
     if (left < PIRATE_MAX) belowMax++;
   }
   check('море никогда не пустеет', emptied === 0, `(пустых ${emptied}/${N})`);
-  check('одиночный пират добивается пополнением до PIRATE_MAX', belowMax === 0, `(недобора ${belowMax}/${N})`);
+  check('одиночный пират сразу НЕ добивается — ждём паузу', belowMax === N, `(недобора ${belowMax}/${N})`);
+}
+// === 6в. …но после паузы состав восстанавливается до полного ===
+{
+  const g = game2(); g.ships = [];
+  const p = addPirate(g, g.map.w / 2, g.map.h / 2); p.turnSlot = 0; p.bornTurn = 1e9;
+  // прокручиваем ходы: пауза PIRATE_RESPAWN_DELAY должна истечь и состав добиться до максимума
+  let filled = false;
+  for (let i = 0; i < (PIRATE_RESPAWN_DELAY + 4) * 2 && !filled; i++) {
+    applyAction(g, g.players[g.turn.idx].id, { type: 'skip' });
+    if (g.ships.filter(s => s.owner === -1).length >= PIRATE_MAX) filled = true;
+  }
+  check('после паузы состав добивается до PIRATE_MAX', filled, `(пауза ${PIRATE_RESPAWN_DELAY} ходов)`);
 }
 
 // === 7. Ход раз в цикл: пират со слотом игрока 2 действует только после хода игрока 2 ===

@@ -16,7 +16,7 @@ import {
   PERKS, PERK_KEYS, perksEnabled, hasPerk, shipPrice, portReturnDmg, wreckLootFrac, shopPerks,
   windMoveMultFor, outpostMaxHp, WAREHOUSE_INCOME, DRYDOCK_RADIUS, DRYDOCK_HEAL, GARRISON_HP_MULT,
   LIGHTHOUSE_EXTRA, fishIncomeFor, isInstantPerk, PORT_REPAIR_FRAC,
-  PIRATE_DESPAWN_CHANCE, PIRATE_MOVE_CHANCE, PIRATE_BOSS_CHANCE, PIRATE_BOSS_HP,
+  PIRATE_DESPAWN_CHANCE, PIRATE_MOVE_CHANCE, PIRATE_BOSS_CHANCE, PIRATE_BOSS_HP, PIRATE_RESPAWN_DELAY,
   PIRATE_BOUNTY_MIN, PIRATE_BOUNTY_RAND, PIRATE_BOUNTY_STEP,
   PIRATE_BOSS_BOUNTY_MIN, PIRATE_BOSS_BOUNTY_RAND, PIRATE_BOSS_BOUNTY_STEP,
   PIRATE_WATER_MARGIN, PIRATE_WATER_SPAN, PIRATE_WATER_BASE_GAP
@@ -407,11 +407,18 @@ function movePirates(game) {
   // в тумане выше — тут же заменяем новым в другом месте (тот самый эффект «пропал тут — появился
   // там», который и нужен). Гарантированно, без рандома: раньше дозаспавн шёл лишь с шансом раз в
   // круг и навёрстывал ~6 кругов — игрок видел одного пирата всю половину партии. Теперь дыры нет.
-  let refillGuard = PIRATE_MAX + 2; // предохранитель от зацикливания, если не нашлось воды
-  while (game.ships.filter(s => s.owner === -1).length < PIRATE_MAX && refillGuard-- > 0) {
-    const before = game.ships.length;
-    spawnPirate(game, false, true, aliveIdx[Math.floor(Math.random() * aliveIdx.length)]);
-    if (game.ships.length === before) break; // место не нашлось — попробуем в следующий ход
+  // Пополняем ПО ОДНОМУ и не сразу: после убыли выдерживаем PIRATE_RESPAWN_DELAY ходов.
+  // Море не остаётся пустым надолго, но у охотника больше нет ощущения бесконечного конвейера.
+  if (game.ships.filter(s => s.owner === -1).length < PIRATE_MAX) {
+    if (game.pirateRefillAt == null) game.pirateRefillAt = game.turn.number + PIRATE_RESPAWN_DELAY;
+    if (game.turn.number >= game.pirateRefillAt) {
+      const before = game.ships.length;
+      spawnPirate(game, false, true, aliveIdx[Math.floor(Math.random() * aliveIdx.length)]);
+      // место нашлось — отсчитываем паузу заново; не нашлось — попробуем в следующий ход
+      if (game.ships.length !== before) game.pirateRefillAt = game.turn.number + PIRATE_RESPAWN_DELAY;
+    }
+  } else {
+    game.pirateRefillAt = null;   // состав полон — таймер ни к чему
   }
 }
 

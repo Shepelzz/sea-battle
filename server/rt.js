@@ -10,7 +10,7 @@
 import {
   SHIP_TYPES, PIRATE, PIRATE_MAX, PIRATE_MOVE_CHANCE, PIRATE_ENGAGE_MULT, MAP_EDGE_MARGIN,
   PORT_INCOME, portIncome, MORTAR_SHIPS, LOOT_REACH, FISH_ZONE_CAP,
-  OUTPOST_LEVELS, OUTPOST_BUILD_REACH, RT_OUTPOST_MS, FISH_DRIFT_RT,
+  OUTPOST_LEVELS, OUTPOST_BUILD_REACH, RT_OUTPOST_MS, FISH_DRIFT_RT, RT_PIRATE_RESPAWN_MS,
   RT, isRealtime, isDuel, isPeace, windMoveMult, fishIncomeFor
 } from './config.js';
 import {
@@ -307,13 +307,9 @@ export function tickPirates(game, now) {
   }
   // пополнение до штатных PIRATE_MAX (в реалтайме пираты не растворяются — живут, пока не потопят)
   if (now >= (rt.nextPirateRefill || 0)) {
-    rt.nextPirateRefill = now + 10000;
-    let guard = PIRATE_MAX + 2;
-    while (game.ships.filter(s => s.owner === -1).length < PIRATE_MAX && guard-- > 0) {
-      const before = game.ships.length;
-      spawnPirate(game, false, true, 0);
-      if (game.ships.length === before) break; // воды не нашлось — попробуем позже
-    }
+    rt.nextPirateRefill = now + RT_PIRATE_RESPAWN_MS;
+    // по одному за раз: пауза между появлениями важнее, чем скорость набора состава
+    if (game.ships.filter(s => s.owner === -1).length < PIRATE_MAX) spawnPirate(game, false, true, 0);
   }
 }
 
