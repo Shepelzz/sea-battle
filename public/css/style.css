@@ -135,6 +135,12 @@ tr:first-child td { font-weight: bold; }
 .panel-head .turn-banner { font-size: 1.25rem; padding: 6px 10px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gold-chip { white-space: nowrap; font-weight: bold; font-size: 17px; }
 .gold-chip:empty { display: none; }
+/* 💰 казна в ряду действий, сразу за «Пропустить». По умолчанию скрыта: на широком экране деньги
+   и так видны в списке капитанов, дублировать незачем. Показывается ТОЛЬКО на узком экране и
+   ТОЛЬКО когда панель свёрнута — там её тело (а с ним и список капитанов) спрятано, и казну было
+   не посмотреть, не открыв меню или верфь. Правило показа — в медиазапросе ниже: класс .collapsed
+   вешается при загрузке по ширине и остаётся висеть, если окно потом растянули. */
+#actionsRow .gold-chip { display: none; flex: none; align-self: center; }
 #panelToggle { display: none; }
 #actionsRow { display: flex; flex-wrap: wrap; gap: 8px; }
 #actionsRow.hidden { display: none; }
@@ -635,12 +641,20 @@ aside.panel {
 /* список лобби */
 .lobby-item {
   display: flex; align-items: center; gap: 12px;
+  /* строка переносится, когда кнопки перестают влезать рядом с описанием (см. .info ниже) */
+  flex-wrap: wrap;
   border: 1.6px solid var(--ink);
   border-radius: 10px 5px 12px 6px / 6px 12px 5px 10px;
   background: var(--paper);
   padding: 10px 14px; margin-bottom: 10px;
 }
-.lobby-item .info { flex: 1; }
+/* Описание просит под себя 200px и переносит кнопки на вторую строку, если столько не набирается.
+   Было flex:1 (то есть basis 0 и сжимайся сколько угодно): кнопки держали свою ширину, а текст
+   ужимался до пары сантиметров — на телефоне «Класичний · з ботами» и список соперников сыпались
+   в колонку по одному слову. Порог, а не медиазапрос: строка сама решает по своей ширине, а она
+   зависит не только от экрана (оверлей, отступы, число кнопок). min-width: 0 — чтобы длинный ник
+   без пробелов не распирал строку. */
+.lobby-item .info { flex: 1 1 200px; min-width: 0; }
 .lobby-item .host { font-family: var(--font-title); font-size: 1.3rem; font-weight: 700; }
 .lobby-item .meta { font-size: 14px; color: var(--ink-light); }
 .lobby-item.full .info { opacity: .55; }   /* полное лобби — бледнее ТЕКСТ, но не активная кнопка «Вернуться» */
@@ -682,6 +696,8 @@ aside.panel {
     box-shadow: 0 -4px 14px rgba(43, 58, 85, .18);
   }
   aside.panel.collapsed #panelBody { display: none; }
+  /* 💰 …а казна вместо него встаёт в ряд действий, рядом с «Пропустить» — на виду и под рукой */
+  aside.panel.collapsed #actionsRow .gold-chip:not(:empty) { display: inline; }
   #panelToggle { display: inline-block; }
   .panel-head .turn-banner { font-size: 1.1rem; padding: 5px 8px; }
   /* действия с кораблём — сверху по умолчанию; .at-bottom = снизу (зависит от того, в какой
@@ -692,6 +708,14 @@ aside.panel {
 }
 
 /* крупные элементы под палец */
+/* СВЕРХУЗКИЕ экраны (уже 400px): в ряду действий подпись «Верфь» уезжает, остаётся 🛒 —
+   кнопка сама подсказывает себя через title. Освобождённое место достаётся «Завершить ход»
+   и казне, которые иначе переносятся на вторую строку. */
+@media (max-width: 399px) {
+  #btnShop .btn-label { display: none; }
+  #btnShop { padding-left: 12px; padding-right: 12px; }
+}
+
 @media (pointer: coarse) {
   button.small { font-size: 17px; padding: 9px 14px; }
   .shop-item button.small { min-width: 42px; }

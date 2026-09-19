@@ -3043,6 +3043,13 @@ function renderSidebar() {
   else if (isMyTurn()) banner.textContent = t('game.banner.myTurn') + movesTag;
   else banner.textContent = t('game.banner.turnOf', { nick: nickOf(current) || '…', n: state.turn.number });
   banner.classList.toggle('my-turn', isMyTurn() && !state.config?.hotseat && !state.rt);
+  // 💰 казна рядом с баннером хода. Нужна из-за свёрнутой панели на телефоне: там тело панели
+  // (а с ним и список капитанов с деньгами) скрыто, и узнать казну можно было только открыв
+  // меню или заглянув в верфь. На широком экране чип прячут стили — там деньги и так на виду.
+  // В хотсите «мой» — тот, чей сейчас ход; у зрителя казны нет вовсе.
+  const wallet = state.config?.hotseat ? current : me;
+  $('#myGold').textContent = (state.status === 'active' && !spectator && wallet?.gold != null)
+    ? `💰${wallet.gold}` : '';
   // красная рамка «твой ход»: поднимаем на старте КАЖДОГО моего хода; гаснет, когда игрок «очнулся»
   // (повёл мышью / тапнул / нажал клавишу — слушатели в инициализации). В хотсите/шторме не нужна.
   {

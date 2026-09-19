@@ -328,7 +328,9 @@
     "hintMulti": "Three ships per turn: up to {{max}} actions — move and fire with different ships, collect loot, buy ({{left}} left). Finished early — \"End turn\".",
     "hintSingle": "One action per turn: buy, collect, move one ship or fire.",
     "hintWait": "Waiting for {{nick}} to move…",
-    "turnTimeLeft": "⏱ {{time}} until the turn ends"
+    "turnTimeLeft": "⏱ {{time}} until the turn ends",
+    "goldTitle": "Your treasury",
+    "btnShopLabel": "Shipyard"
   },
   "wiki": {
     "goal": {
@@ -385,7 +387,7 @@
       "loot": "🏝 <b>Treasure islands</b> — any ship that reaches an island loots the treasure.",
       "wreck": "💥 <b>Wrecks</b> — ≈50% of a sunk ship's price.",
       "tribute": "🏴‍☠️ <b>Jackpot</b> — destroy a port and you take 100–1000 gold, the more the bigger the game the eliminated player had (earned, fought, sank).",
-      "port": "🏰 <b>Port income</b> — a little gold at the start of each of your turns. Left with <b>no ships at all</b> — the port pays <b>50% more</b> so you have something to rebuild with."
+      "port": "🏰 <b>Port income</b> — a little gold at the start of each of your turns. The poorer your fleet, the more generous the port: with no ships at all it pays <b>2.5 times more</b>, and the bonus fades away smoothly as your fleet grows to the price of a brig."
     },
     "outpost": {
       "h": "⛺ Island outposts",
