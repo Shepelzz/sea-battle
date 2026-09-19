@@ -188,10 +188,17 @@
       </div>
       <div class="duel-rules hidden" id="duelRules" data-i18n-html="game.shop.duelRules"><b>⚔️ Дуэль 1 на 1.</b> Скупись на <b>ВСЁ</b> золото — пока можно купить хоть один корабль, в бой не выйдешь. Карта маленькая, без баз и островов: твой флот встанет в ряд на твоей стороне. Дохода за ход нет — золото только за пиратов (за них можно докупиться в бою). Побеждает тот, кто <b>разнесёт весь флот соперника</b>. Готов — жми «⚔️ В бой!».</div>
       <p class="muted" id="shopDesc" data-i18n="game.shop.desc" style="margin:6px 0 10px">Новые корабли появятся у твоего порта. Покупка нескольких — одно действие за ход.</p>
+      <h3 class="shop-h" id="shopShipsH" data-i18n="game.shop.ships">⚓ Корабли</h3>
       <div class="shop-grid" id="shopList"></div>
       <div class="shop-footer">
         <span id="shopTotal" class="muted"></span>
         <button class="primary" id="btnBuy" data-i18n="game.shop.buy">Купить</button>
+      </div>
+      <!-- 🎖 вторая подгруппа: разовые перки за золото + монеты. В дуэли прячется целиком. -->
+      <div id="perkSection">
+        <h3 class="shop-h" data-i18n="game.shop.perks">🎖 Перки</h3>
+        <p class="muted" data-i18n="game.shop.perksHint" style="margin:0 0 10px">Перки покупаются раз за партию и работают до конца боя.</p>
+        <div class="shop-grid" id="perkList"></div>
       </div>
     </div>
   </div>

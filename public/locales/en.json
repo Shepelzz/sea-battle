@@ -209,7 +209,11 @@
       "duelReady": "A fleet worth {{total}} gold — to battle!",
       "duelLeft": "{{left}} gold left — spend it all (cheapest ship {{min}})",
       "duelAll": "Buy a fleet with all {{gold}} gold.",
-      "toBattle": "⚔️ To battle!"
+      "toBattle": "⚔️ To battle!",
+      "ships": "⚓ Ships",
+      "perks": "🎖 Perks",
+      "owned": "Owned",
+      "perksHint": "A perk is bought once per battle and works until the end of the fight."
     },
     "finish": {
       "title": "Battle over!",
@@ -494,6 +498,56 @@
       "name": "Fort"
     }
   },
+  "perk": {
+    "battery": {
+      "name": "Coastal Battery",
+      "desc": "Your port hits back harder at attackers: 25 → 40 damage (20% more against a battleship)."
+    },
+    "market": {
+      "name": "Trade Row",
+      "desc": "Your port income is one and a half times larger every turn."
+    },
+    "drydock": {
+      "name": "Dry Dock",
+      "desc": "Your ships near your base repair themselves — 5% of hull every turn."
+    },
+    "lighthouse": {
+      "name": "Lighthouse",
+      "desc": "You see much farther around your base — the fog pulls back."
+    },
+    "garrison": {
+      "name": "Garrison",
+      "desc": "All your outposts are one and a half times tougher. Existing ones too."
+    },
+    "warehouse": {
+      "name": "Warehouse",
+      "desc": "Every outpost brings 2 more gold."
+    },
+    "bastion": {
+      "name": "Bastion",
+      "desc": "Your fort fires its shore gun twice per turn, picking a new target each time."
+    },
+    "grapnels": {
+      "name": "Grappling Hooks",
+      "desc": "You take 80% of a sunk ship price from the wreck instead of half."
+    },
+    "lateen": {
+      "name": "Lateen Sail",
+      "desc": "Headwind no longer cuts your movement. Tailwind still helps."
+    },
+    "shipyard": {
+      "name": "Streamlined Yard",
+      "desc": "Ships in the shipyard are 10% cheaper."
+    },
+    "fishery": {
+      "name": "Fishery",
+      "desc": "Fishing boats in fishing grounds bring twice as much gold every turn."
+    },
+    "portRepair": {
+      "name": "Port Repair",
+      "desc": "Instantly restores half of your port hull. A consumable — buy it as many times as your coins allow."
+    }
+  },
   "tag": {
     "realtime": "⚡ Full speed ahead! βeta",
     "timer": "timer {{min}} min",
@@ -628,7 +682,12 @@
     "sideUsedPort": "The port side has already fired this turn",
     "sideUsedStar": "The starboard side has already fired this turn",
     "sideCdPort": "The port side is reloading",
-    "sideCdStar": "The starboard side is reloading"
+    "sideCdStar": "The starboard side is reloading",
+    "perksOffHere": "No perks in this mode",
+    "unknownPerk": "No such perk",
+    "perkOwned": "You already own this perk",
+    "noCoinsFor": "Not enough coins (need {{price}} 🪙)",
+    "portFull": "Your port is already intact"
   },
   "log": {
     "joined": "{{nick}} joined the battle ({{n}}/{{max}})",
@@ -704,7 +763,12 @@
     "income": "💰 Income this turn: {{parts}} — {{total}} gold in total",
     "convoyWar": "⛵ {{nick}} leads a convoy of {{count}} warships: {{ships}}",
     "convoyWarFog": "⛵ {{nick}} leads a convoy of {{count}} warships",
-    "outpostUpFog": "{{icon}} {{nick}} upgrades an island building to \"{{building}}\""
+    "outpostUpFog": "{{icon}} {{nick}} upgrades an island building to \"{{building}}\"",
+    "perkBought": "{{icon}} {{nick}} — purchase: {{perk}}",
+    "perkBoughtFog": "🎖 {{nick}} bought something",
+    "pirateSunkGold": "💥 A pirate ship is sunk! {{nick}} takes the {{gold}} gold bounty",
+    "portRepaired": "🔧 {{nick}} — port repair: +{{hp}} hull (now {{left}})",
+    "portRepairedFog": "🔧 {{nick}} is repairing the port"
   },
   "mail": {
     "nudge": {

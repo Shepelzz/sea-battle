@@ -745,6 +745,10 @@ const isMyTurn = () => {
 // Числа приходят с сервера (не текст игрока), так что innerHTML тут безопасен.
 const money = (icon, n) => `<span class="mi">${icon}</span>${n}`;
 
+// 🎖 мои перки. Сервер шлёт их только владельцу (чужие приходят как null), поэтому клиент
+// знает ровно про свои — и рисует по ним туман, контур хода и витрину.
+const myPerk = key => !!state?.players?.[myIdx()]?.perks?.[key];
+
 const ST = t => state.shipTypes[t];
 // Ник игрока — как есть, ник БОТА приезжает ключом словаря (звание переводится). tr() пропускает
 // всё, что на ключ не похоже, поэтому годится для любого участника.
@@ -793,7 +797,12 @@ const rtPos = new Map();                 // сглаженные позиции 
 
 // ── 🌬 ВЕТЕР (во всех режимах): множитель дальности/скорости для курса a ──
 // r(θ) = move × (1 + k·сила·cos(θ − ветер)) → контур хода — «капля», вытянутая по ветру
-const windK = a => 1 + (state?.windK ?? 0.35) * (state?.wind?.str || 0) * Math.cos(a - (state?.wind?.ang || 0));
+// ⛵ «Косой парус»: встречный ветер не режет ход, попутный по-прежнему помогает. Тот же
+// max(1, k), что и на сервере (windMoveMultFor) — иначе контур обещал бы не то, что пройдёт.
+const windK = a => {
+  const k = 1 + (state?.windK ?? 0.35) * (state?.wind?.str || 0) * Math.cos(a - (state?.wind?.ang || 0));
+  return myPerk('lateen') ? Math.max(1, k) : k;
+};
 
 // ── режим «ход тремя судами» ──
 const movesPerTurn = () => state?.movesPerTurn || 1;          // бюджет ходов кораблями за ход
@@ -1206,7 +1215,9 @@ function visionCircles() {
   if (visMemo && nowT - visMemoT < 8) return visMemo;
   const me = myIdx(), circles = [], m = state.map;
   const base = m.bases[me];
-  if (base) circles.push({ x: base.x, y: base.y, r: base.radius + FOG_BASE_EXTRA });
+  // 🗼 «Маяк» отодвигает туман вокруг своей базы (число приходит с сервера — см. perkFx)
+  if (base) circles.push({ x: base.x, y: base.y,
+    r: base.radius + FOG_BASE_EXTRA + (myPerk('lighthouse') ? (state.perkFx?.lighthouse || 0) : 0) });
   // затухающая видимость от только что потопленных МОИХ кораблей — туман закрывается плавно после анимации
   const now = performance.now();
   for (const f of fogFade) {
@@ -3087,7 +3098,8 @@ function renderSidebar() {
   const wallet = state.config?.hotseat ? current : me;
   const purseOn = state.status === 'active' && !spectator && wallet?.gold != null;
   $('#myGold').innerHTML = purseOn ? money('💰', wallet.gold) : '';
-  $('#myCoins').innerHTML = (purseOn && wallet.coins != null) ? money('🪙', wallet.coins) : '';
+  // 🪙 монеты показываем только там, где их есть куда деть: в дуэли перков нет (perkShop: null)
+  $('#myCoins').innerHTML = (purseOn && state.perkShop && wallet.coins != null) ? money('🪙', wallet.coins) : '';
   $('#purse').classList.toggle('on', purseOn);
   // красная рамка «твой ход»: поднимаем на старте КАЖДОГО моего хода; гаснет, когда игрок «очнулся»
   // (повёл мышью / тапнул / нажал клавишу — слушатели в инициализации). В хотсите/шторме не нужна.
@@ -3179,20 +3191,29 @@ let shopSig = null;
 function renderShop() {
   const me = state.players[myIdx()];
   if (!me) return;
-  const sig = JSON.stringify([state.id, me.gold, basket, state.phase, state.duel, isMyTurn()]);
+  // portHp тоже в подписи: от него зависит, доступен ли 🔧 ремонт порта. Без него карточка
+  // залипала — порт уже разбит, а кнопка осталась серой с того момента, когда он был целым.
+  const sig = JSON.stringify([state.id, me.gold, me.coins, me.perks, me.portHp, basket, state.phase, state.duel, isMyTurn()]);
   if (sig === shopSig) return; // данные не менялись — не трогаем кнопки под пальцем/курсором
   shopSig = sig;
   // в фазе стартовой закупки дуэли — показываем правила вместо обычной подписи
   $('#duelRules')?.classList.toggle('hidden', state.phase !== 'buy');
   $('#shopDesc')?.classList.toggle('hidden', state.phase === 'buy');
-  const total = Object.entries(basket).reduce((s, [t, n]) => s + ST(t).price * n, 0);
+  // цену берём из стейта, а не из статов класса: с «верфью на потоке» она ниже, и считать
+  // корзину надо по той же цифре, что нарисована на карточке
+  const price = type => state.shipPrices?.[type] ?? ST(type).price;
+  const total = Object.entries(basket).reduce((s, [t, n]) => s + price(t) * n, 0);
   $('#shopGold').innerHTML = money('💰', me.gold);
-  $('#shopCoins').innerHTML = me.coins != null ? money('🪙', me.coins) : '';
+  // 🪙 монеты и перки — только там, где они вообще есть (в дуэли сервер шлёт perkShop: null)
+  const perkShop = state.perkShop || null;
+  $('#shopCoins').innerHTML = (perkShop && me.coins != null) ? money('🪙', me.coins) : '';
+  $('#perkSection')?.classList.toggle('hidden', !perkShop);
+  $('#shopShipsH')?.classList.toggle('hidden', !perkShop);   // одна группа — заголовок не нужен
   $('#shopList').innerHTML = Object.entries(state.shipTypes).filter(([, st]) => !st.npc && !st.cheat && (!state.duel || !st.fishing)).map(([type, st]) => {
-    const cantAddMore = total + st.price > me.gold;
+    const cantAddMore = total + price(type) > me.gold;
     return `
     <div class="ship-card ${cantAddMore && !basket[type] ? 'unaffordable' : ''}" title="${shipDesc(type)}">
-      <div class="head"><span>${st.icon}</span><span class="nm">${shipName(type)}</span><span class="price">${t('game.shop.price', { gold: st.price })}</span></div>
+      <div class="head"><span>${st.icon}</span><span class="nm">${shipName(type)}</span><span class="price">${t('game.shop.price', { gold: price(type) })}</span></div>
       <div class="stats">
         <span title="${t('game.ship.hp')}">❤️ ${st.hp}</span>
         ${st.repairer
@@ -3210,6 +3231,30 @@ function renderShop() {
       </div>
     </div>`;
   }).join('');
+  // 🎖 перки: карточка на каждый, купленные — приглушены и без кнопки
+  if (perkShop) {
+    const mine = me.perks || {};
+    $('#perkList').innerHTML = Object.entries(perkShop).map(([key, def]) => {
+      // расходник (instant) не «покупается навсегда» — его берут снова и снова
+      const owned = !def.instant && !!mine[key];
+      // 🔧 ремонт целого порта сервер отклонит — гасим кнопку заранее, чтобы не тыкали впустую
+      const useless = key === 'portRepair' && me.portHp >= (state.portMax || 840);
+      const canAfford = me.gold >= def.gold && (me.coins || 0) >= def.coins && !useless;
+      const cost = `${money('💰', def.gold)}${def.coins ? ' + ' + money('🪙', def.coins) : ''}`;
+      return `
+      <div class="ship-card perk-card ${owned ? 'owned' : ''} ${!owned && !canAfford ? 'unaffordable' : ''}">
+        <div class="head"><span>${def.icon}</span><span class="nm">${t(`perk.${key}.name`)}</span><span class="price">${cost}</span></div>
+        <div class="desc">${escapeHtml(t(`perk.${key}.desc`))}</div>
+        <button class="small buy ${owned ? '' : 'primary'}" data-perk="${key}"
+          ${owned || !canAfford || !isMyTurn() ? 'disabled' : ''}>${owned ? t('game.shop.owned') : t('game.shop.buy')}</button>
+      </div>`;
+    }).join('');
+    document.querySelectorAll('[data-perk]').forEach(b =>
+      b.addEventListener('click', () => sendAction({ type: 'buyPerk', key: b.dataset.perk })));
+  } else {
+    $('#perkList').innerHTML = '';
+  }
+
   if (state.phase === 'buy') {            // ДУЭЛЬ: стартовая закупка — «скупись на всё», кнопка «В бой!»
     const remaining = me.gold - total;
     const fullSpent = total > 0 && total <= me.gold && remaining < state.minShipPrice;

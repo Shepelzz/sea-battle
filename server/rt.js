@@ -11,11 +11,11 @@ import {
   SHIP_TYPES, PIRATE, PIRATE_MAX, PIRATE_MOVE_CHANCE, PIRATE_ENGAGE_MULT, MAP_EDGE_MARGIN,
   PORT_INCOME, portIncome, MORTAR_SHIPS, LOOT_REACH, FISH_ZONE_CAP,
   OUTPOST_LEVELS, OUTPOST_BUILD_REACH, RT_OUTPOST_MS, FISH_DRIFT_RT,
-  RT, isRealtime, isDuel, isPeace, windMoveMult
+  RT, isRealtime, isDuel, isPeace, windMoveMult, fishIncomeFor
 } from './config.js';
 import {
   applyAction, pushEvent, pushLog, logEvent, spawnPirate, sinkShip, pirateVolley,
-  fishEarners, terrainBlocked, dist, applyOutpostPerks, driftFishZones, earn, flushEarnings
+  fishEarners, terrainBlocked, dist, applyOutpostPerks, applyBasePerks, driftFishZones, earn, flushEarnings
 } from './game.js';
 
 const norm = a => Math.atan2(Math.sin(a), Math.cos(a));
@@ -23,8 +23,10 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 // Множитель скорости от ветра: по ветру до ×(1+WIND_STRENGTH), против — до ×(1−WIND_STRENGTH).
 // Ветер ОБЩИЙ для всех режимов (game.wind, формула windMoveMult в config) — тут лишь удобная обёртка.
-export function windMult(game, heading) {
-  return windMoveMult(game.wind, heading);
+export function windMult(game, heading, owner) {
+  const k = windMoveMult(game.wind, heading);
+  // ⛵ «косой парус»: встречный ветер не штрафует (попутный — помогает). owner < 0 — пират, ему перки не светят.
+  return (owner >= 0 && game.players[owner]?.perks?.lateen) ? Math.max(1, k) : k;
 }
 
 // ─── Жизненный цикл: один интервал на игру ───────────────────────────────────
@@ -153,7 +155,7 @@ export function tickMovement(game, dt) {
     if (typeof s.heading !== 'number') s.heading = want; // первый приказ в жизни — нос уже туда
     // ОБХОД СУШИ: смотрим вперёд; прямо земля → доворот в сторону обхода. Сторона ЛИПКАЯ
     // (s.avoid): выбрав, куда огибать остров, держимся её — иначе корабль мечется у берега.
-    const cruise = (st.move / RT.MOVE_SECONDS) * windMult(game, s.heading);
+    const cruise = (st.move / RT.MOVE_SECONDS) * windMult(game, s.heading, s.owner);
     const look = Math.max(48, cruise * 1.2);
     const probe = cruise * dt / 1000; // длина шага этого тика: одобренный угол гарантирует движение
     if (!rayFree(game, s, want, look, probe)) {
@@ -177,7 +179,7 @@ export function tickMovement(game, dt) {
     const maxTurn = turnRate * dt / 1000;
     s.heading = norm(s.heading + clamp(norm(want - s.heading), -maxTurn, maxTurn));
     const sharp = Math.abs(norm(want - s.heading)) > Math.PI / 2;
-    const step = (st.move / RT.MOVE_SECONDS) * windMult(game, s.heading) * (sharp ? RT.TURN_SLOW : 1) * dt / 1000;
+    const step = (st.move / RT.MOVE_SECONDS) * windMult(game, s.heading, s.owner) * (sharp ? RT.TURN_SLOW : 1) * dt / 1000;
     if (d <= Math.max(step, 8)) { // дошли
       if (!terrainBlocked(game, s.dest.x, s.dest.y)) { s.x = s.dest.x; s.y = s.dest.y; }
       delete s.dest;
@@ -221,7 +223,7 @@ export function tickEconomy(game, now) {
       for (const s of fishEarners(game, zone)) { // лимит слотов зоны — общий с пошаговым
         const p = game.players[s.owner];
         if (!p?.alive) continue;
-        const inc = SHIP_TYPES[s.type].fishing;
+        const inc = fishIncomeFor(game, s.owner, s.type);   // 🐟 «промысел» удваивает улов
         p.gold += inc;
         p.stats.goldCollected += inc;
         pushEvent(game, { type: 'gold', x: s.x, y: s.y, amount: inc });
@@ -236,7 +238,8 @@ export function tickOutposts(game, now) {
   const rt = game.rt;
   if (now < (rt.nextOutpost || 0)) return;
   rt.nextOutpost = now + RT_OUTPOST_MS;
-  for (let i = 0; i < game.players.length; i++) applyOutpostPerks(game, i);
+  // ⚓ «сухой док» идёт тем же тактом, что и доход аванпостов — чтобы ремонт не жил своей жизнью
+  for (let i = 0; i < game.players.length; i++) { applyOutpostPerks(game, i); applyBasePerks(game, i); }
 }
 
 // ─── Пираты: реалтайм-ИИ — пушка ПО ПЕРЕЗАРЯДКЕ, плавание непрерывное (как у всех) ──

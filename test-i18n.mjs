@@ -172,14 +172,15 @@ yes('разметка реально размечена', used.size >= 10);
 // === 9. Игровые сущности сервера покрыты словарём ===
 // Сервер шлёт только ТИП (корабля, режима, постройки) — имя и описание рисует клиент.
 // Значит на каждый тип из конфига обязан найтись ключ, иначе игрок увидит «ship.brig.name».
-const { SHIP_TYPES, GAME_MODES, OUTPOST_LEVELS } = await import('./server/config.js');
+const { SHIP_TYPES, GAME_MODES, OUTPOST_LEVELS, PERKS } = await import('./server/config.js');
 const needKeys = [
   ...Object.keys(SHIP_TYPES).flatMap(k => [`ship.${k}.name`, `ship.${k}.desc`]),
   'ship.pirate.name', 'ship.pirate.desc',
   ...Object.keys(GAME_MODES).flatMap(k => [`mode.${k}.name`, `mode.${k}.desc`]),
-  ...OUTPOST_LEVELS.map((_, i) => `outpost.${i}.name`)
+  ...OUTPOST_LEVELS.map((_, i) => `outpost.${i}.name`),
+  ...Object.keys(PERKS).flatMap(k => [`perk.${k}.name`, `perk.${k}.desc`])
 ];
-for (const l of LANGS) eq(`${l}: у каждого корабля/режима/постройки есть имя`,
+for (const l of LANGS) eq(`${l}: у каждого корабля/режима/постройки/перка есть имя`,
   needKeys.filter(k => at(dicts[l], k) === undefined), []);
 // имена ботов сервер тоже шлёт ключами — на каждый слот каждого уровня нужен перевод
 const { BOT_NAMES } = await import('./server/bot.js');
@@ -191,6 +192,7 @@ eq('ники ботов — ключи, а не фразы', botKeys.filter(k =>
 eq('в SHIP_TYPES нет name/desc', Object.entries(SHIP_TYPES).filter(([, v]) => v.name || v.desc).map(([k]) => k), []);
 eq('в GAME_MODES нет name/desc', Object.entries(GAME_MODES).filter(([, v]) => v.name || v.desc).map(([k]) => k), []);
 eq('в OUTPOST_LEVELS нет name/desc', OUTPOST_LEVELS.filter(v => v.name || v.desc).length, 0);
+eq('в PERKS нет name/desc', Object.entries(PERKS).filter(([, v]) => v.name || v.desc).map(([k]) => k), []);
 
 // === 10. Клиент не читает имён из серверных данных ===
 // Имён и описаний в стейте больше нет, но обращение к ним НЕ падает — просто отдаёт undefined,

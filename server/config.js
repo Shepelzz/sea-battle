@@ -255,10 +255,96 @@ export const fleetValue = (game, pIdx) =>
 // доход порта игрока с учётом поддержки
 export function portIncome(game, pIdx) {
   const poor = Math.max(0, 1 - fleetValue(game, pIdx) / PORT_POOR_FLEET); // 1 — гол как сокол, 0 — флот в порядке
-  return Math.round(PORT_INCOME * (1 + (PORT_POOR_MULT - 1) * poor));
+  const mult = hasPerk(game, pIdx, 'market') ? MARKET_INCOME_MULT : 1;    // 📈 «торговый ряд»
+  return Math.round(PORT_INCOME * (1 + (PORT_POOR_MULT - 1) * poor) * mult);
 }
 export const PORT_INCOME_TURN_FACTOR = 80;  // доход выключается после turn.number > players*80 («внезапная смерть»)
 export const PORT_DMG_TO_SHIPS = 0;         // порт не стреляет сам — оборона флотом
+
+// ─── 🎖 ПЕРКИ — покупаются в верфи за ЗОЛОТО + 🪙 МОНЕТЫ ──────────────────────
+// Схема простая: золото — цена, монета — разрешение. Золота в партии много, монет единицы
+// (замер: игрок заканчивает партию с 1–4 монетами), поэтому монета решает, сколько перков
+// вообще можно позволить за игру, а не «накопи и купи всё».
+//
+// Перк принадлежит ИГРОКУ (player.perks[ключ] = true), а не кораблю. Это сознательно: статы
+// судов читаются через SHIP_TYPES[type] почти в сотне мест (сервер, бот, реалтайм, клиент), и
+// апгрейд отдельного корпуса потребовал бы протаскивать владельца во все. Перки игрока же
+// врезаются в считаные формулы — они перечислены рядом с каждым ключом.
+//
+// Имена и описания — в словарях клиента (perk.<ключ>.name / .desc): сервер шлёт только ключ.
+// ⚠ В ДУЭЛИ перков и монет нет вовсе (см. perksEnabled): там нет ни дохода, ни аванпостов,
+// ни лута с судов — половина списка бессмысленна, а вторая ломает стартовый бюджет.
+export const PERKS = {
+  // 🏰 порт
+  battery:    { icon: '🏰', gold: 600, coins: 3 },  // ответка порта: PORT_RETURN_DMG → BATTERY_RETURN_DMG
+  market:     { icon: '📈', gold: 500, coins: 1 },  // доход порта ×MARKET_INCOME_MULT (portIncome)
+  drydock:    { icon: '⚓', gold: 450, coins: 1 },  // свои суда у базы чинятся каждый ход (applyBasePerks)
+  lighthouse: { icon: '🗼', gold: 300, coins: 0 },  // обзор вокруг базы (туман — клиентский)
+  // ⛺ аванпосты
+  garrison:   { icon: '🛡', gold: 350, coins: 1 },  // прочность построек ×GARRISON_HP_MULT
+  warehouse:  { icon: '📦', gold: 400, coins: 1 },  // +WAREHOUSE_INCOME золота с каждого аванпоста
+  bastion:    { icon: '🏯', gold: 600, coins: 2 },  // 🏰-форт стреляет ДВАЖДЫ за тик
+  fishery:    { icon: '🐟', gold: 450, coins: 1 },  // улов баркасов ×FISHERY_MULT (fishIncomeFor)
+  // 🔧 РАСХОДНИК: действует сразу и покупается сколько угодно раз (instant), в perks не пишется
+  portRepair: { icon: '🔧', gold: 700, coins: 1, instant: true }, // чинит порт на PORT_REPAIR_FRAC
+  // ⚓ флот
+  grapnels:   { icon: '🪝', gold: 800, coins: 2 },  // лут с обломков WRECK_LOOT_FRAC → GRAPNELS_LOOT_FRAC
+  lateen:     { icon: '⛵', gold: 400, coins: 1 },  // встречный ветер не режет ход
+  shipyard:   { icon: '🛠', gold: 500, coins: 2 },  // корабли дешевле на SHIPYARD_DISCOUNT
+};
+export const PERK_KEYS = Object.keys(PERKS);
+// в дуэли экономики нет — ни монет, ни магазина перков
+export const perksEnabled = (game) => !isDuel(game);
+export const hasPerk = (game, pIdx, key) => !!game?.players?.[pIdx]?.perks?.[key];
+
+// числа эффектов — рядом, чтобы баланс крутился в одном месте
+export const BATTERY_RETURN_DMG = 40;    // ответка порта с батареей (обычная — PORT_RETURN_DMG)
+export const MARKET_INCOME_MULT = 1.5;   // «торговый ряд»: множитель дохода порта
+export const DRYDOCK_RADIUS = 240;       // «сухой док»: радиус ремонта вокруг своей базы
+export const DRYDOCK_HEAL = 0.05;        // …и доля МАКСИМАЛЬНОГО HP за тик
+export const LIGHTHOUSE_EXTRA = 260;     // «маяк»: насколько дальше видно от базы
+export const GARRISON_HP_MULT = 1.5;     // «гарнизон»: прочность аванпостов
+export const WAREHOUSE_INCOME = 2;       // «склад»: добавка золота с каждого аванпоста
+export const GRAPNELS_LOOT_FRAC = 0.8;   // «абордажные крючья»: доля цены с обломков
+export const SHIPYARD_DISCOUNT = 0.1;    // «верфь на потоке»: скидка на корабли
+export const FISHERY_MULT = 2;           // «рыбный промысел»: множитель улова баркасов
+// «Ремонт порта» — РАСХОДНИК, поэтому чинит долю, а не всё: за 700 золота + монету возвращать
+// разом все 840 HP значило бы обнулять осаду одной кнопкой. Половина — это передышка, а не
+// отмена хода противника; вторую можно докупить, если монет не жалко.
+export const PORT_REPAIR_FRAC = 0.5;
+
+// улов баркаса игрока за один тик рыбалки
+export const fishIncomeFor = (game, pIdx, type) => {
+  const base = SHIP_TYPES[type]?.fishing || 0;
+  return hasPerk(game, pIdx, 'fishery') ? Math.round(base * FISHERY_MULT) : base;
+};
+// расходники (instant) не запоминаются игроку — их можно брать снова
+export const isInstantPerk = (key) => !!PERKS[key]?.instant;
+
+// цена корабля для игрока с учётом скидки
+export const shipPrice = (game, pIdx, type) => {
+  const base = SHIP_TYPES[type]?.price || 0;
+  return hasPerk(game, pIdx, 'shipyard') ? Math.round(base * (1 - SHIPYARD_DISCOUNT)) : base;
+};
+// ответка порта по атакующему кораблю (защищается игрок victimIdx)
+export const portReturnDmg = (game, victimIdx, shipType) =>
+  Math.round((hasPerk(game, victimIdx, 'battery') ? BATTERY_RETURN_DMG : PORT_RETURN_DMG)
+    * (shipType === 'linkor' ? PORT_RETURN_LINKOR_MULT : 1));
+// доля цены, которая падает с обломков потопленного судна
+export const wreckLootFrac = (game, killerIdx) =>
+  hasPerk(game, killerIdx, 'grapnels') ? GRAPNELS_LOOT_FRAC
+    : (isRealtime(game) ? RT.WRECK_LOOT_FRAC : WRECK_LOOT_FRAC);
+// множитель хода по ветру: с «косым парусом» встречный ветер не штрафует (попутный — помогает)
+export const windMoveMultFor = (game, pIdx, ang) => {
+  const k = windMoveMult(game.wind, ang);
+  return hasPerk(game, pIdx, 'lateen') ? Math.max(1, k) : k;
+};
+// прочность аванпоста уровня level у игрока pIdx
+export const outpostMaxHp = (game, pIdx, level) => {
+  const def = OUTPOST_LEVELS[level - 1];
+  if (!def) return 0;
+  return Math.round(def.hp * (hasPerk(game, pIdx, 'garrison') ? GARRISON_HP_MULT : 1));
+};
 
 // ─── ⛺ АВАНПОСТЫ на захваченных островах (все режимы с лут-островами) ─────────
 // Залутал остров → можешь поставить аванпост (корабль рядом + золото) и прокачивать его.

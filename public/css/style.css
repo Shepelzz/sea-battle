@@ -669,6 +669,15 @@ aside.panel {
 .browse-sep { border-bottom: 1.6px dashed var(--pencil); margin: 4px 0 14px; }
 .lobby-item.mygame.myturn { box-shadow: 0 0 0 2px #2f7d4f inset; }
 
+/* 🛒 верфь: подгруппы «корабли» и «перки» */
+.shop-h { margin: 4px 0 8px; font-family: var(--font-title); font-size: 1.35rem; }
+#perkSection { border-top: 1.6px dashed var(--pencil); margin-top: 16px; padding-top: 12px; }
+.perk-card .head .price { white-space: nowrap; }
+.perk-card.owned { opacity: .6; }
+.perk-card .desc { font-size: 14px; color: var(--ink-light); margin: 4px 0 8px; }
+/* кнопка занимает всю ширину карточки — попадать пальцем проще, чем в «+»/«−» */
+.perk-card .buy { width: 100%; }
+
 /* линейка-декор на главной */
 .ruler {
   height: 34px;

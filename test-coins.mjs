@@ -197,7 +197,9 @@ yes('за босса строго больше', PIRATE_BOSS_COINS > PIRATE_COIN
   yes('и подробной записи нет', !log.some(l => l.k === 'log.pirateSunk'));
 }
 
-// ═══ дуэль: пираты есть, значит и монеты ═══
+// ═══ ДУЭЛЬ: монет нет вовсе ═══
+// Тратить их там не на что — перки в дуэли выключены (нет ни дохода, ни аванпостов, ни лута
+// с судов). Значит и копиться они не должны, иначе игрок собирает валюту в никуда.
 {
   const g = createGame('d', { maxPlayers: 2, turnTimer: 0, seed: 7 });
   g.config.mode = 'duel';
@@ -207,8 +209,14 @@ yes('за босса строго больше', PIRATE_BOSS_COINS > PIRATE_COIN
   g.phase = 'battle';
   g.turn = { idx: 0, number: 1, round: 1, deadline: null, moves: 0, actedShips: [], broadsideSides: {} };
   const f = put(g, 0, 'fregat', 300, 300);
+  const goldBefore = g.players[0].gold;
   mortar(g, 'p0', f, pirate(g, 360, 300));
-  eq('в дуэли монета за пирата тоже капает', g.players[0].coins, 1);
+  eq('в дуэли монет за пирата НЕ дают', g.players[0].coins, 0);
+  eq('а золото за него — как обычно', g.players[0].gold, goldBefore + 200);
+  const log = publicState(g, 'p0').log;
+  yes('в журнале запись без монет', log.some(l => l.k === 'log.pirateSunkGold'));
+  yes('и обычной записи с монетами нет', !log.some(l => l.k === 'log.pirateSunk'));
+  yes('витрины перков в дуэли нет', publicState(g, 'p0').perkShop === null);
 }
 
 console.log(fail ? `\n❌ test-coins: провалено ${fail}, прошло ${ok}` : `\n✅ test-coins: все ${ok} проверок прошли`);

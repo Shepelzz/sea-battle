@@ -13,6 +13,9 @@ import {
   FISH_DRIFT_PER_TURN, FISH_HOME_RADIUS, FISH_MIN_GAP, FISH_BASE_GAP,
   MAP_EDGE_MARGIN, ISLAND_BLOCK_GAP, SPAWN_FAN_N, SPAWN_FAN_RINGS, SPAWN_FAN_R0, SPAWN_FAN_RING_STEP,
   PIRATE, PIRATE_MAX, PIRATE_ENGAGE_MULT, PIRATE_MIN_LIFETIME, PIRATE_STEP_MIN, pirateCoins,
+  PERKS, PERK_KEYS, perksEnabled, hasPerk, shipPrice, portReturnDmg, wreckLootFrac,
+  windMoveMultFor, outpostMaxHp, WAREHOUSE_INCOME, DRYDOCK_RADIUS, DRYDOCK_HEAL, GARRISON_HP_MULT,
+  LIGHTHOUSE_EXTRA, fishIncomeFor, isInstantPerk, PORT_REPAIR_FRAC,
   PIRATE_DESPAWN_CHANCE, PIRATE_MOVE_CHANCE, PIRATE_BOSS_CHANCE, PIRATE_BOSS_HP,
   PIRATE_BOUNTY_MIN, PIRATE_BOUNTY_RAND, PIRATE_BOUNTY_STEP,
   PIRATE_BOSS_BOUNTY_MIN, PIRATE_BOSS_BOUNTY_RAND, PIRATE_BOSS_BOUNTY_STEP,
@@ -143,7 +146,7 @@ export function addPlayer(game, playerId, nick, color = null) {
   game.players.push({
     id: playerId, nick,
     color: pickColor(game, color),
-    gold: modeStartGold(game), coins: 0, portHp: PORT_HP, // дезматч даёт больше золота на старте (режим)
+    gold: modeStartGold(game), coins: 0, perks: {}, portHp: PORT_HP, // дезматч даёт больше золота на старте (режим)
     alive: true, placement: null,
     stats: newStats()
   });
@@ -523,8 +526,9 @@ function advanceTurn(game) {
     for (const s of game.ships.filter(s => s.owner === next && SHIP_TYPES[s.type].fishing > 0)) {
       const zone = game.map.fishZones.find(z => dist(s.x, s.y, z.x, z.y) <= z.radius);
       if (zone && fishEarners(game, zone).some(o => o.id === s.id)) {
-        catch_ += SHIP_TYPES[s.type].fishing;
-        pushEvent(game, { type: 'gold', x: s.x, y: s.y, amount: SHIP_TYPES[s.type].fishing });
+        const inc = fishIncomeFor(game, next, s.type);   // 🐟 «промысел» удваивает улов
+        catch_ += inc;
+        pushEvent(game, { type: 'gold', x: s.x, y: s.y, amount: inc });
       }
     }
     if (catch_) {
@@ -537,7 +541,7 @@ function advanceTurn(game) {
 
   // ⛺ АВАНПОСТЫ владельца — в начале его хода: доход, ремонт своих рядом, пушка форта.
   // (Реалтайм не ходит через advanceTurn — там те же перки крутит tickOutposts в rt.js.)
-  if (np?.alive) applyOutpostPerks(game, next);
+  if (np?.alive) { applyOutpostPerks(game, next); applyBasePerks(game, next); }
 }
 
 // Перки аванпостов игрока pIdx (общая логика пошагового хода и реалтайм-тика):
@@ -549,9 +553,11 @@ export function applyOutpostPerks(game, pIdx) {
     const op = isl.outpost;
     if (!op || op.owner !== pIdx) continue;
     const lvl = OUTPOST_LEVELS[op.level - 1];
-    p.gold += lvl.income;
-    pushEvent(game, { type: 'gold', x: isl.x, y: isl.y, amount: lvl.income });
-    earn(game, p, lvl.income, 'outpost');
+    // 📦 «склад» — добавка с КАЖДОГО аванпоста, поэтому чем их больше, тем перк ценнее
+    const income = lvl.income + (hasPerk(game, pIdx, 'warehouse') ? WAREHOUSE_INCOME : 0);
+    p.gold += income;
+    pushEvent(game, { type: 'gold', x: isl.x, y: isl.y, amount: income });
+    earn(game, p, income, 'outpost');
     if (lvl.heal) { // 🏪 фактория: латает свои корабли в радиусе (доля их МАКСИМАЛЬНОЙ прочности)
       for (const s of game.ships.filter(s => s.owner === pIdx && dist(s.x, s.y, isl.x, isl.y) <= OUTPOST_RADIUS)) {
         const maxHp = SHIP_TYPES[s.type].hp;
@@ -560,9 +566,13 @@ export function applyOutpostPerks(game, pIdx) {
       }
     }
     if (lvl.gun && !isPeace(game)) { // 🏰 форт: береговая пушка по ближайшему врагу/пирату в радиусе
-      const foes = game.ships.filter(s => s.owner !== pIdx && (s.owner === -1 || game.players[s.owner]?.alive) &&
-        dist(s.x, s.y, isl.x, isl.y) <= OUTPOST_RADIUS);
-      if (foes.length) {
+      // 🏯 «бастион» — тот же форт бьёт ДВАЖДЫ за тик. Цель выбирается заново перед каждым
+      // выстрелом: если первого добили, второй достаётся следующему, а не уходит в пустоту.
+      const shots = hasPerk(game, pIdx, 'bastion') ? 2 : 1;
+      for (let n = 0; n < shots; n++) {
+        const foes = game.ships.filter(s => s.owner !== pIdx && (s.owner === -1 || game.players[s.owner]?.alive) &&
+          dist(s.x, s.y, isl.x, isl.y) <= OUTPOST_RADIUS);
+        if (!foes.length) break;
         const t = foes.reduce((a, b) => dist(a.x, a.y, isl.x, isl.y) < dist(b.x, b.y, isl.x, isl.y) ? a : b);
         t.hp -= lvl.gun;
         p.stats.damageDealt += lvl.gun;
@@ -577,6 +587,22 @@ export function applyOutpostPerks(game, pIdx) {
         else if (t.owner === -1) t.angryAt = pIdx;
       }
     }
+  }
+}
+
+// ⚓ «Сухой док»: свои корабли рядом со своей базой подлечиваются каждый тик дохода.
+// Живёт отдельно от аванпостов, потому что привязан к БАЗЕ, но зовётся там же — пошагово из
+// advanceTurn, в реалтайме из tickOutposts, чтобы ремонт шёл в один такт с экономикой.
+export function applyBasePerks(game, pIdx) {
+  const p = game.players[pIdx];
+  if (!p?.alive || !hasPerk(game, pIdx, 'drydock')) return;
+  const base = game.map?.bases?.[pIdx];
+  if (!base || base.noPort) return;
+  for (const s of game.ships) {
+    if (s.owner !== pIdx || dist(s.x, s.y, base.x, base.y) > base.radius + DRYDOCK_RADIUS) continue;
+    const maxHp = SHIP_TYPES[s.type].hp;
+    const healed = Math.min(Math.round(maxHp * DRYDOCK_HEAL), maxHp - s.hp);
+    if (healed > 0) { s.hp += healed; pushEvent(game, { type: 'repair', fx: base.x, fy: base.y, tx: s.x, ty: s.y, heal: healed }); }
   }
 }
 
@@ -624,15 +650,16 @@ function sinkShip(game, ship, killer) {
     killer.gold += ship.bounty;
     // 🪙 вторая валюта: за босса две монеты, за обычного пирата одна. Копится на игроке,
     // в stats не идёт (это кошелёк, а не статистика матча) и в лидерборд не попадает.
-    const coins = pirateCoins(ship.boss);
-    killer.coins = (killer.coins || 0) + coins;   // || 0 — партии, сохранённые до ввода валюты
+    // В ДУЭЛИ монет нет вовсе — там не на что их тратить (перки выключены).
+    const coins = perksEnabled(game) ? pirateCoins(ship.boss) : 0;
+    if (coins) killer.coins = (killer.coins || 0) + coins;   // || 0 — партии, сохранённые до валюты
     killer.stats.shipsSunk++; killer.stats.goldCollected += ship.bounty;  // общий зачёт (рекап/сим)
     killer.stats.npcSunk++;   killer.stats.npcGold += ship.bounty;        // …но НПС → из лидерборда вычтется
     pushEvent(game, { type: 'gold', x: ship.x, y: ship.y, amount: ship.bounty });
-    pushEvent(game, { type: 'coin', x: ship.x, y: ship.y, amount: coins }); // 🪙 своя всплывашка
+    if (coins) pushEvent(game, { type: 'coin', x: ship.x, y: ship.y, amount: coins }); // 🪙 своя всплывашка
     earn(game, killer, ship.bounty, 'bounty');
     logEvent(game,
-      L('pirateSunk', { nick: killer.nick, gold: ship.bounty, coins }),
+      L(coins ? 'pirateSunk' : 'pirateSunkGold', { nick: killer.nick, gold: ship.bounty, coins }),
       L('pirateSunkFog', { nick: killer.nick }), 'battle');
     return;
   }
@@ -648,7 +675,7 @@ function sinkShip(game, ship, killer) {
       L('shipSunkFog', { killer: killer.nick, owner: owner.nick }), 'battle');
   } else if (killer) {
     // реалтайм: лут скромнее (война не должна окупаться) — пошаговый баланс не трогаем
-    const plunder = Math.round(SHIP_TYPES[ship.type].price * (isRealtime(game) ? RT.WRECK_LOOT_FRAC : WRECK_LOOT_FRAC));
+    const plunder = Math.round(SHIP_TYPES[ship.type].price * wreckLootFrac(game, game.players.indexOf(killer)));
     killer.gold += plunder;                    // лут-валюту даём всегда
     killer.stats.shipsSunk++; killer.stats.goldCollected += plunder;
     if (npcFoe) { killer.stats.npcSunk++; killer.stats.npcGold += plunder; }
@@ -946,7 +973,7 @@ export function applyAction(game, playerId, action) {
     case 'buy': {
       const list = Array.isArray(action.ships) ? action.ships : [];
       if (!list.length) return { ok: false, error: 'err.pickShips' };
-      const cost = list.reduce((sum, t) => sum + (SHIP_TYPES[t]?.price ?? 1e9), 0);
+      const cost = list.reduce((sum, t) => sum + (SHIP_TYPES[t] ? shipPrice(game, pIdx, t) : 1e9), 0);
       if (cost > player.gold) return { ok: false, error: 'err.noGold' };
       const base = game.map.bases[pIdx];
       const bought = [];
@@ -964,6 +991,47 @@ export function applyAction(game, playerId, action) {
       logEvent(game,
         L('buy', { nick: player.nick, ships: bought, cost }),
         L('buyFog', { nick: player.nick }));
+      break;
+    }
+
+    // 🎖 Покупка перка: золото + монеты. Разовая — второй раз тот же не купить.
+    case 'buyPerk': {
+      if (!perksEnabled(game)) return { ok: false, error: 'err.perksOffHere' };
+      const key = String(action.key || '');
+      const def = PERKS[key];
+      if (!def) return { ok: false, error: 'err.unknownPerk' };
+      // расходник можно брать снова, постоянный перк — только раз
+      if (!isInstantPerk(key) && hasPerk(game, pIdx, key)) return { ok: false, error: 'err.perkOwned' };
+      // 🔧 ремонт порта бессмысленен на целом порту — не даём слить золото впустую
+      if (key === 'portRepair' && player.portHp >= PORT_HP) return { ok: false, error: 'err.portFull' };
+      if (player.gold < def.gold) return { ok: false, error: 'err.noGoldFor', params: { price: def.gold } };
+      if ((player.coins || 0) < def.coins) return { ok: false, error: 'err.noCoinsFor', params: { price: def.coins } };
+      player.gold -= def.gold;
+      player.coins = (player.coins || 0) - def.coins;
+      if (isInstantPerk(key)) {
+        // 🔧 расходник: срабатывает сразу и НЕ записывается в perks — иначе второй раз не купить
+        if (key === 'portRepair') {
+          const healed = Math.min(Math.round(PORT_HP * PORT_REPAIR_FRAC), PORT_HP - player.portHp);
+          player.portHp += healed;
+          const base = game.map?.bases?.[pIdx];
+          if (base) pushEvent(game, { type: 'repair', fx: base.x, fy: base.y, tx: base.x, ty: base.y, heal: healed });
+          logEvent(game,
+            L('portRepaired', { nick: player.nick, hp: healed, left: player.portHp }),
+            L('portRepairedFog', { nick: player.nick }), 'battle');
+        }
+      } else {
+        (player.perks ??= {})[key] = true;
+      }
+      // 🛡 «Гарнизон» действует и на УЖЕ построенное: иначе перк наказывал бы за раннюю стройку
+      if (key === 'garrison') {
+        for (const isl of game.map?.lootIslands || []) {
+          const op = isl.outpost;
+          if (op?.owner === pIdx) op.hp = Math.min(Math.round(op.hp * GARRISON_HP_MULT), outpostMaxHp(game, pIdx, op.level));
+        }
+      }
+      if (!isInstantPerk(key)) logEvent(game,
+        L('perkBought', { nick: player.nick, icon: def.icon, perk: `perk.${key}.name` }),
+        L('perkBoughtFog', { nick: player.nick }));
       break;
     }
 
@@ -1013,7 +1081,7 @@ export function applyAction(game, playerId, action) {
       if (game.turn.broadsideSides?.[ship.id]?.length) return { ok: false, error: 'err.shipBroadsiding' };
       const x = Math.round(action.x), y = Math.round(action.y);
       // 🌬 дальность хода зависит от курса: по ветру дальше, против — меньше (каплевидный контур)
-      const range = SHIP_TYPES[ship.type].move * windMoveMult(game.wind, Math.atan2(y - ship.y, x - ship.x));
+      const range = SHIP_TYPES[ship.type].move * windMoveMultFor(game, pIdx, Math.atan2(y - ship.y, x - ship.x));
       if (dist(ship.x, ship.y, x, y) > range + 0.5)
         return { ok: false, error: dist(ship.x, ship.y, x, y) <= SHIP_TYPES[ship.type].move + 0.5 ? 'err.windTooFar' : 'err.tooFar' };
       const blocked = shipPlacementBlocked(game, x, y, ship.id);
@@ -1065,7 +1133,7 @@ export function applyAction(game, playerId, action) {
       const cang = Math.atan2(ddy, ddx);
       // строй идёт по САМОМУ МЕДЛЕННОМУ — линкор в конвое режет дальность всем
       const slow = Math.min(...crew.map(s => SHIP_TYPES[s.type].move));
-      if (Math.hypot(ddx, ddy) > slow * windMoveMult(game.wind, cang) + 0.5)
+      if (Math.hypot(ddx, ddy) > slow * windMoveMultFor(game, pIdx, cang) + 0.5)
         return { ok: false, error: 'err.convoySlow' };
       const dests = crew.map(s => ({ s, x: Math.round(s.x + ddx), y: Math.round(s.y + ddy) }));
       const crewSet = new Set(ids);
@@ -1157,7 +1225,7 @@ export function applyAction(game, playerId, action) {
           eliminatePlayer(game, targetIdx, player);
         } else {
           // порт огрызается: ответный залп по атакующему кораблю. Линкору — на 20% больнее (он осадный, ему и сдача жирнее).
-          const retDmg = Math.round(PORT_RETURN_DMG * (ship.type === 'linkor' ? PORT_RETURN_LINKOR_MULT : 1));
+          const retDmg = portReturnDmg(game, targetIdx, ship.type);
           ship.hp -= retDmg;
           pushEvent(game, { type: 'shot', fx: base.x, fy: base.y, tx: ship.x, ty: ship.y, dmg: retDmg });
           logEvent(game,
@@ -1322,7 +1390,7 @@ export function applyAction(game, playerId, action) {
       pushEvent(game, { type: 'volley', fx: ship.x, fy: ship.y, sideDir, cannons, full, shipType: ship.type, hits: evHits });
       for (const t of toSink) sinkShip(game, t, player);
       if (counterFrom) { // порт устоял — огрызается по стрелявшему (как у мортиры)
-        const retDmg = Math.round(PORT_RETURN_DMG * (ship.type === 'linkor' ? PORT_RETURN_LINKOR_MULT : 1));
+        const retDmg = portReturnDmg(game, portHit.i, ship.type);
         ship.hp -= retDmg;
         pushEvent(game, { type: 'shot', fx: counterFrom.x, fy: counterFrom.y, tx: ship.x, ty: ship.y, dmg: retDmg });
         if (ship.hp <= 0) sinkShip(game, ship, game.players[portHit.i]);
@@ -1355,7 +1423,7 @@ export function applyAction(game, playerId, action) {
       const def = OUTPOST_LEVELS[level - 1];
       if (player.gold < def.price) return { ok: false, error: 'err.noGoldFor', params: { price: def.price } };
       player.gold -= def.price;
-      isl.outpost = { owner: pIdx, level, hp: def.hp }; // апгрейд заодно отстраивает до полной прочности
+      isl.outpost = { owner: pIdx, level, hp: outpostMaxHp(game, pIdx, level) }; // апгрейд заодно отстраивает до полной прочности
       logEvent(game,
         L(level === 1 ? 'outpostBuild' : 'outpostUp',
           { icon: def.icon, nick: player.nick, building: `outpost.${level - 1}.name`, cost: def.price }),
@@ -1489,6 +1557,8 @@ export function timeoutTurn(game) {
 // На финале (баттл окончен) всё раскрываем — это итоговая таблица.
 export function publicState(game, viewerPid) {
   const reveal = game.config.hotseat || game.status === 'finished';
+  // чей это экран: в хотсите всё показывается тому, чей сейчас ход
+  const viewerIdx = game.config.hotseat ? (game.turn?.idx ?? 0) : game.players.findIndex(p => p.id === viewerPid);
   // чит-корабли видны клиенту только в тестовом режиме (нужны для отрисовки спавна); иначе — ни следа
   const shipTypes = { ...SHIP_TYPES, pirate: PIRATE };
   if (!CHEATS_ENABLED) for (const k in shipTypes) if (shipTypes[k]?.cheat) delete shipTypes[k];
@@ -1504,6 +1574,8 @@ export function publicState(game, viewerPid) {
       gold: (reveal || DEBUG || p.id === viewerPid) ? p.gold : null,
       // 🪙 монеты прячем ровно как золото: чужой кошелёк — не твоё дело
       coins: (reveal || DEBUG || p.id === viewerPid) ? (p.coins || 0) : null,
+      // 🎖 перки — тоже: соперник узнаёт о них по последствиям, а не из списка капитанов
+      perks: (reveal || DEBUG || p.id === viewerPid) ? { ...(p.perks || {}) } : null,
       portHp: p.portHp, alive: p.alive, placement: p.placement,
       ready: p.ready || false,                 // дуэль: собрал ли флот в фазе закупки
       stats: p.stats, isBot: p.isBot || false
@@ -1524,6 +1596,16 @@ export function publicState(game, viewerPid) {
     lootReach: LOOT_REACH,
     // ⛺ аванпосты: уровни/радиус перков/дистанция стройки (для кнопки, отрисовки и вики)
     outposts: { levels: OUTPOST_LEVELS, radius: OUTPOST_RADIUS, reach: OUTPOST_BUILD_REACH },
+    // 🎖 витрина перков: ключ → цена. В дуэли перков нет — шлём null, и клиент прячет раздел.
+    perkShop: perksEnabled(game) ? PERKS : null,
+    // числа перков, которые нужны КЛИЕНТУ для отрисовки (туман считается у него) — чтобы не
+    // дублировать константу в двух местах и не разъехаться при правке баланса
+    perkFx: { lighthouse: LIGHTHOUSE_EXTRA },
+    // цены кораблей ДЛЯ ЭТОГО ЗРИТЕЛЯ: с «верфью на потоке» они ниже, и верфь должна показывать
+    // уже итоговые — иначе игрок считает в уме, а корзина не сходится с ценником
+    shipPrices: Object.fromEntries(Object.keys(shipTypes)
+      .filter(k => k !== 'pirate')
+      .map(k => [k, shipPrice(game, viewerIdx, k)])),
     repairChargesMax: REPAIR_CHARGES,
     repairDockReach: REPAIR_DOCK_REACH,
     portMax: PORT_HP,
