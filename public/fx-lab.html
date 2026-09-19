@@ -47,7 +47,7 @@
       <div class="sliders" data-group="shell"></div>
       <h3>💥 Взрывы</h3>
       <div class="sliders" data-group="boom"></div>
-      <h3>💰 Всплывающее золото</h3>
+      <h3>💰 Всплывающие надписи (−урон, +лечение, +золото, +монеты)</h3>
       <div class="sliders" data-group="gold"></div>
       <div class="btn-row" style="margin-top:16px">
         <button class="primary" id="saveBtn">💾 Применить в игре</button>
@@ -418,6 +418,7 @@ const SLIDER_DEFS = {
     ['shards', 'Осколков', 0, 16, 1]
   ],
   gold: [
+    ['gap', 'Интервал между надписями, мс', 0, 1500, 20],
     ['dur', 'Время жизни, мс', 600, 4000, 100],
     ['rise', 'Высота всплытия', 10, 150, 5],
     ['grow', 'Рост размера', 0, 1.5, 0.05],

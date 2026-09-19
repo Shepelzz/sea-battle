@@ -329,6 +329,13 @@ export const PIRATE = {
   icon: '🏴‍☠️', npc: true, price: 0,
   hp: 80, dmg: 12, fireRange: 130, move: 80, fishing: 0
 };
+// 🪙 МОНЕТЫ — вторая валюта. Падают ТОЛЬКО с пиратов: за обычного одна, за босса две.
+// Тратить пока не на что — механика покупки будет отдельно, монеты просто копятся у игрока.
+// Живут не в stats, а прямо на игроке (player.coins) — это кошелёк, а не статистика матча.
+export const PIRATE_COINS = 1;
+export const PIRATE_BOSS_COINS = 2;
+export const pirateCoins = (boss) => (boss ? PIRATE_BOSS_COINS : PIRATE_COINS);
+
 export const PIRATE_MAX = 2;               // сколько пиратов ВСЕГДА держим на карте (и потолок, и поддерживаемый минимум — пополняется гарантированно)
 export const PIRATE_REVENGE_SHOT = 0.35;   // (легаси) шанс выстрела в обидчика за ход
 export const PIRATE_FLEE_CHANCE = 0.5;     // (легаси) иначе — шанс удрать

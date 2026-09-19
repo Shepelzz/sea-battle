@@ -338,6 +338,21 @@ function playEvents(events) {
   const hidden = (x, y) => fog && !fogVisible(x, y, vis);
   let delay = 0;
   let groupShown = false;   // ⛵ хоть одно судно текущего строя показали (остальные могут быть в тумане)
+  // ВСЕ всплывающие над кораблём надписи (−урон, +лечение, +золото, +монеты) идут ОДНОЙ очередью
+  // с шагом FX.gold.gap. Раньше каждая считала время сама: попадания залпа ложились в одну точку
+  // штабелем, а награда за пирата наезжала на урон. Теперь надпись не может начаться раньше, чем
+  // через gap после предыдущей, но и не спешит — если событие само по себе позже, ждём его.
+  // Шаг СТРОГО одинаковый: первая надпись встаёт по своему естественному времени (прилёт ядра,
+  // конец взрыва), каждая следующая — ровно через FX.gold.gap после предыдущей. На собственное
+  // время последующих событий не оглядываемся: иначе шаг плавал бы (урон → золото 510, золото →
+  // монета 420), а просили ровный такт.
+  let popAt = null;
+  const pop = (e, from) => {
+    const at = popAt === null ? from : popAt + FX.gold.gap;
+    popAt = at;
+    addEffect({ ...e, delay: at });
+    return at;
+  };
   for (let ei = 0; ei < events.length; ei++) {
     const ev = events[ei];
     if (ev.type === 'move') {
@@ -372,7 +387,7 @@ function playEvents(events) {
       addEffect({ kind: 'tracer', fx: ev.fx, fy: ev.fy, tx: ev.tx, ty: ev.ty, dur: TR, delay });
       const impact = delay + TR - 8;
       addEffect({ kind: 'spark', x: ev.tx, y: ev.ty, dur: 240, delay: impact });
-      if (ev.dmg) addEffect({ kind: 'dmg', x: ev.tx, y: ev.ty, amount: ev.dmg, dur: 950, delay: impact });
+      if (ev.dmg) pop({ kind: 'dmg', x: ev.tx, y: ev.ty, amount: ev.dmg, dur: 950 }, impact);
       delay += 85; // следующий снаряд почти сразу — очередь
     } else if (ev.type === 'shot') {
       if (hidden(ev.fx, ev.fy) && hidden(ev.tx, ev.ty)) continue;
@@ -381,7 +396,7 @@ function playEvents(events) {
       const impact = delay + FX.shell.dur - 20;
       Sound.playAt('hit', impact);
       addEffect({ kind: 'boom', x: ev.tx, y: ev.ty, big: false, dur: FX.boom.durSmall, delay: impact });
-      if (ev.dmg) addEffect({ kind: 'dmg', x: ev.tx, y: ev.ty, amount: ev.dmg, dur: 1300, delay: impact });
+      if (ev.dmg) pop({ kind: 'dmg', x: ev.tx, y: ev.ty, amount: ev.dmg, dur: 1300 }, impact);
       delay += FX.shell.dur + 140;
     } else if (ev.type === 'volley') {
       // 💥 БОРТОВОЙ ЗАЛП — визуально: маленькие ЯДРА вылетают из стволов по всей длине борта.
@@ -441,7 +456,7 @@ function playEvents(events) {
         const impact = delay + span * (0.35 + Math.random() * 0.5);
         Sound.playAt('hit', impact);
         addEffect({ kind: 'boom', x: h.tx, y: h.ty, big: false, dur: FX.boom.durSmall, delay: impact });
-        addEffect({ kind: 'dmg', x: h.tx, y: h.ty, amount: h.dmg, dur: 1300, delay: impact });
+        pop({ kind: 'dmg', x: h.tx, y: h.ty, amount: h.dmg, dur: 1300 }, impact);
       }
       delay = last + 220;                            // конец очереди + хвост
     } else if (ev.type === 'repair') {
@@ -450,7 +465,7 @@ function playEvents(events) {
       const TR = 240;
       addEffect({ kind: 'beam', fx: ev.fx, fy: ev.fy, tx: ev.tx, ty: ev.ty, dur: TR, delay });
       const impact = delay + TR - 20;
-      if (ev.heal) addEffect({ kind: 'heal', x: ev.tx, y: ev.ty, amount: ev.heal, dur: 1200, delay: impact });
+      if (ev.heal) pop({ kind: 'heal', x: ev.tx, y: ev.ty, amount: ev.heal, dur: 1200 }, impact);
       delay += TR + 120;
     } else if (ev.type === 'explosion') {
       if (hidden(ev.x, ev.y)) continue;
@@ -482,8 +497,12 @@ function playEvents(events) {
     } else if (ev.type === 'gold') {
       if (hidden(ev.x, ev.y)) continue;
       Sound.playAt('coin', delay);
-      addEffect({ kind: 'gold', x: ev.x, y: ev.y, amount: ev.amount, dur: FX.gold.dur, delay });
-      delay += 180;
+      pop({ kind: 'gold', x: ev.x, y: ev.y, amount: ev.amount, dur: FX.gold.dur }, delay);
+    } else if (ev.type === 'coin') {
+      // 🪙 встаёт в ту же очередь, что и остальные надписи. Звук не дублируем — монетка уже
+      // звякнула на «+золото».
+      if (hidden(ev.x, ev.y)) continue;
+      pop({ kind: 'coin', x: ev.x, y: ev.y, amount: ev.amount, dur: FX.gold.dur }, delay);
     }
   }
 }
@@ -623,6 +642,20 @@ function drawEffects(under = false) {
       ctx.strokeText(`+${e.amount} 💰`, gx, gy);
       ctx.fillText(`+${e.amount} 💰`, gx, gy);
       ctx.globalAlpha = 1;
+    } else if (e.kind === 'coin') {
+      // то же «+N», что у золота, и в той же точке — но показывается, когда золото уже растаяло
+      const gx = sx(e.x);
+      const gy = sy(e.y) - 26 * view.scale - FX.gold.rise * p;
+      const scale = 1 + FX.gold.grow * p;
+      ctx.globalAlpha = p < 0.12 ? p / 0.12 : Math.max(0, 1 - Math.max(0, (p - 0.5) / 0.5));
+      ctx.font = `bold ${Math.max(14, FX.gold.font * view.scale) * scale}px Neucha, cursive`;
+      ctx.textAlign = 'center';
+      ctx.lineWidth = 3.5;
+      ctx.strokeStyle = '#fdfbf3';
+      ctx.fillStyle = '#8a6410';
+      ctx.strokeText(`+${e.amount} 🪙`, gx, gy);
+      ctx.fillText(`+${e.amount} 🪙`, gx, gy);
+      ctx.globalAlpha = 1;
     } else if (e.kind === 'dmg') {
       // «−N» всплывает над подбитой целью, красным и чуть мельче золота
       const dx = sx(e.x);
@@ -708,6 +741,10 @@ const isMyTurn = () => {
   if (state.rt) return !spectator && myIdx() >= 0 && !!state.players[myIdx()]?.alive; // ⛈️ шторм: действуй когда хочешь
   return myIdx() === state.turn.idx && !!state.players[myIdx()]?.alive;
 };
+// Деньги/прочность: значок отдельным элементом — CSS даёт ему пару пикселей отступа справа.
+// Числа приходят с сервера (не текст игрока), так что innerHTML тут безопасен.
+const money = (icon, n) => `<span class="mi">${icon}</span>${n}`;
+
 const ST = t => state.shipTypes[t];
 // Ник игрока — как есть, ник БОТА приезжает ключом словаря (звание переводится). tr() пропускает
 // всё, что на ключ не похоже, поэтому годится для любого участника.
@@ -3048,8 +3085,10 @@ function renderSidebar() {
   // меню или заглянув в верфь. На широком экране чип прячут стили — там деньги и так на виду.
   // В хотсите «мой» — тот, чей сейчас ход; у зрителя казны нет вовсе.
   const wallet = state.config?.hotseat ? current : me;
-  $('#myGold').textContent = (state.status === 'active' && !spectator && wallet?.gold != null)
-    ? `💰${wallet.gold}` : '';
+  const purseOn = state.status === 'active' && !spectator && wallet?.gold != null;
+  $('#myGold').innerHTML = purseOn ? money('💰', wallet.gold) : '';
+  $('#myCoins').innerHTML = (purseOn && wallet.coins != null) ? money('🪙', wallet.coins) : '';
+  $('#purse').classList.toggle('on', purseOn);
   // красная рамка «твой ход»: поднимаем на старте КАЖДОГО моего хода; гаснет, когда игрок «очнулся»
   // (повёл мышью / тапнул / нажал клавишу — слушатели в инициализации). В хотсите/шторме не нужна.
   {
@@ -3069,12 +3108,17 @@ function renderSidebar() {
   // за присланными данными, а не за этим правилом. Иначе при малейшем расхождении (страница
   // открыта с одного сервера, ходы идут с другого — например, отладочный перезапустили без
   // SB_DEBUG) в списке капитанов честно печаталось «💰null».
-  const goldOf = p => (p.gold === null || p.gold === undefined) ? '' : `💰${p.gold} · `;
+  // Значок — отдельным элементом: вплотную к числу («💰1342») читается хуже, пары пикселей
+  // хватает. Пробелом не обойтись: в разных шрифтах он то шире, то уже нужного.
+  const goldOf = p => (p.gold === null || p.gold === undefined) ? '' : `${money('💰', p.gold)} · `;
+  // 🪙 вторая валюта — всегда сразу правее золота. Сервер прячет её так же, как казну
+  // (чужой кошелёк не наш), поэтому и здесь молчим, когда пришёл null.
+  const coinsOf = p => (p.coins === null || p.coins === undefined) ? '' : `${money('🪙', p.coins)} · `;
 
   // игроки
   $('#playersList').innerHTML = state.players.map((p, i) => {
     const show = state.status !== 'lobby' && canSee(i);
-    const stats = show ? `${goldOf(p)}🏠${p.portHp}` : '';
+    const stats = show ? `${goldOf(p)}${coinsOf(p)}${money('🏠', p.portHp)}` : '';
     // под туманом статус врага — на момент последней разведки (не крестим вслепую)
     const aliveShown = (fogActive() && i !== myIdx()) ? (fogLastSeen[i]?.alive ?? true) : p.alive;
     return `<div class="player-row ${aliveShown ? '' : 'dead'} ${state.status === 'active' && i === state.turn.idx ? 'current' : ''}">
@@ -3142,7 +3186,8 @@ function renderShop() {
   $('#duelRules')?.classList.toggle('hidden', state.phase !== 'buy');
   $('#shopDesc')?.classList.toggle('hidden', state.phase === 'buy');
   const total = Object.entries(basket).reduce((s, [t, n]) => s + ST(t).price * n, 0);
-  $('#shopGold').textContent = `💰 ${me.gold}`;
+  $('#shopGold').innerHTML = money('💰', me.gold);
+  $('#shopCoins').innerHTML = me.coins != null ? money('🪙', me.coins) : '';
   $('#shopList').innerHTML = Object.entries(state.shipTypes).filter(([, st]) => !st.npc && !st.cheat && (!state.duel || !st.fishing)).map(([type, st]) => {
     const cantAddMore = total + st.price > me.gold;
     return `
@@ -3635,6 +3680,9 @@ function initDebug() {
     maybeAutoPass();          // если сейчас мой ход — сдаём его сразу, не дожидаясь стейта
   });
   $('#dbgGold').addEventListener('click', () => socket.emit('debug', { kind: 'gold', amount: 500 }, r => {
+    if (!r?.ok) debugLine('❌ ' + (errText(r) || 'не вышло'));
+  }));
+  $('#dbgCoins').addEventListener('click', () => socket.emit('debug', { kind: 'coins', amount: 10 }, r => {
     if (!r?.ok) debugLine('❌ ' + (errText(r) || 'не вышло'));
   }));
   $('#debugClear').addEventListener('click', () => { $('#debugLog').innerHTML = ''; debugRows = 0; $('#debugCount').textContent = ''; });

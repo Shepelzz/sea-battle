@@ -1,7 +1,7 @@
 // Прогон всех логических тестов (без e2e test-flow, которому нужен запущенный сервер).
 import { spawnSync } from 'node:child_process';
 
-const tests = ['test-i18n.mjs', 'test-docs.mjs', 'test-og.mjs', 'test-log.mjs', 'test-config.mjs', 'test-broadside.mjs', 'test-pirates.mjs', 'test-balance2.mjs', 'test-bot.mjs', 'test-multimove.mjs', 'test-cheats.mjs', 'test-shipyard.mjs', 'test-repair.mjs', 'test-modes.mjs', 'test-auth.mjs', 'test-duel.mjs', 'test-lobby.mjs', 'test-stats.mjs', 'test-storm.mjs', 'test-islands.mjs'];
+const tests = ['test-i18n.mjs', 'test-docs.mjs', 'test-og.mjs', 'test-log.mjs', 'test-config.mjs', 'test-broadside.mjs', 'test-pirates.mjs', 'test-coins.mjs', 'test-balance2.mjs', 'test-bot.mjs', 'test-multimove.mjs', 'test-cheats.mjs', 'test-shipyard.mjs', 'test-repair.mjs', 'test-modes.mjs', 'test-auth.mjs', 'test-duel.mjs', 'test-lobby.mjs', 'test-stats.mjs', 'test-storm.mjs', 'test-islands.mjs'];
 let failed = 0;
 for (const t of tests) {
   const r = spawnSync('node', [t], { encoding: 'utf8' });

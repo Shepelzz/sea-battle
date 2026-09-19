@@ -35,6 +35,7 @@
         <button class="small" id="dbgEyes" title="Показать, что видит и о чём думает бот">👁 глазами бота</button>
         <button class="small" id="dbgPass" title="Пропускать мои ходы автоматически — боты играют сами">⏭ пропускать ходы</button>
         <button class="small" id="dbgGold" title="+500 золота себе">💰 +500</button>
+        <button class="small" id="dbgCoins" title="+10 монет себе">🪙 +10</button>
         <span class="debug-hint" id="dbgHint"></span>
       </div>
       <div class="toasts" id="toasts"></div>
@@ -82,7 +83,10 @@
           <button class="small primary" id="btnShop" data-i18n-attr="title:game.btnShop" title="🛒 Верфь">🛒 <span class="btn-label" data-i18n="game.btnShopLabel">Верфь</span></button>
           <button class="small" id="btnSkip" data-i18n="game.btnSkip">⏭ Пропустить</button>
           <button class="small" id="btnNudge" data-i18n="game.btnNudge">📯 Поторопить</button>
-          <span class="gold-chip" id="myGold" data-i18n-attr="title:game.goldTitle" title="Твоя казна"></span>
+          <span class="purse" id="purse">
+            <span class="gold-chip" id="myGold" data-i18n-attr="title:game.goldTitle" title="Твоя казна"></span>
+            <span class="gold-chip coin-chip" id="myCoins" data-i18n-attr="title:game.coinsTitle" title="Монеты за пиратов"></span>
+          </span>
         </div>
         <button class="small" id="infoBtn" data-i18n-attr="title:game.infoTitle" title="Инфобаза — флот, правила, обучение">📖</button>
       </div>
@@ -179,6 +183,7 @@
       <div style="display:flex; align-items:center; gap:10px">
         <h2 style="margin:0; flex:1" data-i18n="game.shop.title">🛒 Верфь</h2>
         <span class="gold-chip" id="shopGold"></span>
+        <span class="gold-chip coin-chip" id="shopCoins" data-i18n-attr="title:game.coinsTitle" title="Монеты за пиратов"></span>
         <button class="small" id="shopClose" data-i18n="common.close">✖</button>
       </div>
       <div class="duel-rules hidden" id="duelRules" data-i18n-html="game.shop.duelRules"><b>⚔️ Дуэль 1 на 1.</b> Скупись на <b>ВСЁ</b> золото — пока можно купить хоть один корабль, в бой не выйдешь. Карта маленькая, без баз и островов: твой флот встанет в ряд на твоей стороне. Дохода за ход нет — золото только за пиратов (за них можно докупиться в бою). Побеждает тот, кто <b>разнесёт весь флот соперника</b>. Готов — жми «⚔️ В бой!».</div>

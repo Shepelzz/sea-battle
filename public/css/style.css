@@ -134,13 +134,17 @@ tr:first-child td { font-weight: bold; }
 .panel-head { display: flex; align-items: center; gap: 8px; }
 .panel-head .turn-banner { font-size: 1.25rem; padding: 6px 10px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gold-chip { white-space: nowrap; font-weight: bold; font-size: 17px; }
+/* воздух между значком (💰/🪙/🏠) и числом — вплотную они склеиваются в одну кашу */
+.mi { margin-right: 2px; }
 .gold-chip:empty { display: none; }
 /* 💰 казна в ряду действий, сразу за «Пропустить». По умолчанию скрыта: на широком экране деньги
    и так видны в списке капитанов, дублировать незачем. Показывается ТОЛЬКО на узком экране и
    ТОЛЬКО когда панель свёрнута — там её тело (а с ним и список капитанов) спрятано, и казну было
    не посмотреть, не открыв меню или верфь. Правило показа — в медиазапросе ниже: класс .collapsed
    вешается при загрузке по ширине и остаётся висеть, если окно потом растянули. */
-#actionsRow .gold-chip { display: none; flex: none; align-self: center; }
+/* Кошелёк — золото и 🪙 монеты одним блоком: переносится только целиком, монеты всегда
+   остаются правее золота. Порознь они на узком экране разъезжались по разным строкам. */
+#actionsRow .purse { display: none; flex: none; align-self: center; align-items: center; gap: 6px; white-space: nowrap; }
 #panelToggle { display: none; }
 #actionsRow { display: flex; flex-wrap: wrap; gap: 8px; }
 #actionsRow.hidden { display: none; }
@@ -696,8 +700,9 @@ aside.panel {
     box-shadow: 0 -4px 14px rgba(43, 58, 85, .18);
   }
   aside.panel.collapsed #panelBody { display: none; }
-  /* 💰 …а казна вместо него встаёт в ряд действий, рядом с «Пропустить» — на виду и под рукой */
-  aside.panel.collapsed #actionsRow .gold-chip:not(:empty) { display: inline; }
+  /* 💰 …а кошелёк вместо него встаёт в ряд действий, рядом с «Пропустить» — на виду и под рукой.
+     Класс .on вешает клиент: обёртка не бывает :empty (внутри элементы), поэтому пустоту не поймать стилями. */
+  aside.panel.collapsed #actionsRow .purse.on { display: inline-flex; }
   #panelToggle { display: inline-block; }
   .panel-head .turn-banner { font-size: 1.1rem; padding: 5px 8px; }
   /* действия с кораблём — сверху по умолчанию; .at-bottom = снизу (зависит от того, в какой

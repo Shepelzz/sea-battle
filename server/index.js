@@ -829,6 +829,13 @@ io.on('connection', socket => {
         game.players[pIdx].gold += Math.max(-9999, Math.min(9999, +op.amount || 0));
         break;
       }
+      case 'coins': {                                 // 🪙 вторая валюта — выдать себе
+        const pIdx = game.players.findIndex(p => p.id === myPid);
+        if (pIdx < 0) return ack?.({ ok: false, error: 'err.notInGame' });
+        const p = game.players[pIdx];
+        p.coins = Math.max(0, (p.coins || 0) + Math.max(-9999, Math.min(9999, +op.amount || 0)));
+        break;
+      }
       case 'port': {                                  // прочность порта игрока (проверка осады)
         const p = game.players[op.playerIdx];
         if (!p) return ack?.({ ok: false, error: 'err.playerNotFound' });

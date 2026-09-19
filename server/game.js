@@ -12,7 +12,7 @@ import {
   OUTPOST_LEVELS, OUTPOST_RADIUS, OUTPOST_BUILD_REACH,
   FISH_DRIFT_PER_TURN, FISH_HOME_RADIUS, FISH_MIN_GAP, FISH_BASE_GAP,
   MAP_EDGE_MARGIN, ISLAND_BLOCK_GAP, SPAWN_FAN_N, SPAWN_FAN_RINGS, SPAWN_FAN_R0, SPAWN_FAN_RING_STEP,
-  PIRATE, PIRATE_MAX, PIRATE_ENGAGE_MULT, PIRATE_MIN_LIFETIME, PIRATE_STEP_MIN,
+  PIRATE, PIRATE_MAX, PIRATE_ENGAGE_MULT, PIRATE_MIN_LIFETIME, PIRATE_STEP_MIN, pirateCoins,
   PIRATE_DESPAWN_CHANCE, PIRATE_MOVE_CHANCE, PIRATE_BOSS_CHANCE, PIRATE_BOSS_HP,
   PIRATE_BOUNTY_MIN, PIRATE_BOUNTY_RAND, PIRATE_BOUNTY_STEP,
   PIRATE_BOSS_BOUNTY_MIN, PIRATE_BOSS_BOUNTY_RAND, PIRATE_BOSS_BOUNTY_STEP,
@@ -143,7 +143,7 @@ export function addPlayer(game, playerId, nick, color = null) {
   game.players.push({
     id: playerId, nick,
     color: pickColor(game, color),
-    gold: modeStartGold(game), portHp: PORT_HP, // дезматч даёт больше золота на старте (режим)
+    gold: modeStartGold(game), coins: 0, portHp: PORT_HP, // дезматч даёт больше золота на старте (режим)
     alive: true, placement: null,
     stats: newStats()
   });
@@ -622,12 +622,17 @@ function sinkShip(game, ship, killer) {
   });
   if (ship.owner === -1) {
     killer.gold += ship.bounty;
+    // 🪙 вторая валюта: за босса две монеты, за обычного пирата одна. Копится на игроке,
+    // в stats не идёт (это кошелёк, а не статистика матча) и в лидерборд не попадает.
+    const coins = pirateCoins(ship.boss);
+    killer.coins = (killer.coins || 0) + coins;   // || 0 — партии, сохранённые до ввода валюты
     killer.stats.shipsSunk++; killer.stats.goldCollected += ship.bounty;  // общий зачёт (рекап/сим)
     killer.stats.npcSunk++;   killer.stats.npcGold += ship.bounty;        // …но НПС → из лидерборда вычтется
     pushEvent(game, { type: 'gold', x: ship.x, y: ship.y, amount: ship.bounty });
+    pushEvent(game, { type: 'coin', x: ship.x, y: ship.y, amount: coins }); // 🪙 своя всплывашка
     earn(game, killer, ship.bounty, 'bounty');
     logEvent(game,
-      L('pirateSunk', { nick: killer.nick, gold: ship.bounty }),
+      L('pirateSunk', { nick: killer.nick, gold: ship.bounty, coins }),
       L('pirateSunkFog', { nick: killer.nick }), 'battle');
     return;
   }
@@ -1497,6 +1502,8 @@ export function publicState(game, viewerPid) {
       id: p.id, nick: p.nick, color: p.color,
       // 🐞 в отладке казна видна у всех — иначе не разобрать, почему бот не покупает
       gold: (reveal || DEBUG || p.id === viewerPid) ? p.gold : null,
+      // 🪙 монеты прячем ровно как золото: чужой кошелёк — не твоё дело
+      coins: (reveal || DEBUG || p.id === viewerPid) ? (p.coins || 0) : null,
       portHp: p.portHp, alive: p.alive, placement: p.placement,
       ready: p.ready || false,                 // дуэль: собрал ли флот в фазе закупки
       stats: p.stats, isBot: p.isBot || false

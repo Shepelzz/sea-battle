@@ -202,7 +202,7 @@
       "duelRules": "<b>⚔️ A 1v1 duel.</b> Spend <b>ALL</b> your gold — as long as you can still afford a ship, you can't sail out. The map is small, with no bases or islands: your fleet lines up on your side. There is no income per turn — gold comes only from pirates (you can buy more ships mid-fight with it). The winner is the one who <b>wipes out the rival fleet</b>. Ready — hit \"⚔️ To battle!\".",
       "desc": "New ships appear next to your port. Buying several counts as one action per turn.",
       "buy": "Buy",
-      "price": "{{gold}} gold",
+      "price": "{{gold}} 💰",
       "total": "Total: {{total}} of {{gold}} gold",
       "pick": "Pick ships with the \"+\" button",
       "buyFor": "Buy for {{total}} gold",
@@ -330,7 +330,8 @@
     "hintWait": "Waiting for {{nick}} to move…",
     "turnTimeLeft": "⏱ {{time}} until the turn ends",
     "goldTitle": "Your treasury",
-    "btnShopLabel": "Shipyard"
+    "btnShopLabel": "Shipyard",
+    "coinsTitle": "Coins from pirates"
   },
   "wiki": {
     "goal": {
@@ -427,7 +428,7 @@
     "fish": "Put a <b>longboat</b> in this <b>🐟 fishing zone</b> — it will earn gold every turn by itself, and it costs no action.",
     "loot": "And this is a <b>treasure island</b> 💰 — bring any ship right up to it and press <b>\"Collect\"</b> to take the gold.",
     "outpost": "⛺ A looted island is already a <b>foothold</b>: bring a ship close → <b>\"⛺ Outpost\"</b>. After that click the building and upgrade it: a 🏪 <b>Trading post</b> repairs ships nearby, a 🏰 <b>Fort</b> adds a <b>shore gun</b> and more gold. Other players' buildings can only be broken by the 🎯 <b>mortar</b>.",
-    "pirates": "<b>Pirates</b> 🏴‍☠️ roam the sea — sink them and take the bounty. And a fat <b>👑 boss</b> carries a big payout! But careful: pirates shoot back.",
+    "pirates": "<b>Pirates</b> 🏴‍☠️ roam the sea — sink them and take the bounty. And a fat <b>👑 boss</b> carries a big payout! But careful: pirates shoot back. On top of gold they drop <b>🪙 coins</b>: one for a regular pirate, two for a boss. Save them up — there will be something to spend them on.",
     "goal": "The goal is to <b>destroy your rival's port</b>. Bring your fleet up and shell their base. Good luck, captain! 🏴‍☠️"
   },
   "ship": {
@@ -655,7 +656,7 @@
     "fortShotPirate": "🏰 {{nick}}'s fort fires at the pirates (−{{dmg}} HP)",
     "fortShotShip": "🏰 {{nick}}'s fort fires — target: {{ship}} ({{foe}}), −{{dmg}} HP",
     "fortShotFog": "🏰 {{nick}}'s fort fired",
-    "pirateSunk": "💥 A pirate ship is sunk! {{nick}} takes the {{gold}} gold bounty",
+    "pirateSunk": "💥 A pirate ship is sunk! {{nick}} takes the {{gold}} gold bounty and {{coins}} 🪙",
     "pirateSunkFog": "💥 {{nick}} sank a pirate ship",
     "shipSunk": "💥 {{owner}} loses a ship: {{ship}} — sunk by {{killer}}",
     "shipSunkLoot": "💥 {{owner}} loses a ship: {{ship}} — sunk by {{killer}}, who loots {{gold}} gold from the wreck",
