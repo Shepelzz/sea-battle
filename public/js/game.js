@@ -1493,7 +1493,10 @@ function render(canvasOnly) {
       const col = state.players[op.owner]?.color || '#666';
       if (op.owner === myIdx()) // радиус перков — только своих (чужие не палим детально)
         dashedCircle(isl.x, isl.y, state.outposts?.radius || 240, col + '66', 1.2);
-      SBIcons.text(ctx, def.icon, sx(isl.x), sy(isl.y) + 5);
+      // Постройку рисуем в полтора раза крупнее клада: по ней читают уровень острова и чей он,
+      // а значок клада рядом мельче — иначе они спорят за внимание.
+      // draw() кладёт значок ровно по центру, поэтому сдвиг под базовую линию тут не нужен.
+      SBIcons.draw(ctx, def.icon, sx(isl.x), sy(isl.y), Math.max(18, 27 * view.scale));
       // флажок владельца над постройкой
       const fx0 = sx(isl.x) + 10 * view.scale, fy0 = sy(isl.y) - 16 * view.scale;
       ctx.strokeStyle = '#2b3a55'; ctx.lineWidth = 1.4;

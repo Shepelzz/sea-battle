@@ -197,8 +197,13 @@
   // Значок сам по себе, вписанный в квадрат size с центром в (x, y).
   function draw(ctx, ch, x, y, size) {
     const img = imgOf(ch);
-    if (ready(img)) ctx.drawImage(img, x - size / 2, y - size / 2, size, size);
-    else { const f = ctx.font; ctx.font = `${size}px serif`; ctx.fillText(ch, x, y); ctx.font = f; }
+    if (ready(img)) return ctx.drawImage(img, x - size / 2, y - size / 2, size, size);
+    // картинка ещё не догрузилась — рисуем системный символ, но тоже ПО ЦЕНТРУ,
+    // иначе кадр-другой значок прыгает относительно своего места
+    const f = ctx.font, b = ctx.textBaseline;
+    ctx.font = `${size}px serif`; ctx.textBaseline = 'middle';
+    ctx.fillText(ch, x, y);
+    ctx.font = f; ctx.textBaseline = b;
   }
 
   // ─── КЛАССЫ СУДОВ ──────────────────────────────────────────────────────────

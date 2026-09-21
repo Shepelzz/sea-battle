@@ -1,5 +1,5 @@
 {
- "generated": 1790009694959,
+ "generated": 1790012207954,
  "icons": [
   {
    "char": "⚓",
@@ -160,13 +160,13 @@
     },
     {
      "src": "js/game.js",
-     "line": 1578,
+     "line": 1581,
      "text": "SBIcons.text(ctx, '⚓', sx(s.x), sy(s.y) - ((SHIP_LEN[s.type] || 46) * 0.5 + 14) * view.scale);",
      "canvas": true
     },
     {
      "src": "js/game.js",
-     "line": 3083,
+     "line": 3086,
      "text": "const movesTag = showMoves ? ` ⚓${movesLeft()}/${movesPerTurn()}` : '';",
      "canvas": false
     },
@@ -333,25 +333,25 @@
     },
     {
      "src": "js/game.js",
-     "line": 1543,
+     "line": 1546,
      "text": "drawBroadsideSectors(sel);                 // 💥 сектора-трапеции бортов (наводимый — красный)",
      "canvas": false
     },
     {
      "src": "js/game.js",
-     "line": 2693,
+     "line": 2696,
      "text": "$('#btnBroadside').classList.toggle('hidden', !canBroadside(sel)); // 💥 Залп",
      "canvas": false
     },
     {
      "src": "js/game.js",
-     "line": 2766,
+     "line": 2769,
      "text": "key: 'broadside', icon: '💥', label: t('game.wheel.broadside'),",
      "canvas": false
     },
     {
      "src": "js/game.js",
-     "line": 2955,
+     "line": 2958,
      "text": "$('#btnBroadside').addEventListener('click', () => { mode = 'broadside'; Sound.play('click'); render(); }); //",
      "canvas": false
     }
@@ -500,7 +500,7 @@
     },
     {
      "src": "js/game.js",
-     "line": 2790,
+     "line": 2793,
      "text": "key: 'convoy', icon: '⛵', label: t('game.wheel.convoy'),",
      "canvas": false
     },
@@ -619,43 +619,43 @@
     },
     {
      "src": "js/game.js",
-     "line": 1513,
+     "line": 1516,
      "text": "SBIcons.text(ctx, isl.looted ? '✖' : '💰', sx(isl.x), sy(isl.y) + 5);",
      "canvas": true
     },
     {
      "src": "js/game.js",
-     "line": 2235,
+     "line": 2238,
      "text": "SBIcons.text(ctx, `💰${s.bounty}`, px, py + L * 0.62 + 16 * k);",
      "canvas": true
     },
     {
      "src": "js/game.js",
-     "line": 2796,
+     "line": 2799,
      "text": "if (canShipCollect(sel)) acts.push({ key: 'collect', icon: '💰', label: t('game.wheel.collect'), off: committe",
      "canvas": false
     },
     {
      "src": "js/game.js",
-     "line": 3098,
+     "line": 3101,
      "text": "$('#myGold').innerHTML = purseOn ? money('💰', wallet.gold) : '';",
      "canvas": false
     },
     {
      "src": "js/game.js",
-     "line": 3123,
+     "line": 3126,
      "text": "const goldOf = p => (p.gold === null || p.gold === undefined) ? '' : `${money('💰', p.gold)} · `;",
      "canvas": false
     },
     {
      "src": "js/game.js",
-     "line": 3204,
+     "line": 3207,
      "text": "$('#shopGold').innerHTML = money('💰', me.gold);",
      "canvas": false
     },
     {
      "src": "js/game.js",
-     "line": 3241,
+     "line": 3244,
      "text": "const cost = `${money('💰', def.gold)}${def.coins ? ' + ' + money('🪙', def.coins) : ''}`;",
      "canvas": false
     },
@@ -784,13 +784,13 @@
     },
     {
      "src": "js/game.js",
-     "line": 2232,
+     "line": 2235,
      "text": "SBIcons.text(ctx, s.boss ? '👑🏴‍☠️' : '🏴‍☠️', px, py - L * 0.5);",
      "canvas": true
     },
     {
      "src": "js/game.js",
-     "line": 2232,
+     "line": 2235,
      "text": "SBIcons.text(ctx, s.boss ? '👑🏴‍☠️' : '🏴‍☠️', px, py - L * 0.5);",
      "canvas": true
     },
@@ -909,31 +909,31 @@
     },
     {
      "src": "js/game.js",
-     "line": 2691,
+     "line": 2694,
      "text": "$('#btnFire').classList.toggle('hidden', !canMortar(sel));     // 🎯 Мортира — фрегат/линкор",
      "canvas": false
     },
     {
      "src": "js/game.js",
-     "line": 2773,
+     "line": 2776,
      "text": "key: 'mortar', icon: '🎯', label: t('game.wheel.mortar'),",
      "canvas": false
     },
     {
      "src": "js/game.js",
-     "line": 2953,
+     "line": 2956,
      "text": "$('#btnFire').addEventListener('click', () => { mode = 'attack'; Sound.play('click'); render(); });   // 🎯 Мо",
      "canvas": false
     },
     {
      "src": "js/game.js",
-     "line": 2990,
+     "line": 2993,
      "text": "<span class=\"st\">${st.price}з · ❤️${st.hp} · ${power} · 🎯${(st.fireRange / 40).toFixed(1)} · 🧭${(st.move / 4",
      "canvas": false
     },
     {
      "src": "js/game.js",
-     "line": 3220,
+     "line": 3223,
      "text": "<span title=\"${t(st.repairer ? 'game.ship.healRange' : 'game.ship.fireRange')}\">🎯 ${t('game.cells', { n: (st.",
      "canvas": false
     }
@@ -1052,13 +1052,13 @@
     },
     {
      "src": "js/game.js",
-     "line": 2987,
+     "line": 2990,
      "text": "const power = st.repairer ? t('game.fleet.repairer') : (cannons ? t('game.fleet.volley', { dmg: st.dmg }) : `⚔",
      "canvas": false
     },
     {
      "src": "js/game.js",
-     "line": 3219,
+     "line": 3222,
      "text": ": `<span title=\"${t('game.ship.dmgTitle')}\">⚔️ ${st.dmg}</span>`}",
      "canvas": false
     }
@@ -1160,7 +1160,7 @@
     },
     {
      "src": "js/game.js",
-     "line": 3223,
+     "line": 3226,
      "text": "${st.portBonus ? `<span title=\"${t('game.ship.portTitle', { x: st.portBonus })}\">🏰 ×${st.portBonus}</span>` :",
      "canvas": false
     },
@@ -1256,19 +1256,19 @@
     },
     {
      "src": "js/game.js",
-     "line": 2707,
+     "line": 2710,
      "text": "$('#btnRecharge').classList.toggle('hidden', !canShipRecharge(sel)); // 🔧 Пополнить (у базы)",
      "canvas": false
     },
     {
      "src": "js/game.js",
-     "line": 2807,
+     "line": 2810,
      "text": "if (canShipRecharge(sel)) acts.push({ key: 'recharge', icon: '🔧', label: t('game.wheel.recharge'), off: commi",
      "canvas": false
     },
     {
      "src": "js/game.js",
-     "line": 3032,
+     "line": 3035,
      "text": "$('#btnRecharge').addEventListener('click', () => sendAction({ type: 'recharge', shipId: selectedShipId })); /",
      "canvas": false
     },
@@ -1367,13 +1367,13 @@
     },
     {
      "src": "js/game.js",
-     "line": 2990,
+     "line": 2993,
      "text": "<span class=\"st\">${st.price}з · ❤️${st.hp} · ${power} · 🎯${(st.fireRange / 40).toFixed(1)} · 🧭${(st.move / 4",
      "canvas": false
     },
     {
      "src": "js/game.js",
-     "line": 3221,
+     "line": 3224,
      "text": "<span title=\"${t('game.ship.moveRange')}\">🧭 ${t('game.cells', { n: (st.move / 40).toFixed(1) })}</span>",
      "canvas": false
     }
@@ -1448,19 +1448,19 @@
     },
     {
      "src": "js/game.js",
-     "line": 2692,
+     "line": 2695,
      "text": "$('#btnRepair').classList.toggle('hidden', !st.repairer);      // 🛟 Чинить",
      "canvas": false
     },
     {
      "src": "js/game.js",
-     "line": 2779,
+     "line": 2782,
      "text": "key: 'repair', icon: '🛟', label: t(noCharges ? 'game.wheel.noMaterials' : 'game.wheel.repair'),",
      "canvas": false
     },
     {
      "src": "js/game.js",
-     "line": 3218,
+     "line": 3221,
      "text": "? `<span title=\"${t('game.ship.healTitle')}\">🛟 +${Math.round(st.healFrac * 100)}% HP</span>`",
      "canvas": false
     },
@@ -1641,7 +1641,7 @@
     },
     {
      "src": "js/game.js",
-     "line": 2232,
+     "line": 2235,
      "text": "SBIcons.text(ctx, s.boss ? '👑🏴‍☠️' : '🏴‍☠️', px, py - L * 0.5);",
      "canvas": true
     }
@@ -1730,7 +1730,7 @@
     },
     {
      "src": "js/game.js",
-     "line": 1634,
+     "line": 1637,
      "text": "for (const isl of m.lootIslands || []) { // ⛺ чужие аванпосты в радиусе мортиры — тоже цели",
      "canvas": false
     }
@@ -1885,13 +1885,13 @@
     },
     {
      "src": "js/game.js",
-     "line": 1513,
+     "line": 1516,
      "text": "SBIcons.text(ctx, isl.looted ? '✖' : '💰', sx(isl.x), sy(isl.y) + 5);",
      "canvas": true
     },
     {
      "src": "js/game.js",
-     "line": 3326,
+     "line": 3329,
      "text": "const rm = isCreator ? `<button class=\"small slot-x\" data-rmbot=\"${p.id}\" title=\"${t('game.lobby.rmBot')}\">✖</",
      "canvas": false
     }
@@ -2020,19 +2020,19 @@
     },
     {
      "src": "js/game.js",
-     "line": 3705,
+     "line": 3708,
      "text": "$('#dbgFog').textContent = debugFog === 'off' ? '🌫 туман: снят'",
      "canvas": false
     },
     {
      "src": "js/game.js",
-     "line": 3706,
+     "line": 3709,
      "text": ": debugFog === 'on' ? '🌫 туман: надет' : '🌫 туман';",
      "canvas": false
     },
     {
      "src": "js/game.js",
-     "line": 3706,
+     "line": 3709,
      "text": ": debugFog === 'on' ? '🌫 туман: надет' : '🌫 туман';",
      "canvas": false
     }
@@ -2159,7 +2159,7 @@
     },
     {
      "src": "js/game.js",
-     "line": 1718,
+     "line": 1721,
      "text": "if (state.wind && state.status === 'active') drawWindCompass(); // 🌬 компас ветра — во всех режимах",
      "canvas": false
     }
@@ -2204,25 +2204,25 @@
     },
     {
      "src": "js/game.js",
-     "line": 3100,
+     "line": 3103,
      "text": "$('#myCoins').innerHTML = (purseOn && state.perkShop && wallet.coins != null) ? money('🪙', wallet.coins) : ''",
      "canvas": false
     },
     {
      "src": "js/game.js",
-     "line": 3126,
+     "line": 3129,
      "text": "const coinsOf = p => (p.coins === null || p.coins === undefined) ? '' : `${money('🪙', p.coins)} · `;",
      "canvas": false
     },
     {
      "src": "js/game.js",
-     "line": 3207,
+     "line": 3210,
      "text": "$('#shopCoins').innerHTML = (perkShop && me.coins != null) ? money('🪙', me.coins) : '';",
      "canvas": false
     },
     {
      "src": "js/game.js",
-     "line": 3241,
+     "line": 3244,
      "text": "const cost = `${money('💰', def.gold)}${def.coins ? ' + ' + money('🪙', def.coins) : ''}`;",
      "canvas": false
     }
@@ -2310,31 +2310,31 @@
     },
     {
      "src": "js/game.js",
-     "line": 2263,
+     "line": 2266,
      "text": "if (DEBUG_ON && debugTool && pointers.size === 1) {   // 🐞 инструмент забирает клик себе",
      "canvas": false
     },
     {
      "src": "js/game.js",
-     "line": 3775,
+     "line": 3778,
      "text": "const send = (op, note) => socket.emit('debug', op, r => debugLine(r?.ok ? '🐞 ' + note : '❌ ' + (errText(r) |",
      "canvas": false
     },
     {
      "src": "js/game.js",
-     "line": 3778,
+     "line": 3781,
      "text": "if (!hit) return debugLine('🐞 лечить: мимо корабля');",
      "canvas": false
     },
     {
      "src": "js/game.js",
-     "line": 3792,
+     "line": 3795,
      "text": "if (!hit) return debugLine('🐞 перенести: сначала ткни в корабль');",
      "canvas": false
     },
     {
      "src": "js/game.js",
-     "line": 3795,
+     "line": 3798,
      "text": "return debugLine('🐞 взят ' + shipName(hit.type));",
      "canvas": false
     }
@@ -2374,19 +2374,19 @@
     },
     {
      "src": "js/game.js",
-     "line": 3136,
+     "line": 3139,
      "text": "<span>${p.isBot ? '🤖 ' : ''}${escapeHtml(nickOf(p))}${p.id === myId ? ' ' + t('game.youTag') : ''}</span>",
      "canvas": false
     },
     {
      "src": "js/game.js",
-     "line": 3327,
+     "line": 3330,
      "text": "return `<div class=\"slot filled\">${dot}🤖 ${escapeHtml(nickOf(p))}${rm}</div>`;",
      "canvas": false
     },
     {
      "src": "js/game.js",
-     "line": 3750,
+     "line": 3753,
      "text": ".map((p, i) => `<option value=\"${i}\">${escapeHtml(nickOf(p))}${p.isBot ? ' 🤖' : ''}</option>`).join('');",
      "canvas": false
     }
@@ -2532,7 +2532,7 @@
     },
     {
      "src": "js/game.js",
-     "line": 2983,
+     "line": 2986,
      "text": "st.fishing ? `🐟 +${st.fishing}` : '',",
      "canvas": false
     },
@@ -2661,19 +2661,19 @@
     },
     {
      "src": "js/game.js",
-     "line": 2990,
+     "line": 2993,
      "text": "<span class=\"st\">${st.price}з · ❤️${st.hp} · ${power} · 🎯${(st.fireRange / 40).toFixed(1)} · 🧭${(st.move / 4",
      "canvas": false
     },
     {
      "src": "js/game.js",
-     "line": 3131,
+     "line": 3134,
      "text": "const stats = show ? `${goldOf(p)}${coinsOf(p)}${money('❤️', p.portHp)}` : '';",
      "canvas": false
     },
     {
      "src": "js/game.js",
-     "line": 3216,
+     "line": 3219,
      "text": "<span title=\"${t('game.ship.hp')}\">❤️ ${st.hp}</span>",
      "canvas": false
     }
@@ -2793,7 +2793,7 @@
     },
     {
      "src": "js/game.js",
-     "line": 2652,
+     "line": 2655,
      "text": "btn.textContent = `⬆ ${next.icon} ${outpostName(op.level)} (${next.price})`;",
      "canvas": false
     }
@@ -3278,7 +3278,7 @@
     },
     {
      "src": "js/game.js",
-     "line": 3648,
+     "line": 3651,
      "text": "socket.on('chat', ({ author, text }) => hudToast(`💬 ${author}: ${text}`, 4000));",
      "canvas": false
     }
@@ -3302,13 +3302,13 @@
     },
     {
      "src": "js/game.js",
-     "line": 2967,
+     "line": 2970,
      "text": "$('#muteBtn').textContent = Sound.muted ? '🔇' : '🔊';",
      "canvas": false
     },
     {
      "src": "js/game.js",
-     "line": 2969,
+     "line": 2972,
      "text": "$('#muteBtn').textContent = Sound.toggleMute() ? '🔇' : '🔊';",
      "canvas": false
     }
@@ -3332,13 +3332,13 @@
     },
     {
      "src": "js/game.js",
-     "line": 3017,
+     "line": 3020,
      "text": "$('#panelToggle').textContent = collapsed ? '☰' : '✕';",
      "canvas": false
     },
     {
      "src": "js/game.js",
-     "line": 3442,
+     "line": 3445,
      "text": "$('#panelToggle').textContent = collapsed ? '☰' : '✕';",
      "canvas": false
     }
@@ -3356,19 +3356,19 @@
    "uses": [
     {
      "src": "js/game.js",
-     "line": 3726,
-     "text": "if (!r?.ok) debugLine('❌ ' + (errText(r) || 'не вышло'));",
-     "canvas": false
-    },
-    {
-     "src": "js/game.js",
      "line": 3729,
      "text": "if (!r?.ok) debugLine('❌ ' + (errText(r) || 'не вышло'));",
      "canvas": false
     },
     {
      "src": "js/game.js",
-     "line": 3775,
+     "line": 3732,
+     "text": "if (!r?.ok) debugLine('❌ ' + (errText(r) || 'не вышло'));",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 3778,
      "text": "const send = (op, note) => socket.emit('debug', op, r => debugLine(r?.ok ? '🐞 ' + note : '❌ ' + (errText(r) |",
      "canvas": false
     }
@@ -3627,7 +3627,7 @@
     },
     {
      "src": "js/game.js",
-     "line": 3384,
+     "line": 3387,
      "text": "setTimeout(() => { $('#copyBtn').textContent = '📋'; }, 1500);",
      "canvas": false
     }
@@ -3651,7 +3651,7 @@
     },
     {
      "src": "js/game.js",
-     "line": 3151,
+     "line": 3154,
      "text": "btnSkip.classList.toggle('hidden', !!state.rt);   // ⛈️ шторм: ходов нет — нечего пропускать",
      "canvas": false
     }
@@ -3669,13 +3669,13 @@
    "uses": [
     {
      "src": "js/game.js",
-     "line": 1717,
+     "line": 1720,
      "text": "drawCommandWheel(); // 🎛 штурвал выбранного корабля — поверх всего",
      "canvas": false
     },
     {
      "src": "js/game.js",
-     "line": 2573,
+     "line": 2576,
      "text": "wheelBornAt = performance.now(); // 🎛 штурвал раскрывается вокруг корабля",
      "canvas": false
     }
@@ -3693,13 +3693,13 @@
    "uses": [
     {
      "src": "js/game.js",
-     "line": 2967,
+     "line": 2970,
      "text": "$('#muteBtn').textContent = Sound.muted ? '🔇' : '🔊';",
      "canvas": false
     },
     {
      "src": "js/game.js",
-     "line": 2969,
+     "line": 2972,
      "text": "$('#muteBtn').textContent = Sound.toggleMute() ? '🔇' : '🔊';",
      "canvas": false
     }
@@ -3717,7 +3717,7 @@
    "uses": [
     {
      "src": "js/game.js",
-     "line": 3355,
+     "line": 3358,
      "text": "const medals = ['🥇', '🥈', '🥉', '4.'];",
      "canvas": false
     },
@@ -3741,7 +3741,7 @@
    "uses": [
     {
      "src": "js/game.js",
-     "line": 3355,
+     "line": 3358,
      "text": "const medals = ['🥇', '🥈', '🥉', '4.'];",
      "canvas": false
     },
@@ -3765,7 +3765,7 @@
    "uses": [
     {
      "src": "js/game.js",
-     "line": 3355,
+     "line": 3358,
      "text": "const medals = ['🥇', '🥈', '🥉', '4.'];",
      "canvas": false
     },
@@ -3926,7 +3926,7 @@
    "uses": [
     {
      "src": "js/game.js",
-     "line": 1902,
+     "line": 1905,
      "text": "ctx.fillText('👆', fx, fy + 2);",
      "canvas": true
     }
@@ -3944,7 +3944,7 @@
    "uses": [
     {
      "src": "js/game.js",
-     "line": 2645,
+     "line": 2648,
      "text": "$('#outpostTitle').textContent = `${def.icon} ${outpostName(op.level - 1)}${op.hp < def.hp ? ` · 🏚${op.hp}/${",
      "canvas": false
     }
@@ -3962,7 +3962,7 @@
    "uses": [
     {
      "src": "js/game.js",
-     "line": 3383,
+     "line": 3386,
      "text": "$('#copyBtn').textContent = '✔';",
      "canvas": false
     }
