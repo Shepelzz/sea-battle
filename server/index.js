@@ -280,6 +280,15 @@ function renameEverywhere(pid, nick) {
   return touched;
 }
 
+// Закрыть ЕЩЁ НЕ НАЧАТОЕ лобби: кто в нём открыт — на главную, запись стереть и из памяти,
+// и из базы (иначе закрытое лобби воскреснет при первом же рестарте сервера).
+function closeLobby(game) {
+  io.to('game:' + game.id).emit('lobbyClosed');
+  games.delete(game.id);
+  db.deleteGame(game.id);
+  broadcastLobbies();
+}
+
 // ⚡ «Полный вперёд»: запустить реалтайм-тик игры (движок в rt.js; рассылка/сохранение — наши)
 function armRt(game) {
   rtStart(game, { broadcast: broadcastState, save: g => db.saveGame(g) });
@@ -577,10 +586,19 @@ app.post('/api/games', (req, res) => {
   // Онлайн-баттл требует аккаунт (когда вход через Google настроен) — гостя не пускаем.
   if (googleClient && !accountPid)
     return res.status(401).json({ error: 'err.needGoogle', needAuth: true });
-  // одно открытое лобби на аккаунт: уже есть незавершённое — возвращаем в него, второе не плодим
-  for (const g of games.values())
-    if (g.status === 'lobby' && g.config?.listed && g.hostPid === pid && !lobbyExpired(g, Date.now()))
-      return res.json({ gameId: g.id, existing: true });
+  // Одно открытое лобби на аккаунт. Молча вернуть в старое нельзя: человек жмёт «Создать» с
+  // новыми настройками и не понимает, почему оказался в прежнем лобби со старыми. Поэтому
+  // сообщаем клиенту, что лобби уже есть, и ждём решения — вернуться туда или пересоздать.
+  const openLobby = [...games.values()].find(g =>
+    g.status === 'lobby' && g.config?.listed && g.hostPid === pid && !lobbyExpired(g, Date.now()));
+  if (openLobby) {
+    if (!req.body.replace)
+      return res.json({
+        gameId: openLobby.id, existing: true,
+        players: openLobby.players.length, max: openLobby.config.maxPlayers
+      });
+    closeLobby(openLobby);   // пересоздаём: старое закрываем, кто в нём сидел — на главную
+  }
   const nm = cleanNick(nick);
   if (!nm) return res.status(400).json({ error: 'err.needNickToken' });
   const gmode = pickMode(req.body.gameMode);
@@ -787,9 +805,7 @@ io.on('connection', socket => {
     if (!game) return ack?.({ ok: false, error: 'err.noGame' });
     // хост вышел из ещё НЕ начатого лобби → закрываем лобби целиком (остальных выкидываем на главную)
     if (game.status === 'lobby' && game.hostPid === myPid) {
-      io.to('game:' + game.id).emit('lobbyClosed');
-      games.delete(game.id);
-      broadcastLobbies();
+      closeLobby(game);
       return ack?.({ ok: true, lobbyClosed: true });
     }
     const result = leaveGame(game, myPid);
@@ -810,9 +826,7 @@ io.on('connection', socket => {
     if (!participant) return ack?.({ ok: false, error: 'err.notYourGame' });
     if (game.status === 'lobby') {                    // ещё НЕ начатое лобби: закрыть может только создатель → удаляем
       if (game.hostPid !== pid) return ack?.({ ok: false, error: 'err.hostClosesOnly' });
-      io.to('game:' + game.id).emit('lobbyClosed');   // кто в нём открыт — на главную
-      games.delete(game.id); db.deleteGame(game.id);
-      broadcastLobbies();
+      closeLobby(game);
       return ack?.({ ok: true });
     }
     if (game.config?.listed) {                       // ОНЛАЙН: завершить может только хост

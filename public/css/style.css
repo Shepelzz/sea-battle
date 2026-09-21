@@ -433,6 +433,10 @@ aside.panel {
 .auth-badge button.small { padding: 3px 10px; font-size: 14px; }
 #loginBtnBox { display: flex; justify-content: center; min-height: 44px; }
 
+/* «Лобби уже открыто»: две кнопки в ряд, на узком экране — столбиком */
+.busy-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.busy-actions button { flex: 1 1 150px; }
+
 /* ── профиль капитана ── */
 .pf-head { display: flex; align-items: center; gap: 10px; margin: 10px 0 14px; }
 .pf-head .ava {

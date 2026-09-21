@@ -133,7 +133,13 @@
       "note": "Join someone else's battle and you land in their lobby. When the host starts, the game begins for everyone."
     },
     "footer": "© 2026 \"Sea Battle on squared paper\"",
-    "version": "version…"
+    "version": "version…",
+    "busy": {
+      "title": "⚓ You already have a lobby",
+      "text": "Your lobby is still open ({{players}} of {{max}}). You can't have two. Go back to it, or recreate it with the new settings — the old one then closes and anyone who joined returns to the home page.",
+      "go": "Back to the lobby",
+      "again": "Recreate"
+    }
   },
   "lobby": {
     "empty": "No open lobbies yet. Create one via \"🌐 Online\" — everyone will see it here!",

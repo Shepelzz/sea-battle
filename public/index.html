@@ -166,6 +166,23 @@
     </div>
   </div>
 
+  <!-- «Лобби уже открыто»: жмёшь «Создать», а незакрытое лобби ещё живо. Молча уводить в него
+       нельзя — новые настройки пропадут без объяснений, поэтому спрашиваем. -->
+  <div class="overlay hidden" id="busyOverlay">
+    <div class="note taped" style="max-width:400px">
+      <div style="display:flex; align-items:center; gap:10px">
+        <h2 style="margin:0; flex:1" data-i18n="home.busy.title">⚓ Лобби уже открыто</h2>
+        <button class="small" id="busyClose" data-i18n="common.close">✖</button>
+      </div>
+      <p class="muted" id="busyText" style="margin:6px 0 14px"></p>
+      <div class="busy-actions">
+        <button class="small primary" id="busyGo" type="button" data-i18n="home.busy.go">Вернуться в лобби</button>
+        <button class="small danger" id="busyNew" type="button" data-i18n="home.busy.again">Пересоздать</button>
+      </div>
+      <p class="error" id="busyError"></p>
+    </div>
+  </div>
+
   <!-- профиль капитана: ник, язык, статистика, выход. Тело рисует home.js по /api/profile -->
   <div class="overlay hidden" id="profileOverlay">
     <div class="note taped" style="max-width:420px">

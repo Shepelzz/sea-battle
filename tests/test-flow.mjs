@@ -1,5 +1,8 @@
 // E2E-прогон: создание игры, лобби, ходы, бой до победы.
 import { io } from 'socket.io-client';
+// Цифры берём из конфига, а не вписываем числом: стартовое золото уже менялось (250 → 350),
+// и тест молча разъехался с игрой — e2e в `npm test` не входит, ловить это было некому.
+import { START_GOLD, SHIP_TYPES } from '../server/config.js';
 
 const BASE = process.env.SB_URL || 'http://127.0.0.1:3456';
 const fail = msg => { console.error('❌ ' + msg); process.exit(1); };
@@ -7,7 +10,10 @@ const ok = msg => console.log('✅ ' + msg);
 
 const res = await fetch(BASE + '/api/games', {
   method: 'POST', headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ token: 'tokA', nick: 'Алиса', maxPlayers: 2, turnTimer: 0 })
+  // multiMove выключаем явно: вся хореография ниже рассчитана на ОДНО действие за ход.
+  // По умолчанию он включён, и тест разъехался с игрой, когда умолчание поменяли.
+  // Ход тремя судами проверяет свой набор — tests/test-multimove.mjs.
+  body: JSON.stringify({ token: 'tokA', nick: 'Алиса', maxPlayers: 2, turnTimer: 0, multiMove: false })
 });
 const { gameId } = await res.json();
 if (!gameId) fail('игра не создалась');
@@ -72,7 +78,7 @@ r = await emit(A, 'action', { type: 'buy', ships: ['barkas'] });
 if (!r.ok) fail('покупка не удалась: ' + r.error);
 await wait(200);
 const alice = A.state.players[0];
-if (alice.gold !== 250 - 60) fail('золото после покупки неверное: ' + alice.gold);
+if (alice.gold !== START_GOLD - SHIP_TYPES.barkas.price) fail('золото после покупки неверное: ' + alice.gold);
 if (A.state.ships.filter(s => s.owner === 0).length !== 4) fail('баркас не появился');
 ok('покупка работает, золото списано: ' + alice.gold);
 
@@ -81,7 +87,7 @@ r = await emit(B, 'action', { type: 'buy', ships: ['linkor'] });
 if (r.ok) fail('Боб купил линкор без денег');
 ok('покупка без денег отклонена');
 r = await emit(B, 'action', { type: 'skip' });
-if (!r.ok) fail('скип не сработал');
+if (!r.ok) fail('скип не сработал: ' + r.error);
 
 // движение: слишком далеко
 await wait(200);
@@ -245,6 +251,51 @@ const lb2 = await (await fetch(BASE + '/api/leaderboard')).json();
 const aliceAfter = lb2.find(r => r.nick === 'Алиса');
 if (!aliceAfter || aliceAfter.wins !== aliceWinsBefore + 1) fail('победа после сдачи не записалась в лидерборд');
 ok('результат сдачи записан в лидерборд');
+
+// === Одно открытое лобби на аккаунт ===
+// Раньше повторное «Создать» молча уводило в старое лобби — человек жал кнопку с новыми
+// настройками и не понимал, куда они делись. Теперь сервер сообщает, что лобби уже есть,
+// и ждёт решения; пересоздание (replace) закрывает старое вместе со всеми, кто в нём сидел.
+{
+  const mk = extra => fetch(BASE + '/api/games', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token: 'tokC', nick: 'Клара', maxPlayers: 4, turnTimer: 0, ...extra })
+  }).then(r => r.json());
+
+  const first = await mk({});
+  if (!first.gameId) fail('лобби Клары не создалось');
+  if (first.existing) fail('первое лобби не должно считаться уже открытым');
+
+  const again = await mk({ maxPlayers: 3 });
+  if (!again.existing || again.gameId !== first.gameId)
+    fail('повторное создание должно вернуть existing и адрес старого лобби');
+  if (again.players !== 1 || again.max !== 4)
+    fail(`в ответе не те цифры лобби: ${again.players} из ${again.max}`);
+  ok('второе лобби не плодится: сервер сообщает, что открытое уже есть');
+
+  // в лобби садится посторонний — при пересоздании его обязано выкинуть на главную
+  const guest = io(BASE);
+  await new Promise(r => guest.on('connect', r));
+  const j = await new Promise(r => guest.emit('join', { gameId: first.gameId, token: 'tokD', nick: 'Дуся' }, r));
+  if (!j.ok) fail('сосед не смог зайти в лобби: ' + j.error);
+  let kicked = false;
+  guest.on('lobbyClosed', () => { kicked = true; });
+
+  const fresh = await mk({ maxPlayers: 3, replace: true });
+  if (!fresh.gameId) fail('пересоздание не вернуло лобби');
+  if (fresh.gameId === first.gameId) fail('пересоздание вернуло то же самое лобби');
+  await wait(400);
+  if (!kicked) fail('при пересоздании соседа не выкинуло из старого лобби');
+  ok('пересоздание закрывает старое лобби и уводит соседа на главную');
+  guest.close();
+
+  // прибираем за собой: хост выходит → его лобби закрывается
+  const clara = io(BASE);
+  await new Promise(r => clara.on('connect', r));
+  await new Promise(r => clara.emit('join', { gameId: fresh.gameId, token: 'tokC', nick: 'Клара' }, r));
+  await new Promise(r => clara.emit('leave', r));
+  clara.close();
+}
 
 console.log('\n🎉 Все проверки пройдены');
 process.exit(0);

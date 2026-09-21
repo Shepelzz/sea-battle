@@ -471,7 +471,10 @@ $('#loginOverlay').addEventListener('click', e => { if (e.target.id === 'loginOv
   } catch { renderBadge(); /* без сервера-конфига всё равно показываем что есть */ }
 })();
 
-$('#createBtn').addEventListener('click', async () => {
+// Создание онлайн-баттла. replace=true — «пересоздать»: сервер закроет уже открытое лобби
+// и сделает новое. Ошибку показываем там, откуда пришли: из формы — под формой, из окна
+// «лобби уже открыто» — в самом окне.
+async function createOnline({ replace = false, errBox = '#createError' } = {}) {
   const nick = $('#nick').value.trim();
   if (!nick) { $('#createError').textContent = t('home.errNickFirst'); return; }
   localStorage.setItem('sb_nick', nick);
@@ -489,19 +492,35 @@ $('#createBtn').addEventListener('click', async () => {
         fog: $('#onlineFog').checked,
         multiMove: $('#onlineMulti').checked,
         realtime: $('#onlineRealtime').checked, // ⚡ «Полный вперёд» (бета) — реалтайм без ходов
-        gameMode: $('#onlineMode').dataset.mode
+        gameMode: $('#onlineMode').dataset.mode,
+        replace
       })
     });
     const data = await res.json();
     // редкий случай: cookie протухла между открытием редактора и созданием — попросим войти и повторим
     if (res.status === 401 && data.needAuth) { $('#createBtn').disabled = false; return openLogin(() => $('#createBtn').click()); }
     if (!res.ok) throw new Error(errText(data) || t('home.errServer'));
+    // старое лобби ещё живо — спрашиваем, вернуться в него или пересоздать
+    if (data.existing) { $('#createBtn').disabled = false; return openBusy(data); }
     location.href = '/game/' + data.gameId;
   } catch (e) {
-    $('#createError').textContent = e.message;
+    $(errBox).textContent = e.message;
     $('#createBtn').disabled = false;
   }
-});
+}
+$('#createBtn').addEventListener('click', () => createOnline());
+
+// --- окно «лобби уже открыто» ---
+function openBusy(data) {
+  $('#busyError').textContent = '';
+  $('#busyText').textContent = t('home.busy.text', { players: data.players, max: data.max });
+  $('#busyGo').onclick = () => { location.href = '/game/' + data.gameId; };
+  $('#busyNew').onclick = () => { closeBusy(); createOnline({ replace: true, errBox: '#createError' }); };
+  $('#busyOverlay').classList.remove('hidden');
+}
+function closeBusy() { $('#busyOverlay').classList.add('hidden'); }
+$('#busyClose').addEventListener('click', closeBusy);
+$('#busyOverlay').addEventListener('click', e => { if (e.target.id === 'busyOverlay') closeBusy(); });
 
 // --- против компьютера ---
 $('#botNick').value = localStorage.getItem('sb_nick') || '';
