@@ -112,7 +112,11 @@ function renderMyGames(list) {
         res => { if (!res || !res.ok) alert((res && errText(res)) || t('lobby.failed')); });
     }));
 }
-// бейдж с числом моих активных игр на кнопке «найти игру»
+// Бейдж на кнопке «найти игру»: сколько МОИХ штук ждёт внутри.
+// Считаем и начатые партии, и незакрытые лобби — своё и те, куда я уже зашёл. Раньше в счёт
+// шли только начатые (`myGameSummary` отсеивает всё, кроме status='active'), и открытое лобби
+// в цифре не появлялось вовсе, хотя в списке под кнопкой оно есть.
+// Пересечься эти два списка не могут: игра либо ещё лобби, либо уже активна.
 function updateLobbyBadge(n) {
   const b = $('#lobbyBadge');
   if (!b) return;
@@ -127,7 +131,7 @@ function renderBrowse(data) {
   const myGames = Array.isArray(data) ? [] : ((data && data.myGames) || []);
   renderMyGames(myGames);
   renderLobbies(lobbies);
-  updateLobbyBadge(myGames.length);
+  updateLobbyBadge(myGames.length + lobbies.filter(l => l.mine).length);
 }
 socket.on('lobbyList', renderBrowse);
 // Подписка на ленту лобби/«моих игр» — на КАЖДОМ (пере)подключении: и при загрузке (бейдж с числом игр),
