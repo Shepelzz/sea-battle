@@ -1,9 +1,9 @@
 // Проверка поведения ботов: прикрытие кормящих рыбаков и выбор БЕЗОПАСНОЙ рыбной зоны
 // (две жалобы: рыбак-смертник на круг + соло-атака без прикрытия).
-import { createGame, addPlayer, startGame, applyAction } from './server/game.js';
-import { movesBudget, OUTPOST_LEVELS, OUTPOST_BUILD_REACH, TRIBUTE_MIN, TRIBUTE_MAX, tributeFor, FISH_ZONE_CAP } from './server/config.js';
-import { chooseBotAction, boardValue } from './server/bot.js';
-import { SHIP_TYPES } from './server/ships.js';
+import { createGame, addPlayer, startGame, applyAction } from '../server/game.js';
+import { movesBudget, OUTPOST_LEVELS, OUTPOST_BUILD_REACH, TRIBUTE_MIN, TRIBUTE_MAX, tributeFor, FISH_ZONE_CAP } from '../server/config.js';
+import { chooseBotAction, boardValue } from '../server/bot.js';
+import { SHIP_TYPES } from '../server/ships.js';
 
 let ok = 0, fail = 0;
 const check = (n, c, extra = '') => { c ? (ok++, console.log('✓', n, extra)) : (fail++, console.error('✗', n, extra)); };

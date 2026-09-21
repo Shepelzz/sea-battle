@@ -3,7 +3,7 @@ import {
   createGame, addPlayer, publicState,
   lobbyTtlMs, lobbyExpired, LOBBY_TTL_PARTIAL_MS, LOBBY_TTL_FULL_MS,
   gameStale, GAME_STALE_MS, myGameSummary, lobbyTags
-} from './server/game.js';
+} from '../server/game.js';
 
 let ok = 0, fail = 0;
 const yes = (n, c) => { c ? ok++ : (fail++, console.error('✗', n, '— ожидалось true')); };

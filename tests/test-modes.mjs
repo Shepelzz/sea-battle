@@ -1,7 +1,7 @@
 // Игровые режимы: классика / дезматч / развитие. Прямые вызовы game.js + конфиг-хелперы.
-import { createGame, addPlayer, startGame, applyAction } from './server/game.js';
-import { GAME_MODES, enabledModes, DEFAULT_MODE, modeStartGold, modePeaceRounds, isPeace, START_GOLD } from './server/config.js';
-import { SHIP_TYPES } from './server/ships.js';
+import { createGame, addPlayer, startGame, applyAction } from '../server/game.js';
+import { GAME_MODES, enabledModes, DEFAULT_MODE, modeStartGold, modePeaceRounds, isPeace, START_GOLD } from '../server/config.js';
+import { SHIP_TYPES } from '../server/ships.js';
 
 let ok = 0, fail = 0;
 const check = (n, c, extra = '') => { c ? (ok++, console.log('✓', n, extra)) : (fail++, console.error('✗', n, extra)); };

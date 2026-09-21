@@ -1,8 +1,8 @@
 // Тесты режима «Дуэль»: маленькая карта без баз/островов, стартовая закупка флота на всё золото,
 // победа по уничтожению флота, нет дохода за ход, гейт фаз buy→battle.
-import { createGame, addPlayer, startGame, applyAction } from './server/game.js';
-import { duelFleetPlan } from './server/bot.js';
-import { SHIP_TYPES, cheapestShipPrice, isDuel } from './server/config.js';
+import { createGame, addPlayer, startGame, applyAction } from '../server/game.js';
+import { duelFleetPlan } from '../server/bot.js';
+import { SHIP_TYPES, cheapestShipPrice, isDuel } from '../server/config.js';
 
 let ok = 0, fail = 0;
 const eq = (n, g, w) => { JSON.stringify(g) === JSON.stringify(w) ? ok++ : (fail++, console.error(`✗ ${n}: got ${JSON.stringify(g)}, want ${JSON.stringify(w)}`)); };

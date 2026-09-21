@@ -83,8 +83,11 @@ export const DEBUG = /^(1|true|yes|on)$/i.test(process.env.SB_DEBUG || '');
 // Имена и описания режимов — в словарях клиента (ключи mode.<режим>.name / .desc), см. SHIP_TYPES выше.
 export const GAME_MODES = {
   classic:    { enabled: true },
-  deathmatch: { enabled: true, startGold: 3500, botAggro: true },
-  develop:    { enabled: true, peaceRounds: 10, peaceBaseKeepout: 427, baseFishZone: true, allFishZonesBig: true },
+  // Дезматч и Развитие временно спрятаны: механика цела и под тестами, но в выборе их нет —
+  // enabled:false убирает режим из списка на клиенте, а pickMode() в index.js сводит попытку
+  // создать партию в спрятанном режиме к классике. Вернуть = поставить enabled:true.
+  deathmatch: { enabled: false, startGold: 3500, botAggro: true },
+  develop:    { enabled: false, peaceRounds: 10, peaceBaseKeepout: 427, baseFishZone: true, allFishZonesBig: true },
   duel:       { enabled: true, duel: true, startGold: 4000, maxPlayers: 2, mapScale: 0.7 },
 };
 export const DEFAULT_MODE = 'classic';

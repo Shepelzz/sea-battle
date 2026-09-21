@@ -1,10 +1,10 @@
 // 🪜 Лестница сложности: кто кого бьёт. Парные партии, стороны чередуются.
-//   node ladder.mjs            # текущая версия
-//   node ladder.mjs --ref=HEAD # версия из git (для сравнения «до/после»)
+//   node tools/ladder.mjs            # текущая версия
+//   node tools/ladder.mjs --ref=HEAD # версия из git (для сравнения «до/после»)
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
-import { createGame, addPlayer, startGame, applyAction, forceFinish } from './server/game.js';
-import { movesBudget } from './server/config.js';
+import { createGame, addPlayer, startGame, applyAction, forceFinish } from '../server/game.js';
+import { movesBudget } from '../server/config.js';
 
 const arg = (n, d) => { const h = process.argv.find(a => a.startsWith(`--${n}=`)); return h ? h.split('=')[1] : d; };
 const PAIRS = +arg('pairs', 30);
@@ -14,9 +14,9 @@ let pick;
 if (REF) {
   const f = `server/bot-ladder-${process.pid}.js`;
   fs.writeFileSync(f, execFileSync('git', ['show', `${REF}:server/bot.js`], { encoding: 'utf8' }));
-  try { ({ chooseBotAction: pick } = await import('./' + f)); } finally { fs.rmSync(f, { force: true }); }
+  try { ({ chooseBotAction: pick } = await import('../' + f)); } finally { fs.rmSync(f, { force: true }); }
 } else {
-  ({ chooseBotAction: pick } = await import('./server/bot.js'));
+  ({ chooseBotAction: pick } = await import('../server/bot.js'));
 }
 
 const duel = (A, B) => {

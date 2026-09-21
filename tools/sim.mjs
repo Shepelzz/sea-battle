@@ -1,8 +1,8 @@
 // Симулятор для анализа геймплея: гоняет бои бот-против-бота,
 // собирает статистику и печатает сводку по балансу.
-import { createGame, addPlayer, startGame, applyAction } from './server/game.js';
-import { chooseBotAction, duelFleetPlan } from './server/bot.js';
-import { SHIP_TYPES } from './server/ships.js';
+import { createGame, addPlayer, startGame, applyAction } from '../server/game.js';
+import { chooseBotAction, duelFleetPlan } from '../server/bot.js';
+import { SHIP_TYPES } from '../server/ships.js';
 
 const TURN_CAP = 1500; // защита от вечной партии (в advance-ходах)
 

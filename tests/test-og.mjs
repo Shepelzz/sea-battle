@@ -6,9 +6,9 @@
 //   • в превью попал НИК — карточку видит любой, кому попала ссылка, включая ботов-пересыльщиков;
 //   • ключ описания есть не во всех словарях — игрок увидит голый `og.players`.
 import { readFileSync } from 'node:fs';
-import { ogHead, gameFacts, previewLang, absUrl, canonicalPath, OG_IMAGE, LANG_PARAM } from './server/og.js';
-import { DEFAULT_LANG, LANGS } from './server/i18n.js';
-import { createGame, addPlayer, startGame } from './server/game.js';
+import { ogHead, gameFacts, previewLang, absUrl, canonicalPath, OG_IMAGE, LANG_PARAM } from '../server/og.js';
+import { DEFAULT_LANG, LANGS } from '../server/i18n.js';
+import { createGame, addPlayer, startGame } from '../server/game.js';
 
 let ok = 0, fail = 0;
 const yes = (n, c) => { c ? ok++ : (fail++, console.error('✗', n)); };

@@ -1,8 +1,8 @@
 // Верфь: покупка НЕ должна отклоняться «нет места», пока у базы физически есть вода.
 // Регресс на баг «к концу партии (разросшийся флот за непотопляемым авианосцем) не купить флот,
 // хотя денег хватает» — раньше перебор спавна был всего 5 колец × 14 секторов = 70 точек у базы.
-import { createGame, addPlayer, startGame, applyAction, spawnCheatShip } from './server/game.js';
-import { START_GOLD } from './server/ships.js';
+import { createGame, addPlayer, startGame, applyAction, spawnCheatShip } from '../server/game.js';
+import { START_GOLD } from '../server/ships.js';
 
 let ok = 0, fail = 0;
 const check = (n, c, extra = '') => { c ? (ok++, console.log('✓', n, extra)) : (fail++, console.error('✗', n, extra)); };

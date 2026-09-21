@@ -8,7 +8,7 @@
 //
 // Он НЕ проверяет прозу: за смысл отвечает автор. Он держит цифры и пути.
 import { readFileSync, existsSync } from 'node:fs';
-import * as CFG from './server/config.js';
+import * as CFG from '../server/config.js';
 
 let ok = 0, fail = 0;
 const yes = (n, c) => { c ? ok++ : (fail++, console.error('✗', n)); };
@@ -21,7 +21,7 @@ const md = readFileSync(DOC, 'utf8');
 // ─── 1. Пути к файлам: всё, что упомянуто в `бэктиках`, должно существовать ───
 {
   const paths = new Set();
-  for (const m of md.matchAll(/`((?:server|public|test-|sim|ab-bot|ladder)[\w/.-]*\.(?:js|mjs|json|html|css|md))`/g))
+  for (const m of md.matchAll(/`((?:server|public|tests|tools|test-|sim|ab-bot|ladder)[\w/.-]*\.(?:js|mjs|json|html|css|md))`/g))
     paths.add(m[1]);
   yes('пути вообще упоминаются', paths.size >= 15);
   for (const p of paths) yes(`файл существует: ${p}`, existsSync(p));

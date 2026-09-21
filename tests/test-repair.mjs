@@ -1,7 +1,7 @@
 // Корабль-ремонтник: действие 'repair' чинит союзный корабль в радиусе (жёлтый луч),
 // сам не атакует, тратит один ход (как остальные). Прямые вызовы game.js.
-import { createGame, addPlayer, startGame, applyAction } from './server/game.js';
-import { SHIP_TYPES, REPAIR_CHARGES, REPAIR_DOCK_REACH } from './server/ships.js';
+import { createGame, addPlayer, startGame, applyAction } from '../server/game.js';
+import { SHIP_TYPES, REPAIR_CHARGES, REPAIR_DOCK_REACH } from '../server/ships.js';
 
 let ok = 0, fail = 0;
 const check = (n, c, extra = '') => { c ? (ok++, console.log('✓', n, extra)) : (fail++, console.error('✗', n, extra)); };

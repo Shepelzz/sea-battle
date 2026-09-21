@@ -4,12 +4,12 @@
 import {
   createGame, addPlayer, startGame, applyAction, publicState,
   driftFishZones, applyOutpostPerks, fishEarners
-} from './server/game.js';
+} from '../server/game.js';
 import {
   OUTPOST_LEVELS, OUTPOST_RADIUS, OUTPOST_BUILD_REACH, RT_OUTPOST_MS,
   FISH_DRIFT_PER_TURN, FISH_HOME_RADIUS, PORT_INCOME, SHIP_TYPES
-} from './server/config.js';
-import { tickOutposts, botThink } from './server/rt.js';
+} from '../server/config.js';
+import { tickOutposts, botThink } from '../server/rt.js';
 
 let ok = 0, fail = 0;
 const check = (n, c, extra = '') => { c ? (ok++, console.log('✓', n, extra)) : (fail++, console.error('✗', n, extra)); };

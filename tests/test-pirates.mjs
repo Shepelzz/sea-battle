@@ -1,6 +1,6 @@
 // Проверка новой логики пиратов (прямые вызовы game.js).
-import { createGame, addPlayer, startGame, applyAction } from './server/game.js';
-import { PIRATE, PIRATE_MAX, SHIP_TYPES, PIRATE_RESPAWN_DELAY } from './server/ships.js';
+import { createGame, addPlayer, startGame, applyAction } from '../server/game.js';
+import { PIRATE, PIRATE_MAX, SHIP_TYPES, PIRATE_RESPAWN_DELAY } from '../server/ships.js';
 
 let ok = 0, fail = 0;
 const check = (n, c, extra = '') => { c ? (ok++, console.log('✓', n, extra)) : (fail++, console.error('✗', n, extra)); };

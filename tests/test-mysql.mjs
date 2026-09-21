@@ -1,7 +1,7 @@
 // Прогон слоя db.js против локальной MySQL (docker sb-mysql на 33061).
 process.env.DATABASE_URL = 'mysql://root:root@127.0.0.1:33061/seabattle';
 
-const db = await import('./server/db.js');
+const db = await import('../server/db.js');
 let ok = 0, fail = 0;
 const check = (name, cond) => { if (cond) { ok++; console.log('✓', name); } else { fail++; console.error('✗', name); } };
 

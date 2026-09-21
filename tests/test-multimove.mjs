@@ -2,9 +2,9 @@
 // Тесты фиксируют: классика не сломана (одно действие = конец хода), бюджет ходов,
 // запрет ходить одним кораблём дважды, досрочное завершение, «бесплатные» покупка/сбор,
 // сброс счётчиков на новом ходу, выдачу movesPerTurn клиенту и учёт сходивших ботом.
-import { createGame, addPlayer, startGame, applyAction, publicState } from './server/game.js';
-import { chooseBotAction } from './server/bot.js';
-import { SHIP_TYPES, movesBudget, MOVES_PER_TURN, SHIP_ACTIONS, CONVOY_MAX, convoyCost, shipRank } from './server/config.js';
+import { createGame, addPlayer, startGame, applyAction, publicState } from '../server/game.js';
+import { chooseBotAction } from '../server/bot.js';
+import { SHIP_TYPES, movesBudget, MOVES_PER_TURN, SHIP_ACTIONS, CONVOY_MAX, convoyCost, shipRank } from '../server/config.js';
 
 let ok = 0, fail = 0;
 const check = (n, c, extra = '') => { c ? (ok++) : (fail++, console.error('✗', n, extra)); };

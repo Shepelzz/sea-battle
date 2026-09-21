@@ -3,20 +3,20 @@
 // Любая правка бота может сделать его СЛАБЕЕ — это уже случалось (щедрая стройка аванпостов
 // дала 3 победы против 9). Поэтому каждое изменение меряем, а не обсуждаем.
 //
-//   node ab-bot.mjs                      # 30 партий против версии из HEAD
-//   node ab-bot.mjs --games=60           # длиннее прогон — меньше шума
-//   node ab-bot.mjs --ref=HEAD~3         # сравнить с другой версией
-//   node ab-bot.mjs --level=mid          # уровень обоих ботов
-//   BOT_RISK_W=12 node ab-bot.mjs        # подбор веса-константы
+//   node tools/ab-bot.mjs                      # 30 партий против версии из HEAD
+//   node tools/ab-bot.mjs --games=60           # длиннее прогон — меньше шума
+//   node tools/ab-bot.mjs --ref=HEAD~3         # сравнить с другой версией
+//   node tools/ab-bot.mjs --level=mid          # уровень обоих ботов
+//   BOT_RISK_W=12 node tools/ab-bot.mjs        # подбор веса-константы
 //
 // Стороны чередуются по семенам: преимущество первого хода не должно решать исход.
 // Партия, упершаяся в лимит ходов, доигрывается forceFinish (победа по силе флота).
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { createGame, addPlayer, startGame, applyAction, forceFinish } from './server/game.js';
-import { chooseBotAction as NEW } from './server/bot.js';
-import { movesBudget } from './server/config.js';
+import { createGame, addPlayer, startGame, applyAction, forceFinish } from '../server/game.js';
+import { chooseBotAction as NEW } from '../server/bot.js';
+import { movesBudget } from '../server/config.js';
 
 const arg = (n, d) => {
   const hit = process.argv.find(a => a.startsWith(`--${n}=`));
@@ -33,7 +33,7 @@ const refFile = path.join('server', `bot-ref-${process.pid}.js`);
 fs.writeFileSync(refFile, execFileSync('git', ['show', `${REF}:server/bot.js`], { encoding: 'utf8' }));
 let OLD;
 try {
-  ({ chooseBotAction: OLD } = await import('./' + refFile.replace(/\\/g, '/')));
+  ({ chooseBotAction: OLD } = await import('../' + refFile.replace(/\\/g, '/')));
 } finally {
   fs.rmSync(refFile, { force: true });
 }

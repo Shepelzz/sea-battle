@@ -1,6 +1,6 @@
 // Сколько монет реально набегает за партию — бюджет, от которого зависит ценник любого перка.
-import { createGame, addPlayer, startGame, applyAction } from './server/game.js';
-import { chooseBotAction, duelFleetPlan } from './server/bot.js';
+import { createGame, addPlayer, startGame, applyAction } from '../server/game.js';
+import { chooseBotAction, duelFleetPlan } from '../server/bot.js';
 
 const TURN_CAP = 1500;
 function sim(nPlayers, level, mode) {

@@ -1,8 +1,8 @@
 // Лидерборд считает бой ТОЛЬКО против живых людей: урон/потопления/добыча по НПС
 // (пираты owner=-1 и игроки-боты) копятся в общих статах (для рекапа/сима), но в лидерборд НЕ идут.
-import { createGame, addPlayer, startGame, applyAction } from './server/game.js';
-import { resultRows } from './server/db.js';
-import { SHIP_TYPES } from './server/config.js';
+import { createGame, addPlayer, startGame, applyAction } from '../server/game.js';
+import { resultRows } from '../server/db.js';
+import { SHIP_TYPES } from '../server/config.js';
 
 let ok = 0, fail = 0;
 const yes = (n, c) => { c ? ok++ : (fail++, console.error('✗', n)); };

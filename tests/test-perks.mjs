@@ -5,14 +5,14 @@
 // иначе перк легко остаётся красивой строчкой в витрине, ничего не меняющей в бою.
 import {
   createGame, addPlayer, startGame, applyAction, publicState, applyOutpostPerks, applyBasePerks
-} from './server/game.js';
+} from '../server/game.js';
 import {
   PERKS, PERK_KEYS, hasPerk, perksEnabled, shipPrice, portReturnDmg, wreckLootFrac,
   windMoveMultFor, outpostMaxHp, portIncome, SHIP_TYPES, OUTPOST_LEVELS, PORT_RETURN_DMG,
   BATTERY_RETURN_DMG, MARKET_INCOME_MULT, GARRISON_HP_MULT, WAREHOUSE_INCOME,
   GRAPNELS_LOOT_FRAC, WRECK_LOOT_FRAC, SHIPYARD_DISCOUNT, DRYDOCK_HEAL, DRYDOCK_RADIUS, LIGHTHOUSE_EXTRA,
   fishIncomeFor, isInstantPerk, FISHERY_BONUS, PORT_REPAIR_FRAC, PORT_HP, isPerkHidden, shopPerks
-} from './server/config.js';
+} from '../server/config.js';
 
 let ok = 0, fail = 0;
 const yes = (n, c) => { c ? ok++ : (fail++, console.error('✗', n)); };

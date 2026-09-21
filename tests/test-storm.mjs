@@ -1,13 +1,13 @@
 // ⚡ «Полный вперёд» (реалтайм, бета) + 🌬 ветер во всех режимах.
 // Реалтайм: одновременные действия, движение по тикам, перезарядки, экономика по таймерам, бот.
 // Ветер: множитель дальности по курсу (каплевидный контур), дрейф между ходами, валидация хода.
-import { createGame, addPlayer, startGame, applyAction, publicState, terrainBlocked, sinkShip } from './server/game.js';
+import { createGame, addPlayer, startGame, applyAction, publicState, terrainBlocked, sinkShip } from '../server/game.js';
 import {
   GAME_MODES, isRealtime, realtimeAllowed, RT, SHIP_TYPES, PORT_INCOME, PIRATE,
   WIND_STRENGTH, windMoveMult, MORTAR_SHIPS, OUTPOST_LEVELS, isPeace, WRECK_LOOT_FRAC
-} from './server/config.js';
+} from '../server/config.js';
 const PIRATE_MOVE_EXPECT = PIRATE.move / RT.MOVE_SECONDS; // 80/5 = 16 px/с — скорость пирата
-import { tickMovement, tickEconomy, tickWind, windMult, botThink, pirateThink } from './server/rt.js';
+import { tickMovement, tickEconomy, tickWind, windMult, botThink, pirateThink } from '../server/rt.js';
 
 let ok = 0, fail = 0;
 const check = (n, c, extra = '') => { c ? (ok++, console.log('✓', n, extra)) : (fail++, console.error('✗', n, extra)); };
@@ -102,8 +102,8 @@ check('реалтайм доступен во ВСЕХ режимах', ['classi
   check('старт: карта и флоты на месте', g.status === 'active' && g.ships.filter(s => s.owner === 0).length === 3);
   const st = publicState(g, 'p0');
   check('publicState: rt-блок (часы/кулдауны) + общий wind', !!st.rt && typeof st.rt.now === 'number' && !!st.rt.cds && !!st.wind);
-  check('реалтайм-онлайн НЕ идёт в рейтинг', (await import('./server/game.js')).isRanked({ config: { listed: true, realtime: true } }) === false);
-  check('обычный онлайн — в рейтинге', (await import('./server/game.js')).isRanked({ config: { listed: true } }) === true);
+  check('реалтайм-онлайн НЕ идёт в рейтинг', (await import('../server/game.js')).isRanked({ config: { listed: true, realtime: true } }) === false);
+  check('обычный онлайн — в рейтинге', (await import('../server/game.js')).isRanked({ config: { listed: true } }) === true);
 }
 
 // ═══════════════ ⚡ Реалтайм: одновременные действия, приказы ═══════════════

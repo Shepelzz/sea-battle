@@ -8,8 +8,8 @@
 //   • монеты не притворяются золотом и не лезут в статистику матча / лидерборд.
 import {
   createGame, addPlayer, startGame, applyAction, publicState, applyOutpostPerks, forceFinish
-} from './server/game.js';
-import { SHIP_TYPES, PIRATE, PIRATE_COINS, PIRATE_BOSS_COINS, pirateCoins, OUTPOST_LEVELS } from './server/config.js';
+} from '../server/game.js';
+import { SHIP_TYPES, PIRATE, PIRATE_COINS, PIRATE_BOSS_COINS, pirateCoins, OUTPOST_LEVELS } from '../server/config.js';
 
 let ok = 0, fail = 0;
 const yes = (n, c) => { c ? ok++ : (fail++, console.error('✗', n)); };

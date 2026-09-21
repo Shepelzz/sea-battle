@@ -4,8 +4,8 @@
 // то 506 ходов. Поэтому карта задаётся зерном, Math.random подменяется детерминированным
 // генератором с тем же зерном, и одно зерно гоняется дважды — с перками и без. Разница по каждой
 // паре, а не средние двух облаков.
-import { createGame, addPlayer, startGame, applyAction } from './server/game.js';
-import { chooseBotAction } from './server/bot.js';
+import { createGame, addPlayer, startGame, applyAction } from '../server/game.js';
+import { chooseBotAction } from '../server/bot.js';
 
 const CAP = 1500;
 const mulberry32 = (a) => () => {

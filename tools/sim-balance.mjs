@@ -1,7 +1,7 @@
 // Эксперимент: лечит ли преимущество 1-го хода стартовая компенсация золотом
 // поздним игрокам? Гоняем дуэли с разным бонусом 2-му игроку.
-import { createGame, addPlayer, startGame, applyAction } from './server/game.js';
-import { chooseBotAction } from './server/bot.js';
+import { createGame, addPlayer, startGame, applyAction } from '../server/game.js';
+import { chooseBotAction } from '../server/bot.js';
 
 function duel(level, seatBonus) {
   const game = createGame('s', { maxPlayers: 2, turnTimer: 0 });
@@ -39,7 +39,7 @@ for (const level of ['mid', 'hard']) {
 }
 
 // Альтернатива: что если 2-й игрок получает лишний корабль (бриг) на старте?
-import { SHIP_TYPES } from './server/ships.js';
+import { SHIP_TYPES } from '../server/ships.js';
 function duelExtraShip(level) {
   const game = createGame('s', { maxPlayers: 2, turnTimer: 0 });
   for (let i = 0; i < 2; i++) {

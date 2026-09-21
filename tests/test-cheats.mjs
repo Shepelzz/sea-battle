@@ -1,8 +1,8 @@
 // Читы тестового режима + залп авианосца. Коды читов — только на сервере (server/cheats.js),
 // тут проверяем их применение и поведение чит-корабля (волей из 5 снарядов).
-import { createGame, addPlayer, startGame, applyAction, publicState } from './server/game.js';
-import { applyCheat } from './server/cheats.js';
-import { SHIP_TYPES, CHEATS_ENABLED } from './server/config.js';
+import { createGame, addPlayer, startGame, applyAction, publicState } from '../server/game.js';
+import { applyCheat } from '../server/cheats.js';
+import { SHIP_TYPES, CHEATS_ENABLED } from '../server/config.js';
 
 let ok = 0, fail = 0;
 const check = (n, c, extra = '') => { c ? (ok++) : (fail++, console.error('✗', n, extra)); };

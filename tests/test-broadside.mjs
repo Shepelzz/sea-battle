@@ -1,7 +1,7 @@
 // Новая боевая механика: БОРТОВОЙ ЗАЛП (ВЕСЬ борт по ВСЕМ врагам с этой стороны в радиусе, урон только по дистанции,
 // оба борта = 1 действие) и МОРТИРА (бывший одиночный выстрел, только фрегат/линкор). Прямые вызовы game.js.
-import { createGame, addPlayer, startGame, applyAction } from './server/game.js';
-import { SHIP_TYPES, BROADSIDE_CANNONS, MORTAR_SHIPS, MORTAR_SHIP_MULT, BROADSIDE_HALF_ARC, BROADSIDE_SIDE_MIN } from './server/ships.js';
+import { createGame, addPlayer, startGame, applyAction } from '../server/game.js';
+import { SHIP_TYPES, BROADSIDE_CANNONS, MORTAR_SHIPS, MORTAR_SHIP_MULT, BROADSIDE_HALF_ARC, BROADSIDE_SIDE_MIN } from '../server/ships.js';
 
 let ok = 0, fail = 0;
 const check = (n, c, extra = '') => { c ? (ok++, console.log('✓', n, extra)) : (fail++, console.error('✗', n, extra)); };

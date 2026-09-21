@@ -8,8 +8,8 @@ import {
   FISH_ZONE_CAP, FISH_ZONE_CAP_BIG, FISH_BIG_RADIUS, fishZoneCap, FISH_INCOME,
   PIRATE, PIRATE_DESPAWN_CHANCE, PIRATE_SPAWN_CHANCE, PIRATE_MOVE_CHANCE,
   PIRATE_BOSS_CHANCE, PIRATE_BOSS_HP, PIRATE_REVENGE_SHOT, PIRATE_FLEE_CHANCE, PIRATE_CALM_CHANCE
-} from './server/ships.js';
-import { generateMap } from './server/mapgen.js';
+} from '../server/ships.js';
+import { generateMap } from '../server/mapgen.js';
 
 let ok = 0, fail = 0;
 const eq = (n, got, want) => {

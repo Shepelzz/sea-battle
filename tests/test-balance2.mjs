@@ -1,7 +1,7 @@
 // Точечная проверка правок: пассивная рыбалка (+лимит зоны), урон линкора по порту,
 // сдача базы линкору, доход порта у безфлотного игрока.
-import { createGame, addPlayer, startGame, applyAction } from './server/game.js';
-import { SHIP_TYPES, PORT_HP, PORT_INCOME, PORT_POOR_MULT, PORT_RETURN_DMG, FISH_ZONE_CAP } from './server/ships.js';
+import { createGame, addPlayer, startGame, applyAction } from '../server/game.js';
+import { SHIP_TYPES, PORT_HP, PORT_INCOME, PORT_POOR_MULT, PORT_RETURN_DMG, FISH_ZONE_CAP } from '../server/ships.js';
 
 let ok = 0, fail = 0;
 const check = (n, c, extra='') => { c ? (ok++, console.log('✓', n, extra)) : (fail++, console.error('✗', n, extra)); };

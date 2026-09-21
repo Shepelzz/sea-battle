@@ -8,6 +8,8 @@
     "node": ">=18"
   },
   "scripts": {
+    "test": "node tests/test-all.mjs",
+    "test:flow": "node tests/test-flow.mjs",
     "start": "node --env-file-if-exists=.env server/index.js",
     "dev": "node --env-file-if-exists=.env --watch server/index.js",
     "debug": "SB_DEBUG=1 node --env-file-if-exists=.env --watch server/index.js",

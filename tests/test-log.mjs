@@ -5,8 +5,8 @@
 // падало отдельной строкой И ВСЕМ — этот набор следит, чтобы так больше не было.
 import {
   createGame, addPlayer, startGame, applyAction, publicState, earn, flushEarnings
-} from './server/game.js';
-import { SHIP_TYPES, OUTPOST_LEVELS, PORT_INCOME } from './server/config.js';
+} from '../server/game.js';
+import { SHIP_TYPES, OUTPOST_LEVELS, PORT_INCOME } from '../server/config.js';
 
 let ok = 0, fail = 0;
 const check = (n, c, extra = '') => { c ? (ok++, console.log('✓', n, extra)) : (fail++, console.error('✗', n, extra)); };

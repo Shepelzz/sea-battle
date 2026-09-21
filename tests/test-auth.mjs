@@ -5,8 +5,8 @@ import {
   pidOf, googlePid, cleanNick, resolveAccountNick, parseCookies,
   buildSetCookie, buildClearCookie, createSessionStore, newSessionToken,
   SESSION_COOKIE, SESSION_TTL_MS
-} from './server/auth.js';
-import { isRanked } from './server/game.js';
+} from '../server/auth.js';
+import { isRanked } from '../server/game.js';
 
 let ok = 0, fail = 0;
 const eq = (n, got, want) => {
