@@ -402,7 +402,9 @@ aside.panel {
   position: absolute; top: 10px; right: 12px; z-index: 40;
   display: flex; align-items: center; gap: 8px;
   background: var(--paper); border: 1.5px solid var(--ink-light);
-  border-radius: 999px; padding: 4px 6px 4px 10px;
+  /* тот же «от руки» контур, что у button/.btn — ровная таблетка выбивалась из стиля страницы */
+  border-radius: 10px 4px 12px 5px / 5px 11px 4px 12px;
+  padding: 4px 14px 4px 10px;   /* справа больше: раньше там кончалась кнопка «Выйти», теперь — сам ник */
   box-shadow: var(--shadow); font-family: var(--font-hand);
   font-size: 15px; color: var(--ink); max-width: min(70vw, 280px);
 }
@@ -415,8 +417,50 @@ aside.panel {
 .auth-badge .who {
   max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700;
 }
+/* Вошёл → вся таблетка целиком открывает профиль (у гостя внутри своя кнопка входа).
+   Ведёт себя как остальные кнопки игры: та же отрисовка «подвинулся и подрос в тени»
+   при наведении и то же вдавливание при нажатии (см. button/.btn выше). */
+.auth-badge.clickable {
+  cursor: pointer;
+  transition: transform .08s ease, box-shadow .08s ease, border-color .08s ease;
+}
+.auth-badge.clickable:hover {
+  transform: translate(-1px, -1px) rotate(-0.4deg);
+  box-shadow: 3px 4px 0 rgba(43, 58, 85, .16);
+  border-color: var(--ink);
+}
+.auth-badge.clickable:active { transform: translate(1px, 1px); box-shadow: 1px 1px 0 rgba(43, 58, 85, .12); }
 .auth-badge button.small { padding: 3px 10px; font-size: 14px; }
 #loginBtnBox { display: flex; justify-content: center; min-height: 44px; }
+
+/* ── профиль капитана ── */
+.pf-head { display: flex; align-items: center; gap: 10px; margin: 10px 0 14px; }
+.pf-head .ava {
+  width: 44px; height: 44px; border-radius: 50%; overflow: hidden; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 24px; background: var(--paper-dark);
+}
+.pf-head .ava img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pf-who { min-width: 0; display: flex; flex-direction: column; }
+.pf-who b { font-size: 19px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pf-who .muted { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pf-nick { display: flex; gap: 8px; align-items: center; }
+.pf-nick input { flex: 1; min-width: 0; }
+.pf-msg { margin: 6px 0 0; min-height: 18px; font-size: 14px; }
+.pf-msg.ok { color: #2e7d32; }   /* «сохранено» — единственное зелёное на странице, своей переменной под него нет */
+.pf-h { margin: 16px 0 6px; font-size: 17px; }
+.pf-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 4px 0; border-bottom: 1px dashed var(--ink-light);
+}
+.pf-row:last-of-type { border-bottom: 0; }
+.pf-row > span { color: var(--pencil); }
+.pf-note { font-size: 13px; margin: 10px 0 0; }
+.pf-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  flex-wrap: wrap; margin-top: 14px; padding-top: 10px; border-top: 1.5px solid var(--ink-light);
+}
+.pf-foot .muted { font-size: 13px; }
 @media (max-width: 520px) {
   .wrap { padding-top: 60px; }   /* место сверху под бейдж входа + отступ до заголовка */
   h1 { line-height: 0.85; }      /* подзаголовок «на листке в клетку» (2-я строка) прижат вплотную к заголовку */
@@ -800,7 +844,8 @@ body.debug-on { padding-bottom: var(--dbg-h); }
    списке. Так кнопка не занимает полряда рядом с ником. */
 .lang-dd .mode-dd-btn {
   padding: 4px 8px; gap: 0; font-size: 23px; line-height: 1.15;   /* по высоте вровень с бейджем входа */
-  border-radius: 999px; border: 1.5px solid var(--ink-light); background: var(--paper);
+  border-radius: 10px 4px 12px 5px / 5px 11px 4px 12px;   /* «от руки», как у остальных кнопок */
+  border: 1.5px solid var(--ink-light); background: var(--paper);
 }
 .lang-dd .mode-dd-btn:hover { border-color: var(--ink); }
 .lang-dd .mode-dd-btn .dd-caret { display: none; }
@@ -810,6 +855,13 @@ body.debug-on { padding-bottom: var(--dbg-h); }
    отступ, — чтобы не менять высоту кнопки. */
 .lang-dd .mode-dd-btn .dd-label { transform: translateY(0.125em); }
 .lang-dd .mode-dd-menu { left: auto; right: 0; }   /* у правого края — раскрываемся влево */
+
+/* Переключатель языка в профиле: не флаг-таблетка, а обычный дропдаун с названием языка —
+   места там хватает, а голый флаг без стрелки не читается как список. */
+.lang-dd-full .mode-dd-btn { font-size: 17px; gap: 6px; padding: 4px 10px; }
+.lang-dd-full .mode-dd-btn .dd-caret { display: inline; }
+/* подпорка под флаг (см. выше) тут не нужна: рядом с ним есть текст с нормальными выносными */
+.lang-dd-full .mode-dd-btn .dd-label { transform: none; }
 @media (max-width: 520px) {
   .top-bar { top: 6px; right: 6px; gap: 6px; }
   .lang-dd .mode-dd-btn { font-size: 21px; padding: 5px 7px; }   /* и на узком экране тоже вровень */

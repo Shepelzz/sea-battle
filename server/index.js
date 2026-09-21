@@ -15,7 +15,7 @@ import { Server } from 'socket.io';
 import * as db from './db.js';
 import {
   createGame, addPlayer, startGame, applyAction, leaveGame, nudge,
-  timeoutTurn, publicState, setColor, randomFreeColor, forceFinish, isRanked, lobbyExpired, gameStale, myGameSummary, lobbyTags, PALETTE, spawnPirateAt, spawnShipAt
+  timeoutTurn, publicState, setColor, randomFreeColor, forceFinish, lobbyExpired, gameStale, myGameSummary, lobbyTags, PALETTE, spawnPirateAt, spawnShipAt
 } from './game.js';
 import {
   SESSION_COOKIE, pidOf, googlePid, cleanNick, resolveAccountNick, parseCookies,
@@ -247,6 +247,27 @@ function persistAndBroadcast(game) {
   broadcastLobbies(); // слоты/статус лобби могли измениться
 }
 
+// Переименование аккаунта. Ник живёт в трёх местах сразу: профиль в БД (он же светится в
+// лидерборде), игроки внутри НЕзаконченных партий и витрина лобби. Меняем везде одним заходом —
+// иначе соперник в лобби продолжит видеть старое имя до перезахода.
+// Доигранные партии не трогаем: это история, и строки в results там уже свои.
+// Хотсит тоже мимо — там игроки ходят под псевдоаккаунтами вида `pid#0`, а не под pid владельца.
+function renameEverywhere(pid, nick) {
+  db.upsertPlayer(pid, nick);
+  let touched = 0;
+  for (const g of games.values()) {
+    if (g.status === 'finished') continue;
+    const p = g.players.find(pl => pl.id === pid);
+    if (!p || p.nick === nick) continue;
+    p.nick = nick;
+    db.saveGame(g);
+    broadcastState(g);
+    touched++;
+  }
+  if (touched) broadcastLobbies();   // имя хоста в витрине могло измениться
+  return touched;
+}
+
 // ⚡ «Полный вперёд»: запустить реалтайм-тик игры (движок в rt.js; рассылка/сохранение — наши)
 function armRt(game) {
   rtStart(game, { broadcast: broadcastState, save: g => db.saveGame(g) });
@@ -361,7 +382,7 @@ function maybeBotTurn(game) {
     catch (e) { console.error('bot:', e.message); action = { type: 'skip' }; }
     let r = applyAction(g, bot.id, action);
     if (!r.ok) r = applyAction(g, bot.id, { type: 'skip' }); // страховка от невалидного хода
-    if (g.status === 'finished' && isRanked(g)) db.saveResults(g); // в лидерборд — только онлайн
+    if (g.status === 'finished') db.saveResults(g); // пишем все партии; в лидерборд попадут только рейтинговые
     persistAndBroadcast(g);
   }, delay));
 }
@@ -432,6 +453,32 @@ app.get('/api/auth/me', async (req, res) => {
   if (!pid) return res.json({ loggedIn: false });
   const prof = await db.getPlayer(pid);
   res.json({ loggedIn: true, nick: prof?.nick || '', email: prof?.email || '', avatar: prof?.avatar || '', lang: normLang(prof?.lang) });
+});
+
+// ─── Профиль игрока ───────────────────────────────────────────────────────────
+// Отдаём ТОЛЬКО свой профиль и только по сессионной куке: чужой ник, почта и статистика
+// наружу не уходят никак. Отдельно от /api/auth/me — тот дёргается на каждой загрузке
+// страницы, а здесь четыре запроса в базу ради окна, которое открывают изредка.
+app.get('/api/profile', async (req, res) => {
+  const pid = accountPidFromReq(req);
+  if (!pid) return res.status(401).json({ error: 'err.needLogin' });
+  const prof = await db.getPlayer(pid);
+  const stats = await db.getPlayerStats(pid);
+  res.json({
+    nick: prof?.nick || '', email: prof?.email || '', avatar: prof?.avatar || '',
+    provider: prof?.provider || '', lang: normLang(prof?.lang),
+    createdAt: prof?.createdAt || null, stats
+  });
+});
+
+// Смена ника из профиля — то же самое, что сокетный setNick, но доступно вне партии.
+app.post('/api/profile/nick', async (req, res) => {
+  const pid = accountPidFromReq(req);
+  if (!pid) return res.status(401).json({ error: 'err.needLogin' });
+  const nick = cleanNick(req.body?.nick);
+  if (!nick) return res.status(400).json({ error: 'err.nickEmpty' });
+  renameEverywhere(pid, nick);
+  res.json({ ok: true, nick });
 });
 
 // Смена языка. Гостю — кука, вошедшему — ещё и профиль (тогда язык едет за ним на любое устройство).
@@ -632,11 +679,11 @@ io.on('connection', socket => {
     if (!nm) return ack?.({ ok: false, error: 'err.nickEmpty' });
     const p = game.players.find(pl => pl.id === myPid);
     if (!p) return ack?.({ ok: false, error: 'err.notInGame' });
-    p.nick = nm;
-    db.upsertPlayer(myPid, nm);   // железно в БД — ник аккаунта меняется везде (вкл. лидерборд)
+    p.nick = nm;                  // хотсит: переименовываем именно то место за столом, откуда позвали
     db.saveGame(game);
     broadcastState(game);
-    broadcastLobbies();           // в витрине лобби имя хоста могло измениться
+    renameEverywhere(myPid, nm);  // железно в БД + во всех остальных партиях и в витрине лобби
+    broadcastLobbies();
     ack?.({ ok: true });
   });
 
@@ -697,7 +744,7 @@ io.on('connection', socket => {
     if (!game) return ack?.({ ok: false, error: 'err.noGame' });
     const result = applyAction(game, myPid, action);
     if (!result.ok) return ack?.({ ok: false, error: result.error });
-    if (game.status === 'finished' && isRanked(game)) db.saveResults(game); // в лидерборд — только онлайн
+    if (game.status === 'finished') db.saveResults(game); // пишем все партии; в лидерборд попадут только рейтинговые
     else armTurnTimer(game);
     persistAndBroadcast(game);
     ack?.({ ok: true });
@@ -736,7 +783,7 @@ io.on('connection', socket => {
     const result = leaveGame(game, myPid);
     if (!result.ok) return ack?.({ ok: false, error: result.error });
     maybeAutoFinish(game); // все люди сдались → доигрываем за ботов и завершаем сразу
-    if (game.status === 'finished' && isRanked(game)) db.saveResults(game); // в лидерборд — только онлайн
+    if (game.status === 'finished') db.saveResults(game); // пишем все партии; в лидерборд попадут только рейтинговые
     else armTurnTimer(game);
     persistAndBroadcast(game);
     ack?.({ ok: true });
@@ -759,7 +806,7 @@ io.on('connection', socket => {
     if (game.config?.listed) {                       // ОНЛАЙН: завершить может только хост
       if (game.hostPid !== pid) return ack?.({ ok: false, error: 'err.hostFinishesOnly' });
       if (game.status === 'active') forceFinish(game);
-      if (game.status === 'finished' && isRanked(game)) db.saveResults(game);
+      if (game.status === 'finished') db.saveResults(game);
       io.to('game:' + game.id).emit('state', publicState(game)); // тем, кто открыт в игре — финал
       db.saveGame(game);
     } else {                                          // ОФФЛАЙН (бот/хотсит): это сольная игра — просто удаляем

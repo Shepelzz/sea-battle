@@ -97,11 +97,17 @@
   // --- переключатель ---
   // Тот же дропдаун, что у режимов и цветов (public/js/palette.js): нативный <select> на мобиле
   // всплывает не там, да и показать в кнопке одно, а в списке другое он не умеет.
+  // data-lang-switch="full" — на кнопке флаг И название языка (профиль, где места хватает).
+  // Пустой data-lang-switch — только флаг (шапка: там тесный ряд у бейджа входа).
+  // Режим читается из самого элемента, а не из аргумента: apply() перемонтирует переключатели
+  // при каждой смене языка, и настройка обязана пережить перемонтаж.
   function mount(box) {
+    const full = box.dataset.langSwitch === 'full';
     box.replaceChildren();
     box.classList.add('lang-dd');
+    box.classList.toggle('lang-dd-full', full);   // текстом — значит и стрелка, и обычный кегль
     const opts = LANGS.map(code => ({ key: code, name: `${FLAGS[code] || ''} ${NAMES[code] || code}`.trim() }));
-    renderModeDropdown(box, opts, lang, code => set(code), m => FLAGS[m.key] || m.key);
+    renderModeDropdown(box, opts, lang, code => set(code), m => full ? m.name : (FLAGS[m.key] || m.key));
     const btn = box.querySelector('.mode-dd-btn');
     if (btn) { btn.title = t('lang.title'); btn.setAttribute('aria-label', t('lang.title')); }
   }

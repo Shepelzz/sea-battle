@@ -166,6 +166,17 @@
     </div>
   </div>
 
+  <!-- профиль капитана: ник, язык, статистика, выход. Тело рисует home.js по /api/profile -->
+  <div class="overlay hidden" id="profileOverlay">
+    <div class="note taped" style="max-width:420px">
+      <div style="display:flex; align-items:center; gap:10px">
+        <h2 style="margin:0; flex:1" data-i18n="profile.title">🧭 Капитанский журнал</h2>
+        <button class="small" id="profileClose" data-i18n="common.close">✖</button>
+      </div>
+      <div id="profileBody"></div>
+    </div>
+  </div>
+
   <!-- попап со списком открытых лобби -->
   <div class="overlay hidden" id="lobbiesOverlay">
     <div class="note taped">

@@ -195,14 +195,25 @@ function renderBadge() {
   const box = $('#authBadge');
   if (!GOOGLE_ID) { box.classList.add('hidden'); return; }   // вход не настроен на сервере — бейдж не нужен
   box.classList.remove('hidden');
+  // Язык вошедшего живёт в профиле — второй такой же переключатель в шапке не нужен.
+  // Гостю профиль недоступен, ему переключатель в шапке оставляем.
+  const topLang = document.querySelector('.top-bar [data-lang-switch]');
+  if (topLang) topLang.classList.toggle('hidden', !!me.loggedIn);
   if (me.loggedIn) {
     const ava = me.avatar
       ? `<span class="ava"><img src="${escapeHtml(me.avatar)}" alt="" referrerpolicy="no-referrer"></span>`
       : '<span class="ava">👤</span>';
-    box.innerHTML = `${ava}<span class="who" title="${escapeHtml(me.email || '')}">${escapeHtml(me.nick || t('common.player'))}</span><button class="small" id="logoutBtn" type="button">${t('common.logout')}</button>`;
-    $('#logoutBtn').addEventListener('click', doLogout);
+    // Профиль (смена ника, язык, статистика, выход) открывается кликом по ВСЕЙ таблетке —
+    // и по аватарке, и по пустому месту внутри рамки, а не только по буквам ника.
+    // Обработчик вешаем свойством, а не addEventListener: бейдж перерисовывается (смена языка,
+    // сохранение ника), и слушатели бы копились.
+    box.innerHTML = `${ava}<span class="who" title="${escapeHtml(me.email || '')}">${escapeHtml(me.nick || t('common.player'))}</span>`;
+    box.classList.add('clickable');
+    box.onclick = openProfile;
   } else {
     box.innerHTML = `<button class="small primary" id="badgeLogin" type="button">${t('common.login')}</button>`;
+    box.classList.remove('clickable');
+    box.onclick = null;          // у гостя внутри своя кнопка входа — таблетка кликом не занята
     $('#badgeLogin').addEventListener('click', () => openLogin(null));
   }
 }
@@ -210,6 +221,7 @@ function renderBadge() {
 // язык сменили на лету — перерисовываем свою динамику (разметку обновит сам i18n.js)
 window.addEventListener('sb:lang', () => {
   renderBadge();
+  if (!$('#profileOverlay').classList.contains('hidden')) renderProfile();
   renderHotseatNames();
   if (lastBrowse) renderBrowse(lastBrowse);
 });
@@ -276,6 +288,102 @@ async function onGoogleCredential(resp) {
     if (act) act();   // продолжить то, ради чего входили (онлайн/лобби)
   } catch { $('#loginError').textContent = t('home.errNet'); }
 }
+
+// ====== Профиль капитана ======
+// Открывается по нику в бейдже. Ник и язык меняются отсюда, не заходя в партию; статистику
+// считает сервер (/api/profile), клиент только раскладывает по строчкам.
+let profileData = null;
+const fmtNum = n => Number(n || 0).toLocaleString(SBI18n.lang());
+const fmtDate = ts => ts ? new Date(ts).toLocaleDateString(SBI18n.lang()) : '—';
+
+async function openProfile() {
+  $('#profileOverlay').classList.remove('hidden');
+  $('#profileBody').innerHTML = `<p class="muted">${t('profile.loading')}</p>`;
+  try {
+    const r = await fetch('/api/profile');
+    profileData = r.ok ? await r.json() : null;
+  } catch { profileData = null; }
+  if (!profileData) { $('#profileBody').innerHTML = `<p class="error">${t('home.errNet')}</p>`; return; }
+  renderProfile();
+}
+function closeProfile() { $('#profileOverlay').classList.add('hidden'); }
+
+function renderProfile() {
+  const d = profileData;
+  if (!d) return;
+  const s = d.stats || {}, rk = s.ranked || {};
+  const row = (label, value) => `<div class="pf-row"><span>${label}</span><b>${value}</b></div>`;
+  const ava = d.avatar
+    ? `<span class="ava"><img src="${escapeHtml(d.avatar)}" alt="" referrerpolicy="no-referrer"></span>`
+    : '<span class="ava">👤</span>';
+  // Пусто — так и пишем. Таблица из нулей выглядит как поломка, а не как «ты ещё не играл».
+  const stats = s.games
+    ? row(t('profile.games'), fmtNum(s.games))
+      + row(t('profile.ranked'), fmtNum(rk.games))
+      + row(t('profile.wins'), `${fmtNum(s.wins)} (${Math.round(s.wins / s.games * 100)}%)`)
+      + row(t('profile.sunk'), fmtNum(s.sunk))
+      + row(t('profile.lost'), fmtNum(s.lost))
+      + row(t('profile.damage'), fmtNum(s.damage))
+      + row(t('profile.gold'), '💰 ' + fmtNum(s.gold))
+      + row(t('profile.rank'), rk.place
+          ? t('profile.rankVal', { place: rk.place, total: rk.total, points: rk.points })
+          : t('profile.noRank'))
+      + row(t('profile.last'), fmtDate(s.lastAt))
+    : `<p class="muted">${t('profile.empty')}</p>`;
+
+  $('#profileBody').innerHTML = `
+    <div class="pf-head">${ava}
+      <div class="pf-who">
+        <b id="pfWhoNick">${escapeHtml(d.nick || t('common.player'))}</b>
+        ${d.email ? `<span class="muted">${escapeHtml(d.email)}</span>` : ''}
+      </div>
+    </div>
+    <label for="pfNick">${t('profile.nick')}</label>
+    <div class="pf-nick">
+      <input type="text" id="pfNick" maxlength="20" value="${escapeHtml(d.nick || '')}">
+      <button class="small primary" id="pfSave" type="button">${t('profile.save')}</button>
+    </div>
+    <p class="pf-msg" id="pfMsg"></p>
+    <div class="pf-row"><span>${t('profile.lang')}</span><span data-lang-switch="full"></span></div>
+    <h3 class="pf-h">${t('profile.stats')}</h3>
+    ${stats}
+    <p class="muted pf-note">${t('profile.rankedNote')}</p>
+    <div class="pf-foot">
+      <span class="muted">${t('profile.since')} ${fmtDate(d.createdAt)}</span>
+      <button class="small" id="pfLogout" type="button">${t('common.logout')}</button>
+    </div>`;
+  SBI18n.mount($('#profileBody [data-lang-switch]'));
+  $('#pfSave').addEventListener('click', saveNick);
+  $('#pfNick').addEventListener('keydown', e => { if (e.key === 'Enter') saveNick(); });
+  $('#pfLogout').addEventListener('click', doLogout);
+}
+
+async function saveNick() {
+  const nick = ($('#pfNick').value || '').trim();
+  const msg = $('#pfMsg');
+  msg.className = 'pf-msg';
+  if (!nick) { msg.classList.add('error'); msg.textContent = t('home.errNick'); return; }
+  try {
+    const r = await fetch('/api/profile/nick', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nick })
+    });
+    const data = await r.json();
+    if (!r.ok) { msg.classList.add('error'); msg.textContent = errText(data) || t('home.errNet'); return; }
+    // ник аккаунта — источник правды: подхватываем его везде, где он уже подставлен
+    me.nick = profileData.nick = data.nick;
+    localStorage.setItem('sb_nick', data.nick);
+    $('#nick').value = data.nick;
+    $('#botNick').value = data.nick;
+    $('#pfWhoNick').textContent = data.nick;
+    msg.classList.add('ok');
+    msg.textContent = t('profile.saved');
+    renderBadge();
+    loadLeaderboard();   // в таблице под окном тоже должно стать новое имя, без перезагрузки
+  } catch { msg.classList.add('error'); msg.textContent = t('home.errNet'); }
+}
+
+$('#profileClose').addEventListener('click', closeProfile);
+$('#profileOverlay').addEventListener('click', e => { if (e.target.id === 'profileOverlay') closeProfile(); });
 
 async function doLogout() {
   try { await fetch('/api/auth/logout', { method: 'POST' }); } catch { /* всё равно сбросим локально */ }
@@ -428,7 +536,10 @@ $('#botBtn').addEventListener('click', async () => {
   }
 });
 
-(async function loadLeaderboard() {
+// Лидерборд берёт ник из таблицы players, поэтому после переименования он в базе уже новый —
+// достаточно перечитать. Зовём и на старте, и после сохранения ника в профиле, иначе в таблице
+// до перезагрузки страницы висит старое имя.
+async function loadLeaderboard() {
   try {
     const rows = await (await fetch('/api/leaderboard')).json();
     if (!rows.length) return;
@@ -445,4 +556,5 @@ $('#botBtn').addEventListener('click', async () => {
         <td>${r.gold}</td>
       </tr>`).join('');
   } catch { /* лидерборд не критичен */ }
-})();
+}
+loadLeaderboard();

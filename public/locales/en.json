@@ -9,6 +9,29 @@
     "player": "player",
     "close": "✖"
   },
+  "profile": {
+    "title": "🧭 Captain's record",
+    "nick": "Nickname",
+    "save": "Save",
+    "saved": "Saved",
+    "lang": "Language",
+    "stats": "Service record",
+    "games": "Games played",
+    "ranked": "Ranked among them",
+    "wins": "Wins",
+    "sunk": "Ships sunk",
+    "lost": "Ships lost",
+    "damage": "Damage dealt",
+    "gold": "Gold earned",
+    "rank": "Leaderboard place",
+    "rankVal": "{{place}} of {{total}} · {{points}} pts",
+    "noRank": "no ranked games yet",
+    "last": "Last game",
+    "since": "Sailing since",
+    "empty": "No finished games yet. Play one and your service record shows up here.",
+    "rankedNote": "Only online games against people score points: bot matches, hotseat and Full Speed Ahead are counted but bring no points.",
+    "loading": "Fetching the ship's papers…"
+  },
   "home": {
     "title": "Sea Battle on squared paper",
     "h1": "⚓ Sea Battle",
@@ -687,7 +710,8 @@
     "unknownPerk": "No such perk",
     "perkOwned": "You already own this perk",
     "noCoinsFor": "Not enough coins (need {{price}} 🪙)",
-    "portFull": "Your port is already intact"
+    "portFull": "Your port is already intact",
+    "needLogin": "You need to sign in"
   },
   "log": {
     "joined": "{{nick}} joined the battle ({{n}}/{{max}})",

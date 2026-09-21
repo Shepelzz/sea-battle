@@ -15,6 +15,8 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+import { isRanked } from './game.js';   // цикла нет: game.js про базу ничего не знает
+
 const useMysql = !!(process.env.DATABASE_URL || process.env.MYSQL_URL
   || process.env.JAWSDB_URL || process.env.CLEARDB_DATABASE_URL
   || process.env.DB_HOST || process.env.MYSQLHOST);
@@ -36,6 +38,7 @@ export const saveGame       = (game) => api.saveGame(game);
 export const deleteGame     = (id) => api.deleteGame(id);
 export const saveResults    = (game) => api.saveResults(game);
 export const getPlayer      = (pid) => api.getPlayer(pid);
+export const getPlayerStats = (pid) => api.getPlayerStats(pid);
 // язык интерфейса аккаунта (для гостя язык живёт в куке — см. server/i18n.js)
 export const setPlayerLang  = (pid, lang) => api.setPlayerLang(pid, lang);
 export const getPlayerEmail = (pid) => api.getPlayerEmail(pid);
@@ -51,22 +54,72 @@ const LEADERBOARD_SQL = `
          SUM(r.sunk) AS sunk,
          SUM(r.gold) AS gold
   FROM results r JOIN players p ON p.token = r.player_token
+  WHERE r.ranked = 1
   GROUP BY r.player_token, p.nick
   ORDER BY points DESC, wins DESC, damage DESC
   LIMIT 50`;
 
 // В лидерборд идёт бой ТОЛЬКО против живых людей: из полных статов вычитаем долю по НПС (пираты + боты).
 // (npc*-поля могут отсутствовать у старых сейвов — отсюда `|| 0`.)
-export const resultRows = game => game.players.filter(p => !p.isBot).map(p => {
-  const s = p.stats;
-  return [
-    game.id, p.id, p.placement ?? game.players.length, p.placement === 1 ? 1 : 0,
-    Math.max(0, s.damageDealt - (s.npcDamage || 0)),
-    Math.max(0, s.shipsSunk - (s.npcSunk || 0)),
-    s.shipsLost,
-    Math.max(0, s.goldCollected - (s.npcGold || 0))
-  ];
-});
+//
+// Пишем строку по КАЖДОЙ доигранной партии, а не только по рейтинговой: профиль игрока показывает
+// «сыграно всего», и без этого у того, кто гоняет с ботами, статистика была бы пустой. Отличает их
+// колонка `ranked` — лидерборд берёт только единицы, профиль умеет показать и то и другое.
+// Хотсит не пишем вовсе: там «игроки» — псевдоаккаунты одного устройства (pid#0, pid#1, ...).
+export const resultRows = game => {
+  if (game?.config?.hotseat) return [];
+  const ranked = isRanked(game) ? 1 : 0;
+  return game.players.filter(p => !p.isBot).map(p => {
+    const s = p.stats;
+    return [
+      game.id, p.id, p.placement ?? game.players.length, p.placement === 1 ? 1 : 0,
+      Math.max(0, s.damageDealt - (s.npcDamage || 0)),
+      Math.max(0, s.shipsSunk - (s.npcSunk || 0)),
+      s.shipsLost,
+      Math.max(0, s.goldCollected - (s.npcGold || 0)),
+      ranked
+    ];
+  });
+};
+
+// ─── Профиль: своя статистика игрока ───
+// Три маленьких запроса вместо одного с оконными функциями: так одинаково работает и в SQLite,
+// и в MySQL (в т.ч. 5.7, где нет CTE), а открывают профиль редко.
+const STATS_SQL = `
+  SELECT COUNT(*) AS games,
+         SUM(win) AS wins,
+         SUM(CASE WHEN placement = 2 THEN 1 ELSE 0 END) AS seconds,
+         SUM(damage) AS damage, SUM(sunk) AS sunk, SUM(lost) AS lost, SUM(gold) AS gold,
+         MAX(finished_at) AS lastAt,
+         SUM(ranked) AS rankedGames,
+         SUM(CASE WHEN ranked = 1 THEN win ELSE 0 END) AS rankedWins,
+         SUM(CASE WHEN ranked = 1 THEN win * 3 ELSE 0 END)
+           + SUM(CASE WHEN ranked = 1 AND placement = 2 THEN 1 ELSE 0 END) AS points
+  FROM results WHERE player_token = ?`;
+// сколько игроков набрали очков БОЛЬШЕ моего — место в таблице = это число + 1
+const BETTER_SQL = `
+  SELECT COUNT(*) AS n FROM (
+    SELECT player_token FROM results WHERE ranked = 1 GROUP BY player_token
+    HAVING SUM(win) * 3 + SUM(CASE WHEN placement = 2 THEN 1 ELSE 0 END) > ?) t`;
+const TOTAL_SQL = 'SELECT COUNT(DISTINCT player_token) AS n FROM results WHERE ranked = 1';
+
+// приводим сырую строку агрегата к числам: SUM по пустой выборке даёт NULL, COUNT — 0
+const shapeStats = (r, better, total) => {
+  const n = v => Number(v) || 0;
+  const games = n(r?.games);
+  const rankedGames = n(r?.rankedGames);
+  return {
+    games, wins: n(r?.wins), seconds: n(r?.seconds),
+    damage: n(r?.damage), sunk: n(r?.sunk), lost: n(r?.lost), gold: n(r?.gold),
+    lastAt: n(r?.lastAt) || null,
+    ranked: {
+      games: rankedGames, wins: n(r?.rankedWins), points: n(r?.points),
+      // без рейтинговых партий места в таблице нет — показывать «последний» было бы враньём
+      place: rankedGames ? n(better) + 1 : null,
+      total: n(total)
+    }
+  };
+};
 
 // =================== SQLite (локально, встроенный node:sqlite) ===================
 async function makeSqlite() {
@@ -91,7 +144,8 @@ async function makeSqlite() {
         CREATE TABLE IF NOT EXISTS results (
           game_id TEXT NOT NULL, player_token TEXT NOT NULL, placement INTEGER NOT NULL,
           win INTEGER NOT NULL, damage INTEGER NOT NULL, sunk INTEGER NOT NULL,
-          lost INTEGER NOT NULL, gold INTEGER NOT NULL, finished_at INTEGER NOT NULL,
+          lost INTEGER NOT NULL, gold INTEGER NOT NULL, ranked INTEGER NOT NULL DEFAULT 1,
+          finished_at INTEGER NOT NULL,
           PRIMARY KEY (game_id, player_token));
         CREATE TABLE IF NOT EXISTS sessions (
           token TEXT PRIMARY KEY, pid TEXT NOT NULL, created_at INTEGER NOT NULL);
@@ -99,6 +153,9 @@ async function makeSqlite() {
       // миграция уже существующих баз: добавляем новые колонки, если их ещё нет
       for (const [col, def] of [['provider', 'TEXT'], ['avatar', 'TEXT'], ['lang', 'TEXT']])
         try { db.exec(`ALTER TABLE players ADD COLUMN ${col} ${def}`); } catch { /* колонка уже есть */ }
+      // results.ranked: до появления профиля писались ТОЛЬКО рейтинговые партии — значит всё
+      // накопленное и есть рейтинговое, отсюда DEFAULT 1 (старые строки получают единицу сами).
+      try { db.exec('ALTER TABLE results ADD COLUMN ranked INTEGER NOT NULL DEFAULT 1'); } catch { /* колонка уже есть */ }
       console.log('🗄  SQLite (локально): ' + file);
     },
     async getAllGames() {
@@ -130,13 +187,20 @@ async function makeSqlite() {
       const now = Date.now();
       for (const r of resultRows(game)) {
         run(`INSERT OR IGNORE INTO results
-             (game_id, player_token, placement, win, damage, sunk, lost, gold, finished_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, ...r, now);
+             (game_id, player_token, placement, win, damage, sunk, lost, gold, ranked, finished_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, ...r, now);
       }
     },
     async getPlayer(pid) {
-      const r = db.prepare('SELECT nick, email, provider, avatar, lang FROM players WHERE token = ?').get(pid);
-      return r ? { nick: r.nick, email: r.email ?? null, provider: r.provider ?? null, avatar: r.avatar ?? null, lang: r.lang ?? null } : null;
+      const r = db.prepare('SELECT nick, email, provider, avatar, lang, created_at FROM players WHERE token = ?').get(pid);
+      return r ? { nick: r.nick, email: r.email ?? null, provider: r.provider ?? null, avatar: r.avatar ?? null,
+        lang: r.lang ?? null, createdAt: Number(r.created_at) || null } : null;
+    },
+    async getPlayerStats(pid) {
+      const r = db.prepare(STATS_SQL).get(pid);
+      const better = db.prepare(BETTER_SQL).get(Number(r?.points) || 0)?.n;
+      const total = db.prepare(TOTAL_SQL).get()?.n;
+      return shapeStats(r, better, total);
     },
     async setPlayerLang(pid, lang) { run('UPDATE players SET lang = ? WHERE token = ?', lang, pid); },
     async getPlayerEmail(pid) {
@@ -189,7 +253,8 @@ async function makeMysql() {
            state LONGTEXT NOT NULL, created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL) DEFAULT CHARSET=utf8mb4`,
         `CREATE TABLE IF NOT EXISTS results (game_id VARCHAR(32) NOT NULL, player_token VARCHAR(64) NOT NULL,
            placement INT NOT NULL, win INT NOT NULL, damage INT NOT NULL, sunk INT NOT NULL, lost INT NOT NULL,
-           gold INT NOT NULL, finished_at BIGINT NOT NULL, PRIMARY KEY (game_id, player_token)) DEFAULT CHARSET=utf8mb4`,
+           gold INT NOT NULL, ranked TINYINT NOT NULL DEFAULT 1, finished_at BIGINT NOT NULL,
+           PRIMARY KEY (game_id, player_token)) DEFAULT CHARSET=utf8mb4`,
         `CREATE TABLE IF NOT EXISTS sessions (token VARCHAR(64) PRIMARY KEY, pid VARCHAR(64) NOT NULL,
            created_at BIGINT NOT NULL) DEFAULT CHARSET=utf8mb4`
       ];
@@ -197,6 +262,8 @@ async function makeMysql() {
       // миграция уже существующих баз: добавляем новые колонки, если их ещё нет
       for (const [col, def] of [['provider', 'VARCHAR(16)'], ['avatar', 'VARCHAR(512)'], ['lang', 'VARCHAR(8)']])
         try { await pool.query(`ALTER TABLE players ADD COLUMN ${col} ${def}`); } catch { /* колонка уже есть */ }
+      // results.ranked — см. комментарий у SQLite-миграции: всё, что накоплено до профиля, рейтинговое
+      try { await pool.query('ALTER TABLE results ADD COLUMN ranked TINYINT NOT NULL DEFAULT 1'); } catch { /* колонка уже есть */ }
       console.log('🗄  MySQL: ' + cfg.host + '/' + cfg.database);
     },
     async getAllGames() {
@@ -226,15 +293,24 @@ async function makeMysql() {
       const now = Date.now();
       for (const r of resultRows(game)) {
         await q(`INSERT IGNORE INTO results
-                 (game_id, player_token, placement, win, damage, sunk, lost, gold, finished_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [...r, now]);
+                 (game_id, player_token, placement, win, damage, sunk, lost, gold, ranked, finished_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [...r, now]);
       }
     },
     async getPlayer(pid) {
-      try { const [rows] = await pool.query('SELECT nick, email, provider, avatar, lang FROM players WHERE token = ?', [pid]);
+      try { const [rows] = await pool.query('SELECT nick, email, provider, avatar, lang, created_at FROM players WHERE token = ?', [pid]);
         const r = rows[0];
-        return r ? { nick: r.nick, email: r.email ?? null, provider: r.provider ?? null, avatar: r.avatar ?? null, lang: r.lang ?? null } : null;
+        return r ? { nick: r.nick, email: r.email ?? null, provider: r.provider ?? null, avatar: r.avatar ?? null,
+          lang: r.lang ?? null, createdAt: Number(r.created_at) || null } : null;
       } catch (e) { console.error('db:', e.message); return null; }
+    },
+    async getPlayerStats(pid) {
+      try {
+        const [[r]] = await pool.query(STATS_SQL, [pid]);
+        const [[b]] = await pool.query(BETTER_SQL, [Number(r?.points) || 0]);
+        const [[t]] = await pool.query(TOTAL_SQL);
+        return shapeStats(r, b?.n, t?.n);
+      } catch (e) { console.error('db:', e.message); return shapeStats(null, 0, 0); }
     },
     async setPlayerLang(pid, lang) {
       try { await q('UPDATE players SET lang = ? WHERE token = ?', [lang, pid]); }
