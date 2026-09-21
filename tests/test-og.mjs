@@ -6,7 +6,7 @@
 //   • в превью попал НИК — карточку видит любой, кому попала ссылка, включая ботов-пересыльщиков;
 //   • ключ описания есть не во всех словарях — игрок увидит голый `og.players`.
 import { readFileSync } from 'node:fs';
-import { ogHead, gameFacts, previewLang, absUrl, canonicalPath, OG_IMAGE, LANG_PARAM } from '../server/og.js';
+import { ogHead, gameFacts, previewLang, absUrl, canonicalPath, ogImage, OG_IMAGE, LANG_PARAM } from '../server/og.js';
 import { DEFAULT_LANG, LANGS } from '../server/i18n.js';
 import { createGame, addPlayer, startGame } from '../server/game.js';
 
@@ -140,6 +140,16 @@ eq('слэши не удваиваются', absUrl('https://sb.ua/', '/og-card.
 eq('путь без слэша тоже работает', absUrl('https://sb.ua', 'og-card.png'), 'https://sb.ua/og-card.png');
 eq('параметр языка зовётся l', LANG_PARAM, 'l');
 yes('карточка лежит в public', !!readFileSync('public' + OG_IMAGE).length);
+
+// === Метка версии карточки ===
+// Мессенджер кэширует картинку по адресу. Поменяли файл, а адрес прежний — в чате останется
+// старая карточка. Поэтому в адрес подмешивается метка, меняющаяся вместе с файлом.
+eq('версия дописывается к адресу', ogImage('abc123'), OG_IMAGE + '?v=abc123');
+eq('разные версии — разные адреса', ogImage('v1') === ogImage('v2'), false);
+eq('без версии — прежний адрес', ogImage(''), OG_IMAGE);
+eq('версии нет вовсе — тоже прежний адрес', ogImage(undefined), OG_IMAGE);
+yes('адрес с версией остаётся абсолютизируемым',
+  absUrl('https://sb.ua', ogImage('zz')) === 'https://sb.ua' + OG_IMAGE + '?v=zz');
 
 console.log(fail ? `\n❌ test-og: провалено ${fail}, прошло ${ok}` : `\n✅ test-og: все ${ok} проверок прошли`);
 process.exit(fail ? 1 : 0);

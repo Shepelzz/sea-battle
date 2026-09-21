@@ -24,7 +24,7 @@ import {
 import { chooseBotAction, BOT_NAMES, duelFleetPlan } from './bot.js';
 import { LANGS, LANG_COOKIE, SOURCE_LANG, DEFAULT_LANG, normLang, pickLang, buildLangCookie } from './i18n.js';
 import { applyCheat } from './cheats.js';
-import { ogHead, gameFacts, previewLang, absUrl, canonicalPath, OG_IMAGE, LANG_PARAM } from './og.js';
+import { ogHead, gameFacts, previewLang, absUrl, canonicalPath, ogImage, OG_IMAGE, LANG_PARAM } from './og.js';
 import { VERSION, versionLabel } from './version.js';
 import { rtStart, rtStop } from './rt.js';
 import { CHEATS_ENABLED, DEBUG, GAME_MODES, enabledModes, DEFAULT_MODE, isDuel, isRealtime, realtimeAllowed, SHIP_TYPES, PIRATE } from './config.js';
@@ -104,6 +104,18 @@ const CHARSET_META = '<meta charset="UTF-8">';   // якорь вставки: �
 const reqOrigin = req => process.env.BASE_URL
   || `${req.get('x-forwarded-proto') || req.protocol}://${req.get('host')}`;
 
+// Метка версии OG-карточки. Берём время правки файла, а не хэш: читать 200 КБ ради восьми
+// символов незачем. Считается один раз за жизнь процесса — картинку меняют вместе с деплоем,
+// а деплой перезапускает сервер (в разработке после подмены файла нужен рестарт).
+let ogVersion = null;
+async function ogImageUrl() {
+  if (ogVersion === null)
+    ogVersion = await fsp.stat(path.join(PUBLIC, OG_IMAGE))
+      .then(st => Math.round(st.mtimeMs).toString(36))
+      .catch(() => '');   // файла нет — отдаём адрес без метки, превью важнее падения
+  return ogImage(ogVersion);
+}
+
 async function ogBlock(req, game) {
   // язык превью — из ссылки (?l=, его туда кладёт «скопировать» у отправителя),
   // иначе язык создателя партии, иначе дефолт. На саму страницу это не влияет.
@@ -116,7 +128,7 @@ async function ogBlock(req, game) {
   const base = {
     lang, url,
     siteName: await T('og.site'),
-    image: absUrl(origin, OG_IMAGE),
+    image: absUrl(origin, await ogImageUrl()),
     imageAlt: await T('og.imageAlt')
   };
   if (!game) return ogHead({ ...base, title: await T('og.homeTitle'), description: await T('og.homeDesc') });

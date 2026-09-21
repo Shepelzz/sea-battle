@@ -18,6 +18,12 @@ import { GAME_MODES, DEFAULT_MODE, isDuel } from './config.js';
 import { normLang, DEFAULT_LANG } from './i18n.js';
 
 export const OG_IMAGE = '/og-card.png';   // карточка 1200×630 (public/)
+
+// Адрес карточки с меткой версии. Мессенджер кэширует картинку ПО АДРЕСУ: пока адрес прежний,
+// он покажет старую карточку даже после того, как перечитает страницу. Метка меняется вместе с
+// файлом — значит новая картинка доезжает сама. Чистую логику файлами не пачкаем: версию
+// вычисляет index.js и передаёт сюда готовой.
+export const ogImage = (version) => version ? `${OG_IMAGE}?v=${version}` : OG_IMAGE;
 export const LANG_PARAM = 'l';            // ?l=uk — язык превью, см. previewLang
 
 // ЯЗЫК ПРЕВЬЮ. Сервер не знает, кто отправил ссылку: за карточкой приходит бот мессенджера,
