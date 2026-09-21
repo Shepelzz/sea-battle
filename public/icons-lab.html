@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Иконки — Морской бой</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .ic-controls { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; margin: 10px 0 4px; }
+    .ic-controls label { margin: 0; display: flex; align-items: center; gap: 6px; font-size: 15px; }
+    .ic-controls input[type=search] { min-width: 200px; }
+
+    .ic-table { width: 100%; border-collapse: collapse; }
+    .ic-table th { text-align: left; font-family: var(--font-title); font-size: 17px; padding: 6px 8px; color: var(--pencil); }
+    .ic-table td { padding: 8px; border-top: 1px dashed var(--ink-light); vertical-align: top; }
+    .ic-table tr.warn td { background: rgba(214, 92, 92, .07); }
+
+    /* обе клетки с иконкой одной ширины — чтобы разница читалась сразу */
+    .ic-cell { width: 1%; white-space: nowrap; text-align: center; }
+    .ic-old { font-size: var(--icsz, 34px); line-height: 1.1; }
+    .ic-new img, .ic-new .sb-svg { width: var(--icsz, 34px); height: var(--icsz, 34px); display: block; margin: 0 auto; }
+    .ic-new .sb-svg svg { width: 100%; height: 100%; display: block; }
+    .ic-new .miss { font-size: 13px; color: var(--red-pen); }
+
+    .ic-name { font-weight: 700; }
+    .ic-role { color: var(--pencil); font-size: 14px; }
+    .ic-cp { font-family: ui-monospace, monospace; font-size: 12px; color: var(--pencil); }
+    .ic-sys { font-family: var(--font-hand); font-size: 12px; font-weight: normal; color: var(--pencil); }
+    .ic-spare { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-top: 1px dashed var(--ink-light); }
+    .ic-spare .sb-svg { width: var(--icsz, 34px); height: var(--icsz, 34px); flex: none; }
+    .ic-spare .sb-svg svg { width: 100%; height: 100%; display: block; }
+    /* «где используется» — одной строкой с разбивкой по слоям; полный список файлов в подсказке */
+    .ic-uses { margin-top: 5px; font-size: 13px; color: var(--pencil); cursor: help; }
+    .ic-uses b { color: var(--ink); }
+    .ic-flag { font-size: 12px; color: var(--red-pen); display: block; margin-top: 3px; }
+    .ic-pick { font-size: 13px; margin-top: 6px; }
+    .ic-count { color: var(--pencil); font-size: 13px; }
+    @media (max-width: 640px) { .ic-hide-sm { display: none; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>🎨 Иконки игры</h1>
+    <p class="muted">
+      <b>Своего набора у игры сейчас нет.</b> В коде лежат обычные символы-эмодзи, а рисует их
+      шрифт операционной системы: на макоси Apple Color Emoji, на винде Segoe UI Emoji, на андроиде
+      Noto Color Emoji. Три разных рисунка одного и того же значка, и повлиять на это из кода нельзя —
+      поэтому у тебя красиво, а у игрока с винды нет.<br>
+      Слева — <b>как видишь ты, прямо сейчас</b>, шрифтом этого устройства. Справа — как выглядел бы
+      тот же значок, если бы мы возили набор с собой: одинаково у всех, независимо от системы.
+      Наборы переключаются целиком и по каждой иконке; «Экспорт» отдаёт готовый JSON.
+    </p>
+
+    <div class="note taped tilt-l">
+      <h2>⚙️ Показ</h2>
+      <div class="ic-controls">
+        <label>Набор:
+          <select id="setSel">
+            <option value="sb">✏️ Наш набор (свой SVG)</option>
+            <option value="twemoji">Twemoji (SVG, Twitter)</option>
+            <option value="openmoji">OpenMoji (SVG, рисованный)</option>
+            <option value="google">Google Noto (PNG 64)</option>
+            <option value="facebook">Facebook (PNG 64)</option>
+          </select>
+        </label>
+        <label>Размер: <input type="range" id="sizeR" min="20" max="72" value="34"><span class="val" id="sizeV">34</span></label>
+        <label><input type="checkbox" id="onlyCanvas"> только те, что на канве</label>
+        <label><input type="checkbox" id="onlyWarn"> только чёрно-белые на винде</label>
+        <label>Поиск: <input type="search" id="q" placeholder="имя, роль, файл…"></label>
+      </div>
+      <div class="btn-row" style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px">
+        <button class="small" id="exportBtn">📋 Экспорт выбора</button>
+        <button class="small danger" id="resetBtn">↩ Сбросить выбор</button>
+        <span class="ic-count" id="stats"></span>
+      </div>
+    </div>
+
+    <div class="note taped">
+      <h2>📋 Перепись</h2>
+      <p class="muted" id="legend"></p>
+      <div class="table-scroll">
+        <table class="ic-table">
+          <thead><tr>
+            <th>Сейчас<br><span class="ic-sys" id="sysName">системный шрифт</span></th>
+            <th>Новая<br><span class="ic-sys" id="setName"></span></th>
+            <th>Что это и где</th>
+          </tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+      <div id="spare"></div>
+    </div>
+  </div>
+
+<script src="/icons/sb.js"></script>
+<script src="/js/lab-nav.js"></script>
+<script>
+// Наборы иконок. Имена файлов у всех свои, поэтому для каждого набора отдаём НЕСКОЛЬКО
+// кандидатов: первый подошедший и покажем (<img onerror> идёт по списку дальше).
+// Так страница не врёт «нет иконки» там, где просто другое правило именования.
+const SETS = {
+  sb: () => [],          // свой набор рисуется инлайном, ссылки ему не нужны
+  twemoji: cp => {
+    const base = 'https://cdn.jsdelivr.net/gh/jdecked/twemoji@15.1.0/assets/svg/';
+    // twemoji выкидывает FE0F везде, где нет ZWJ-склейки
+    const noVs = cp.includes('200d') ? cp : cp.split('-').filter(c => c !== 'fe0f').join('-');
+    return [base + noVs + '.svg', base + cp + '.svg'];
+  },
+  openmoji: cp => {
+    const base = 'https://cdn.jsdelivr.net/npm/openmoji@15.0.0/color/svg/';
+    const up = s => s.toUpperCase();
+    const noVs = cp.split('-').filter(c => c !== 'fe0f').join('-');
+    return [base + up(cp) + '.svg', base + up(noVs) + '.svg', base + up(noVs + '-fe0f') + '.svg'];
+  },
+  google: cp => pngSet('google', cp),
+  facebook: cp => pngSet('facebook', cp)
+};
+function pngSet(name, cp) {
+  const base = `https://cdn.jsdelivr.net/npm/emoji-datasource-${name}@15.0.1/img/${name}/64/`;
+  const noVs = cp.split('-').filter(c => c !== 'fe0f').join('-');
+  return [base + noVs + '.png', base + cp + '.png'];
+}
+
+const $ = s => document.querySelector(s);
+const LS = 'sb_icon_picks';
+let DATA = [], picks = {};
+try { picks = JSON.parse(localStorage.getItem(LS) || '{}'); } catch { picks = {}; }
+const savePicks = () => { try { localStorage.setItem(LS, JSON.stringify(picks)); } catch {} };
+
+// Свой набор лежит рядом готовой разметкой — никаких сетевых запросов и ожиданий.
+function sbIcon(cp, alt) {
+  const body = (window.SB_ICONS || {})[cp];
+  if (!body) { const m = document.createElement('span'); m.className = 'miss'; m.textContent = 'не нарисована'; return m; }
+  const wrap = document.createElement('span');
+  wrap.className = 'sb-svg';
+  wrap.setAttribute('role', 'img');
+  wrap.setAttribute('aria-label', alt);
+  wrap.innerHTML = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">${body}</svg>`;
+  return wrap;
+}
+
+// <img>, который перебирает кандидатов, пока какой-нибудь не откроется
+function iconImg(set, cp, alt) {
+  if (set === 'sb') return sbIcon(cp, alt);
+  const urls = SETS[set](cp);
+  const img = document.createElement('img');
+  img.alt = alt; img.loading = 'lazy'; img.dataset.i = '0';
+  img.src = urls[0];
+  img.addEventListener('error', () => {
+    const next = +img.dataset.i + 1;
+    if (next < urls.length) { img.dataset.i = next; img.src = urls[next]; }
+    else { const m = document.createElement('span'); m.className = 'miss'; m.textContent = 'нет в наборе'; img.replaceWith(m); }
+  });
+  return img;
+}
+
+// Где используется — одной строкой: сколько мест и по каким слоям. Полный список файлов
+// висит подсказкой: в таблице он раздувал строку до экрана и мешал сравнивать сами рисунки.
+const layerOf = u => u.src.startsWith('locales/') ? 'словарь'
+  : u.src.endsWith('.html') ? 'разметка'
+  : u.src.startsWith('server/') ? 'конфиг' : 'код';
+function usesLine(i) {
+  const by = new Map();
+  for (const u of i.uses) by.set(layerOf(u), (by.get(layerOf(u)) || 0) + 1);
+  const parts = [...by].map(([k, n]) => `${k} ${n}`).join(' · ');
+  const canvas = i.uses.filter(u => u.canvas).length;
+  return `в <b>${i.uses.length}</b> местах — ${parts}` + (canvas ? ` · <b style="color:var(--red-pen)">канва ${canvas}</b>` : '');
+}
+const usesTitle = i => i.uses
+  .map(u => (u.key ? `${u.src} · ${u.key}` : `${u.src}:${u.line}`) + (u.canvas ? '  ← канва' : ''))
+  .join('\n').replace(/"/g, "'");
+
+function render() {
+  const set = $('#setSel').value;
+  const q = $('#q').value.trim().toLowerCase();
+  const onlyCanvas = $('#onlyCanvas').checked, onlyWarn = $('#onlyWarn').checked;
+  const tbody = $('#rows');
+  tbody.replaceChildren();
+
+  const list = DATA.filter(i => {
+    if (onlyCanvas && !i.onCanvas) return false;
+    if (onlyWarn && !i.needsVs16) return false;
+    if (!q) return true;
+    const hay = [i.name, i.role, i.cp, ...i.uses.map(u => `${u.src} ${u.key || ''} ${u.text || ''}`)].join(' ').toLowerCase();
+    return hay.includes(q);
+  });
+
+  for (const i of list) {
+    const tr = document.createElement('tr');
+    if (i.needsVs16) tr.className = 'warn';
+
+    const old = document.createElement('td');
+    old.className = 'ic-cell';
+    old.innerHTML = `<div class="ic-old">${i.char}</div>`;
+    tr.appendChild(old);
+
+    const neu = document.createElement('td');
+    neu.className = 'ic-cell ic-new';
+    neu.appendChild(iconImg(picks[i.char] || set, i.cp, i.name));
+    tr.appendChild(neu);
+
+    const info = document.createElement('td');
+    info.innerHTML =
+      `<div class="ic-name">${i.name} <span class="ic-cp">U+${i.cp.replace(/-/g, ' U+').toUpperCase()}</span></div>` +
+      `<div class="ic-role">${i.role}</div>` +
+      (i.needsVs16 ? '<span class="ic-flag">⚠ записан без U+FE0F — на винде покажется чёрно-белым значком, а не цветной иконкой</span>' : '') +
+      (i.onCanvas ? '<span class="ic-flag" style="color:var(--pencil)">рисуется на канве — подменить можно только картинкой или шрифтом, не разметкой</span>' : '') +
+      `<div class="ic-uses" title="${usesTitle(i)}">${usesLine(i)}</div>`;
+
+    const sel = document.createElement('select');
+    sel.className = 'ic-pick';
+    sel.innerHTML = `<option value="">— как у всех (${set}) —</option>` +
+      Object.keys(SETS).map(s => `<option value="${s}">${s}</option>`).join('');
+    sel.value = picks[i.char] || '';
+    sel.addEventListener('change', () => {
+      if (sel.value) picks[i.char] = sel.value; else delete picks[i.char];
+      savePicks(); render();
+    });
+    info.appendChild(sel);
+    tr.appendChild(info);
+
+    tbody.appendChild(tr);
+  }
+  $('#setName').textContent = $('#setSel').selectedOptions[0].textContent;
+  $('#stats').textContent = `показано ${list.length} из ${DATA.length}` +
+    (Object.keys(picks).length ? ` · выбрано вручную: ${Object.keys(picks).length}` : '');
+}
+
+$('#setSel').addEventListener('change', render);
+$('#q').addEventListener('input', render);
+$('#onlyCanvas').addEventListener('change', render);
+$('#onlyWarn').addEventListener('change', render);
+$('#sizeR').addEventListener('input', e => {
+  $('#sizeV').textContent = e.target.value;
+  document.documentElement.style.setProperty('--icsz', e.target.value + 'px');
+});
+$('#resetBtn').addEventListener('click', () => { picks = {}; savePicks(); render(); });
+$('#exportBtn').addEventListener('click', async () => {
+  const out = JSON.stringify({ set: $('#setSel').value, overrides: picks }, null, 2);
+  try { await navigator.clipboard.writeText(out); $('#exportBtn').textContent = '✔ в буфере'; }
+  catch { console.log(out); $('#exportBtn').textContent = '↓ в консоли'; }
+  setTimeout(() => { $('#exportBtn').textContent = '📋 Экспорт выбора'; }, 1500);
+});
+
+// Чем именно рисует ЭТО устройство — чтобы было ясно, что левая колонка у всех разная.
+(() => {
+  const ua = navigator.userAgent;
+  const sys = /Mac|iPhone|iPad/.test(ua) ? 'Apple Color Emoji (macOS/iOS)'
+    : /Windows/.test(ua) ? 'Segoe UI Emoji (Windows)'
+    : /Android/.test(ua) ? 'Noto Color Emoji (Android)'
+    : /Linux/.test(ua) ? 'шрифт системы (Linux)' : 'шрифт системы';
+  $('#sysName').textContent = 'у тебя: ' + sys;
+})();
+
+// Про запас: нарисовано, но в игре этому значку пока нет своего места.
+// Так видно, что класс корабля есть, а иконки у него нет — он делит чужую.
+const SPARE = {
+  'ship-barkas':  'Баркас — в игре сидит на ⛵ вместе с перком «косой парус» и «строем судов»',
+  'ship-shkhuna': 'Шхуна — 🛥 занят только ею, можно подменять хоть сейчас',
+  'ship-brig':    'Бриг — в игре сидит на ⚓ вместе с логотипом, перком «сухой док» и меткой «корабль уже ходил»',
+  'ship-fregat':  'Фрегат — 🚢 занят только им',
+  'ship-linkor':  'Линкор — 🛳 занят им и строчкой правил про осаду',
+  'ship-repair':  'Ремонтник — в игре сидит на 🛟 вместе с кнопкой «Чинить»'
+};
+function renderSpare() {
+  const box = $('#spare');
+  const rows = Object.entries(SPARE).filter(([k]) => (window.SB_ICONS || {})[k]);
+  if (!rows.length) { box.replaceChildren(); return; }
+  box.innerHTML = '<h3 class="pf-h" style="margin-top:18px">⛵ Флот: своя иконка на каждый класс</h3>' +
+    '<p class="muted" style="font-size:13px;margin:0 0 8px">Классы судов в игре делят значки с другими сущностями, ' +
+    'поэтому по символу их не различить. В наборе у каждого свой ключ и свой рисунок — парусное вооружение по классу.</p>';
+  for (const [k, note] of rows) {
+    const row = document.createElement('div');
+    row.className = 'ic-spare';
+    row.innerHTML = `<span class="sb-svg"><svg viewBox="0 0 24 24">${window.SB_ICONS[k]}</svg></span><span>${note}</span>`;
+    box.appendChild(row);
+  }
+}
+
+fetch('/icons-data.json').then(r => r.json()).then(d => {
+  DATA = d.icons;
+  const warn = DATA.filter(i => i.needsVs16).length, canvas = DATA.filter(i => i.onCanvas).length;
+  $('#legend').innerHTML =
+    `Всего <b>${DATA.length}</b> иконок. <b>${warn}</b> записаны без вариатора U+FE0F — именно они ` +
+    `на винде чаще всего и выглядят «не так» (строки подсвечены). <b>${canvas}</b> рисуются прямо на канве: ` +
+    `их нельзя подменить разметкой, только картинкой или шрифтом.`;
+  render();
+  renderSpare();
+});
+</script>
+</body>
+</html>

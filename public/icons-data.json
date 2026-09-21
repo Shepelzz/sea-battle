@@ -1,0 +1,4129 @@
+{
+ "generated": 1790009694959,
+ "icons": [
+  {
+   "char": "⚓",
+   "cp": "2693",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "home.h1",
+     "text": "⚓ Морской бой"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "home.lvlMid",
+     "text": "⚓ Боцман — честный бой"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "home.busy.title",
+     "text": "⚓ Лобби уже открыто"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.captains",
+     "text": "⚓ Капитаны"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.lobby.lvlMid",
+     "text": "⚓ Боцман"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.shop.ships",
+     "text": "⚓ Корабли"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.coach.toBattle",
+     "text": "⚓ В бой!"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.flagship",
+     "text": "⚓ флагман"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.acted",
+     "text": "⚓ Уже ходил"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.movesLeft_one",
+     "text": "⚓ Остался {{count}} ход — ходи дальше или «Завершить ход»"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.movesLeft_few",
+     "text": "⚓ Осталось ходов: {{count}} — ходи дальше или «Завершить ход»"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.movesLeft_many",
+     "text": "⚓ Осталось ходов: {{count}} — ходи дальше или «Завершить ход»"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.unavailable",
+     "text": "⚓ Сейчас недоступно"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.convoyActed",
+     "text": "⚓ Это судно уже ходило в этом ходу"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.convoySenior",
+     "text": "⚓ {{ship}} старше флагмана — строй должен вести он"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.convoyNoMoves",
+     "text": "⚓ На такой строй не хватает манёвров (осталось {{left}})"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "tut.hello",
+     "text": "⚓ <b>Привет, капитан!</b> Несколько коротких подсказок — и в бой. Это «морской бой на лист"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "og.homeTitle",
+     "text": "⚓ Морской бой на листке в клетку"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "og.gameTitle",
+     "text": "⚓ Тебя зовут в морской бой"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "err.convoyRank",
+     "text": "⚓ Флагман не может быть младше: {{lead}} не поведёт {{senior}}"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.fleetBought",
+     "text": "⚓ {{nick}} собрал флот ({{count}} суд., −{{cost}} зол.) — готов к бою"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "mail.nudge.subject",
+     "text": "⚓ Морской бой: твой ход! Даём 10 минут"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "mail.nudge.html",
+     "text": "<p>Привет, <b>{{nick}}</b>!</p>\n<p>Соперники тебя торопят: сейчас твой ход, и у тебя <b>10"
+    },
+    {
+     "src": "index.html",
+     "line": 17,
+     "text": "<h1><span data-i18n=\"home.h1\">⚓ Морской бой</span> <span class=\"muted\" style=\"font-size:.45em; white-space:now",
+     "canvas": false
+    },
+    {
+     "src": "index.html",
+     "line": 112,
+     "text": "<option value=\"mid\" selected data-i18n=\"home.lvlMid\">⚓ Боцман — честный бой</option>",
+     "canvas": false
+    },
+    {
+     "src": "index.html",
+     "line": 174,
+     "text": "<h2 style=\"margin:0; flex:1\" data-i18n=\"home.busy.title\">⚓ Лобби уже открыто</h2>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 98,
+     "text": "<h3 style=\"margin-bottom:4px\" data-i18n=\"game.captains\">⚓ Капитаны</h3>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 160,
+     "text": "<option value=\"mid\" selected data-i18n=\"game.lobby.lvlMid\">⚓ Боцман</option>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 191,
+     "text": "<h3 class=\"shop-h\" id=\"shopShipsH\" data-i18n=\"game.shop.ships\">⚓ Корабли</h3>",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 1578,
+     "text": "SBIcons.text(ctx, '⚓', sx(s.x), sy(s.y) - ((SHIP_LEN[s.type] || 46) * 0.5 + 14) * view.scale);",
+     "canvas": true
+    },
+    {
+     "src": "js/game.js",
+     "line": 3083,
+     "text": "const movesTag = showMoves ? ` ⚓${movesLeft()}/${movesPerTurn()}` : '';",
+     "canvas": false
+    },
+    {
+     "src": "server/config.js",
+     "key": "brig",
+     "text": "icon: '⚓'"
+    },
+    {
+     "src": "server/config.js",
+     "key": "drydock",
+     "text": "icon: '⚓'"
+    }
+   ],
+   "name": "Якорь",
+   "role": "логотип игры · класс «бриг» (своей иконки нет) · перк «сухой док» · на канве — метка «корабль уже ходил»",
+   "onCanvas": true,
+   "count": 33
+  },
+  {
+   "char": "💥",
+   "cp": "1f4a5",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "home.rules.li8",
+     "text": "Любой боевой корабль даёт 💥 бортовой залп — но бьёт <b>только в борт</b> (нос и корма не "
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.btnBroadside",
+     "text": "💥 Залп"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.cdBroadside",
+     "text": "💥 {{sec}}с…"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.perk.gun",
+     "text": "💥 пушка: −{{dmg}} HP врагу/пирату рядом"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.offBothSides",
+     "text": "💥 Оба борта уже стреляли в этом ходу"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.offMortar",
+     "text": "💥 Корабль даёт залп — мортира в этом ходу закрыта"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.fleet.volley",
+     "text": "💥 залп до {{dmg}}"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.broadside.h",
+     "text": "💥 Бортовой залп"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.econ.wreck",
+     "text": "💥 <b>Обломки</b> — за потопленный корабль ≈50% его цены."
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "tut.move",
+     "text": "Нажми на свой корабль → <b>«Плыть»</b> (в пределах контура; 🌬 по ветру он вытянут — уплыв"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.pirateSunk",
+     "text": "💥 Пиратский корабль потоплен! {{nick}} забирает награду {{gold}} золота и {{coins}} 🪙"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.pirateSunkFog",
+     "text": "💥 {{nick}} потопил пиратский корабль"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.shipSunk",
+     "text": "💥 {{owner}} теряет судно: {{ship}} — потопил {{killer}}"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.shipSunkLoot",
+     "text": "💥 {{owner}} теряет судно: {{ship}} — потопил {{killer}} и лутает {{gold}} золота с обломк"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.shipSunkFog",
+     "text": "💥 {{killer}} потопил корабль игрока {{owner}}"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.shipSunkPirates",
+     "text": "💥 {{owner}} теряет судно: {{ship}} — потоплено пиратами!"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.shipSunkPiratesFog",
+     "text": "💥 Пираты потопили корабль игрока {{owner}}"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.outpostDown",
+     "text": "💥 {{nick}} разрушает постройку игрока {{victim}}: {{icon}} {{building}}!"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.outpostDownFog",
+     "text": "💥 {{nick}} разрушил чужую постройку"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.broadside",
+     "text": "💥 {{nick}} — бортовой залп: {{ship}}, {{side}} борт, целей: {{count}}"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.broadsideSank",
+     "text": "💥 {{nick}} — бортовой залп: {{ship}}, {{side}} борт, целей: {{count}} — потоплено {{sank}"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.broadsideFog",
+     "text": "💥 {{nick}} даёт бортовой залп"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.pirateSunkGold",
+     "text": "💥 Пиратский корабль потоплен! {{nick}} забирает награду {{gold}} золота"
+    },
+    {
+     "src": "index.html",
+     "line": 136,
+     "text": "<li data-i18n-html=\"home.rules.li8\">Любой боевой корабль даёт 💥 бортовой залп — но бьёт <b>только в борт</b> ",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 52,
+     "text": "<button class=\"small danger hidden\" id=\"btnBroadside\" data-i18n=\"game.btnBroadside\">💥 Залп</button>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 282,
+     "text": "<h3 data-i18n=\"wiki.broadside.h\">💥 Бортовой залп</h3>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 303,
+     "text": "<li data-i18n-html=\"wiki.econ.wreck\">💥 <b>Обломки</b> — за потопленный корабль ≈50% его цены.</li>",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 1543,
+     "text": "drawBroadsideSectors(sel);                 // 💥 сектора-трапеции бортов (наводимый — красный)",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 2693,
+     "text": "$('#btnBroadside').classList.toggle('hidden', !canBroadside(sel)); // 💥 Залп",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 2766,
+     "text": "key: 'broadside', icon: '💥', label: t('game.wheel.broadside'),",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 2955,
+     "text": "$('#btnBroadside').addEventListener('click', () => { mode = 'broadside'; Sound.play('click'); render(); }); //",
+     "canvas": false
+    }
+   ],
+   "name": "Взрыв",
+   "role": "бортовой залп",
+   "onCanvas": false,
+   "count": 31
+  },
+  {
+   "char": "⛵",
+   "cp": "26f5",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "home.rules.li3",
+     "text": "⛵ С «Ходом тремя судами» соседние корабли можно вести <b>строем</b>: отметил флагмана и па"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.hintConvoyPick",
+     "text": "⛵ тапни соседние суда (до {{max}}), затем потяни от флагмана"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.hintConvoyReady",
+     "text": "⛵ в строю {{n}}/{{max}} — потяни от флагмана, пойдут все"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.convoyDrag",
+     "text": "⛵ потяни от флагмана — пойдёт весь строй"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.convoyNear",
+     "text": "⛵ В строй берут только суда рядом с флагманом"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.convoyTooMany_one",
+     "text": "⛵ В строю не больше {{count}} судна"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.convoyTooMany_few",
+     "text": "⛵ В строю не больше {{count}} судов"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.convoyTooMany_many",
+     "text": "⛵ В строю не больше {{count}} судов"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.turn.multi.convoy",
+     "text": "⛵ <b>Строй (конвой)</b> — подкрепление гнать пачкой, а не по одному. Тапни корабль, выбери"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.turn.multi.convoy",
+     "text": "⛵ <b>Строй (конвой)</b> — подкрепление гнать пачкой, а не по одному. Тапни корабль, выбери"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.fleet.h",
+     "text": "⛵ Флот"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "tut.convoy",
+     "text": "⛵ <b>Строй</b>: соседние суда можно вести <b>разом и за один манёвр</b> — так подкрепление"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "tut.convoy",
+     "text": "⛵ <b>Строй</b>: соседние суда можно вести <b>разом и за один манёвр</b> — так подкрепление"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "err.convoySlow",
+     "text": "⛵ Строй идёт по самому медленному — так далеко не дотянуть"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "err.convoyBlocked",
+     "text": "⛵ {{ship}} — {{reason}}"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.convoy",
+     "text": "⛵ {{nick}} ведёт строй из {{count}} судов: {{ships}}"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.convoyFog",
+     "text": "⛵ {{nick}} ведёт строй из {{count}} судов"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.convoyWar",
+     "text": "⛵ {{nick}} ведёт строй из {{count}} боевых судов: {{ships}}"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.convoyWarFog",
+     "text": "⛵ {{nick}} ведёт строй из {{count}} боевых судов"
+    },
+    {
+     "src": "index.html",
+     "line": 131,
+     "text": "<li data-i18n-html=\"home.rules.li3\">⛵ С «Ходом тремя судами» соседние корабли можно вести <b>строем</b>: отмет",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 32,
+     "text": "<button class=\"small\" id=\"dbgShip\" title=\"Поставить любой корабль любому игроку\">⛵ корабль</button>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 261,
+     "text": "<p data-i18n-html=\"wiki.turn.multi.convoy\">⛵ <b>Строй (конвой)</b> — подкрепление гнать пачкой, а не по одному",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 261,
+     "text": "<p data-i18n-html=\"wiki.turn.multi.convoy\">⛵ <b>Строй (конвой)</b> — подкрепление гнать пачкой, а не по одному",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 326,
+     "text": "<h3 data-i18n=\"wiki.fleet.h\">⛵ Флот</h3>",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 340,
+     "text": "let groupShown = false;   // ⛵ хоть одно судно текущего строя показали (остальные могут быть в тумане)",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 2790,
+     "text": "key: 'convoy', icon: '⛵', label: t('game.wheel.convoy'),",
+     "canvas": false
+    },
+    {
+     "src": "server/config.js",
+     "key": "barkas",
+     "text": "icon: '⛵'"
+    },
+    {
+     "src": "server/config.js",
+     "key": "lateen",
+     "text": "icon: '⛵'"
+    }
+   ],
+   "name": "Рыбацкий баркас",
+   "role": "класс «баркас» (одна мачта) · строй судов · перк «косой парус»",
+   "onCanvas": false,
+   "count": 28
+  },
+  {
+   "char": "💰",
+   "cp": "1f4b0",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "game.btnCollect",
+     "text": "💰 Собрать"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.shop.price",
+     "text": "{{gold}} 💰"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.perk.income",
+     "text": "💰 +{{gold}} золота/ход"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.turn.liLoot",
+     "text": "💰 <b>собрать</b> добычу;"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.econ.h",
+     "text": "💰 Добыча и экономика"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "tut.shop",
+     "text": "В <b>Верфи</b> покупаешь корабли за золото 💰: шустрые шхуны и бриги, мощные фрегаты, рыба"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "tut.gold",
+     "text": "Тут твой <b>баланс</b> — <b>золото</b> 💰. Зарабатывай его рыбалкой, кладами и потоплением"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "tut.loot",
+     "text": "А это <b>остров с кладом</b> 💰 — подведи любой корабль вплотную и жми <b>«Собрать»</b>, ч"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.collect",
+     "text": "💰 {{nick}} собирает добычу: +{{gold}} зол. (островов: {{count}})"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.collectFog",
+     "text": "💰 {{nick}} собирает добычу"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.income",
+     "text": "💰 Доход за ход: {{parts}} — итого +{{total}} зол."
+    },
+    {
+     "src": "game.html",
+     "line": 37,
+     "text": "<button class=\"small\" id=\"dbgGold\" title=\"+500 золота себе\">💰 +500</button>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 53,
+     "text": "<button class=\"small hidden\" id=\"btnCollectHere\" data-i18n=\"game.btnCollect\">💰 Собрать</button>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 248,
+     "text": "<li data-i18n-html=\"wiki.turn.liLoot\">💰 <b>собрать</b> добычу;</li>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 257,
+     "text": "<li data-i18n-html=\"wiki.turn.liLoot\">💰 <b>собрать</b> добычу;</li>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 299,
+     "text": "<h3 data-i18n=\"wiki.econ.h\">💰 Добыча и экономика</h3>",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 642,
+     "text": "SBIcons.text(ctx, `+${e.amount} 💰`, gx, gy, { stroke: true });",
+     "canvas": true
+    },
+    {
+     "src": "js/game.js",
+     "line": 1513,
+     "text": "SBIcons.text(ctx, isl.looted ? '✖' : '💰', sx(isl.x), sy(isl.y) + 5);",
+     "canvas": true
+    },
+    {
+     "src": "js/game.js",
+     "line": 2235,
+     "text": "SBIcons.text(ctx, `💰${s.bounty}`, px, py + L * 0.62 + 16 * k);",
+     "canvas": true
+    },
+    {
+     "src": "js/game.js",
+     "line": 2796,
+     "text": "if (canShipCollect(sel)) acts.push({ key: 'collect', icon: '💰', label: t('game.wheel.collect'), off: committe",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 3098,
+     "text": "$('#myGold').innerHTML = purseOn ? money('💰', wallet.gold) : '';",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 3123,
+     "text": "const goldOf = p => (p.gold === null || p.gold === undefined) ? '' : `${money('💰', p.gold)} · `;",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 3204,
+     "text": "$('#shopGold').innerHTML = money('💰', me.gold);",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 3241,
+     "text": "const cost = `${money('💰', def.gold)}${def.coins ? ' + ' + money('🪙', def.coins) : ''}`;",
+     "canvas": false
+    },
+    {
+     "src": "js/home.js",
+     "line": 331,
+     "text": "+ row(t('profile.gold'), '💰 ' + fmtNum(s.gold))",
+     "canvas": false
+    }
+   ],
+   "name": "Золотые слитки",
+   "role": "золото: казна, добыча, клад на острове",
+   "onCanvas": true,
+   "count": 25
+  },
+  {
+   "char": "🏴‍☠️",
+   "cp": "1f3f4-200d-2620-fe0f",
+   "needsVs16": false,
+   "composite": true,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "home.rules.li6",
+     "text": "По морю бродят нейтральные пираты 🏴‍☠️ — они медленно дрейфуют между ходами, могут исчеза"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.lobby.title",
+     "text": "🏴‍☠️ Сбор флота"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.econ.tribute",
+     "text": "🏴‍☠️ <b>Куш</b> — разбил порт: забираешь 100–1000 золота, тем больше, чем крупнее партию "
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.pirates.h",
+     "text": "🏴‍☠️ Пираты"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "tut.pirates",
+     "text": "По морю бродят <b>пираты</b> 🏴‍☠️ — потопи и забери награду. А жирный <b>👑-босс</b> несё"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "tut.goal",
+     "text": "Цель — <b>разбить порт соперника</b>. Подведи флот и расстреляй его базу. Удачи, капитан! "
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.bossCame",
+     "text": "👑🏴‍☠️ В водах объявился ПИРАТСКИЙ БОСС с богатой добычей!"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.pirateCame",
+     "text": "🏴‍☠️ На горизонте появился пиратский корабль!"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.pirateVolley",
+     "text": "🏴‍☠️ Пираты дают бортовой залп — целей: {{count}} (−{{dmg}} HP)"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.bossVolley",
+     "text": "🏴‍☠️ БОСС-пират даёт бортовой залп — целей: {{count}} (−{{dmg}} HP)"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.pirateVolleyFog",
+     "text": "🏴‍☠️ Пираты дали залп по игроку {{nick}}"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.portDown",
+     "text": "🏴‍☠️ Порт игрока {{victim}} разрушен! {{killer}} забирает {{gold}} золота, {{victim}} выб"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.portDownFog",
+     "text": "🏴‍☠️ {{killer}} разбил базу игрока {{victim}} — {{victim}} выбывает"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.fleetWiped",
+     "text": "🏴‍☠️ Флот игрока {{victim}} разбит! {{killer}} забирает остатки казны ({{gold}}) и побежд"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.fleetWipedFog",
+     "text": "🏴‍☠️ {{killer}} разбил флот игрока {{victim}}"
+    },
+    {
+     "src": "index.html",
+     "line": 134,
+     "text": "<li data-i18n-html=\"home.rules.li6\">По морю бродят нейтральные пираты 🏴‍☠️ — они медленно дрейфуют между хода",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 27,
+     "text": "<button class=\"small\" id=\"dbgPirate\" title=\"Подсадить пирата в точку\">🏴‍☠️ пират</button>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 146,
+     "text": "<h2 style=\"margin:0; flex:1\" data-i18n=\"game.lobby.title\">🏴‍☠️ Сбор флота</h2>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 304,
+     "text": "<li data-i18n-html=\"wiki.econ.tribute\">🏴‍☠️ <b>Куш</b> — разбил порт: забираешь 100–1000 золота, тем больше, ",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 337,
+     "text": "<h3 data-i18n=\"wiki.pirates.h\">🏴‍☠️ Пираты</h3>",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 2232,
+     "text": "SBIcons.text(ctx, s.boss ? '👑🏴‍☠️' : '🏴‍☠️', px, py - L * 0.5);",
+     "canvas": true
+    },
+    {
+     "src": "js/game.js",
+     "line": 2232,
+     "text": "SBIcons.text(ctx, s.boss ? '👑🏴‍☠️' : '🏴‍☠️', px, py - L * 0.5);",
+     "canvas": true
+    },
+    {
+     "src": "js/home.js",
+     "line": 71,
+     "text": "<div class=\"host\">🏴‍☠️ ${escapeHtml(l.host)}${l.isHost ? ' · ' + t('lobby.yours') : ''}</div>",
+     "canvas": false
+    }
+   ],
+   "name": "Пиратский флаг",
+   "role": "пираты на карте (флаг с древком) · метка русского языка в переключателе (вариант «404»)",
+   "onCanvas": true,
+   "count": 23
+  },
+  {
+   "char": "🎯",
+   "cp": "1f3af",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "game.btnFire",
+     "text": "🎯 Мортира"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.cdMortar",
+     "text": "🎯 {{sec}}с…"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.fleet.mortar",
+     "text": "🎯 мортира {{dmg}}, порт {{port}}"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.goal.h",
+     "text": "🎯 Цель"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.mortar.h",
+     "text": "🎯 Мортира"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.outpost.p2",
+     "text": "Чужой аванпост <b>разрушается только 🎯 мортирой</b> (фрегат/линкор): выбери корабль → «Мо"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.fleet.legend",
+     "text": "❤️ прочность · ⚔️ урон · 🎯 дальность огня · 🧭 ход (в клетках)"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "tut.broadside",
+     "text": "За борт стреляешь раз в ход, но можно дать залп <b>и левым, и правым</b> бортом (это одно "
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "tut.outpost",
+     "text": "⛺ Залутанный остров — уже <b>плацдарм</b>: подведи корабль вплотную → <b>«⛺ Аванпост»</b>."
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "ship.fregat.desc",
+     "text": "Тяжёлый корабль линии: бортовой залп 4 пушки + 🎯 мортира (прицельный выстрел, в т.ч. по п"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "ship.linkor.desc",
+     "text": "Король моря: залп 4 пушки на борт + 🎯 мортира по порту в 1.5× (≈98). Медленный, но почти "
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "err.mortarCd",
+     "text": "🎯 Мортира перезаряжается"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "err.enemyOutpost",
+     "text": "Тут чужой аванпост — сначала разрушь его 🎯 мортирой"
+    },
+    {
+     "src": "game.html",
+     "line": 50,
+     "text": "<button class=\"small danger\" id=\"btnFire\" data-i18n=\"game.btnFire\">🎯 Мортира</button>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 237,
+     "text": "<h3 data-i18n=\"wiki.goal.h\">🎯 Цель</h3>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 288,
+     "text": "<h3 data-i18n=\"wiki.mortar.h\">🎯 Мортира</h3>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 317,
+     "text": "<p data-i18n-html=\"wiki.outpost.p2\">Чужой аванпост <b>разрушается только 🎯 мортирой</b> (фрегат/линкор): выбе",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 327,
+     "text": "<p class=\"muted\" style=\"margin:0 0 8px\" data-i18n-html=\"wiki.fleet.legend\">❤️ прочность · ⚔️ урон · 🎯 дальнос",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 2691,
+     "text": "$('#btnFire').classList.toggle('hidden', !canMortar(sel));     // 🎯 Мортира — фрегат/линкор",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 2773,
+     "text": "key: 'mortar', icon: '🎯', label: t('game.wheel.mortar'),",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 2953,
+     "text": "$('#btnFire').addEventListener('click', () => { mode = 'attack'; Sound.play('click'); render(); });   // 🎯 Мо",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 2990,
+     "text": "<span class=\"st\">${st.price}з · ❤️${st.hp} · ${power} · 🎯${(st.fireRange / 40).toFixed(1)} · 🧭${(st.move / 4",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 3220,
+     "text": "<span title=\"${t(st.repairer ? 'game.ship.healRange' : 'game.ship.fireRange')}\">🎯 ${t('game.cells', { n: (st.",
+     "canvas": false
+    }
+   ],
+   "name": "Мишень",
+   "role": "мортира (прицельный выстрел) · дальность огня",
+   "onCanvas": false,
+   "count": 23
+  },
+  {
+   "char": "⚔️",
+   "cp": "2694-fe0f",
+   "needsVs16": false,
+   "composite": true,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "home.hotseatBtn",
+     "text": "⚔️ Начать баттл"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "home.botBtn",
+     "text": "⚔️ В бой!"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.lobby.start",
+     "text": "⚔️ Начать баттл"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.shop.duelRules",
+     "text": "<b>⚔️ Дуэль 1 на 1.</b> Скупись на <b>ВСЁ</b> золото — пока можно купить хоть один корабль"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.shop.duelRules",
+     "text": "<b>⚔️ Дуэль 1 на 1.</b> Скупись на <b>ВСЁ</b> золото — пока можно купить хоть один корабль"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.shop.toBattle",
+     "text": "⚔️ В бой!"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.warStarted",
+     "text": "⚔️ Мирное время кончилось — война!"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.convoyInBattle",
+     "text": "⚔️ Это судно в бою — строем его не увести"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.offConvoyEnemy",
+     "text": "⚔️ Рядом враг — строем от боя не уйти"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.fleet.legend",
+     "text": "❤️ прочность · ⚔️ урон · 🎯 дальность огня · 🧭 ход (в клетках)"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "err.convoyContact",
+     "text": "⚔️ Рядом враг — строем от боя не уйти"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.started",
+     "text": "⚔️ Баттл начался! Первым ходит {{nick}}"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.duelStart",
+     "text": "⚔️ Флоты собраны — бой! Первым ходит {{nick}}"
+    },
+    {
+     "src": "index.html",
+     "line": 87,
+     "text": "<button class=\"primary\" id=\"hotseatBtn\" data-i18n=\"home.hotseatBtn\">⚔️ Начать баттл</button>",
+     "canvas": false
+    },
+    {
+     "src": "index.html",
+     "line": 122,
+     "text": "<button class=\"primary\" id=\"botBtn\" data-i18n=\"home.botBtn\">⚔️ В бой!</button>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 173,
+     "text": "<button class=\"primary\" id=\"startBtn\" data-i18n=\"game.lobby.start\">⚔️ Начать баттл</button>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 189,
+     "text": "<div class=\"duel-rules hidden\" id=\"duelRules\" data-i18n-html=\"game.shop.duelRules\"><b>⚔️ Дуэль 1 на 1.</b> Ску",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 189,
+     "text": "<div class=\"duel-rules hidden\" id=\"duelRules\" data-i18n-html=\"game.shop.duelRules\"><b>⚔️ Дуэль 1 на 1.</b> Ску",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 327,
+     "text": "<p class=\"muted\" style=\"margin:0 0 8px\" data-i18n-html=\"wiki.fleet.legend\">❤️ прочность · ⚔️ урон · 🎯 дальнос",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 2987,
+     "text": "const power = st.repairer ? t('game.fleet.repairer') : (cannons ? t('game.fleet.volley', { dmg: st.dmg }) : `⚔",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 3219,
+     "text": ": `<span title=\"${t('game.ship.dmgTitle')}\">⚔️ ${st.dmg}</span>`}",
+     "canvas": false
+    }
+   ],
+   "name": "Скрещённые мечи",
+   "role": "урон корабля · кнопка «в бой»",
+   "onCanvas": false,
+   "count": 21
+  },
+  {
+   "char": "🏰",
+   "cp": "1f3f0",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "home.rules.li1",
+     "text": "У каждого — база-остров с портом и стартовый флот: 2 шхуны и фрегат. Порт приносит немного"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.econ.port",
+     "text": "🏰 <b>Доход порта</b> — немного золота в начале каждого твоего хода. Чем беднее флот, тем "
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.outpost.lvl3",
+     "text": "🏰 <b>Форт</b> (400) — доход <b>12</b>/ход + <b>береговая пушка</b>: сама бьёт врагов и пи"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.port.h",
+     "text": "🏰 Порт"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "tut.port",
+     "text": "Это твой <b>порт и флот</b>. Порт приносит немного золота каждый ход и <b>огрызается</b> \ud83c"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "tut.shop",
+     "text": "В <b>Верфи</b> покупаешь корабли за золото 💰: шустрые шхуны и бриги, мощные фрегаты, рыба"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "tut.outpost",
+     "text": "⛺ Залутанный остров — уже <b>плацдарм</b>: подведи корабль вплотную → <b>«⛺ Аванпост»</b>."
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.fortShotPirate",
+     "text": "🏰 Форт игрока {{nick}} бьёт по пиратам (−{{dmg}} HP)"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.fortShotShip",
+     "text": "🏰 Форт игрока {{nick}} бьёт — цель: {{ship}} ({{foe}}), −{{dmg}} HP"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.fortShotFog",
+     "text": "🏰 Форт игрока {{nick}} дал залп"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.portReturn",
+     "text": "🏰 Порт игрока {{victim}} огрызается — цель: {{ship}} (−{{dmg}} HP)"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.portReturnFog",
+     "text": "🏰 База игрока {{victim}} даёт отпор"
+    },
+    {
+     "src": "index.html",
+     "line": 129,
+     "text": "<li data-i18n-html=\"home.rules.li1\">У каждого — база-остров с портом и стартовый флот: 2 шхуны и фрегат. Порт ",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 305,
+     "text": "<li data-i18n-html=\"wiki.econ.port\">🏰 <b>Доход порта</b> — немного золота в начале каждого твоего хода. Остал",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 315,
+     "text": "<li data-i18n-html=\"wiki.outpost.lvl3\">🏰 <b>Форт</b> (400) — доход <b>12</b>/ход + <b>береговая пушка</b>: са",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 321,
+     "text": "<h3 data-i18n=\"wiki.port.h\">🏰 Порт</h3>",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 3223,
+     "text": "${st.portBonus ? `<span title=\"${t('game.ship.portTitle', { x: st.portBonus })}\">🏰 ×${st.portBonus}</span>` :",
+     "canvas": false
+    },
+    {
+     "src": "server/config.js",
+     "key": "battery",
+     "text": "icon: '🏰'"
+    }
+   ],
+   "name": "Замок",
+   "role": "база с портом · аванпост 3-го уровня (форт) · перк «береговая батарея»",
+   "onCanvas": false,
+   "count": 18
+  },
+  {
+   "char": "🔧",
+   "cp": "1f527",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "game.btnRecharge",
+     "text": "🔧 Пополнить"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.rechargeNote",
+     "text": "🔧 нет материалов — вернись на базу пополнить"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.offNoMaterials",
+     "text": "🔧 Материалы кончились — пополни у своей базы"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.fleet.repairs_one",
+     "text": "🔧 {{count}} ремонт"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.fleet.repairs_few",
+     "text": "🔧 {{count}} ремонта"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.fleet.repairs_many",
+     "text": "🔧 {{count}} ремонтов"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.repairer.p2",
+     "text": "🔧 <b>Запас материалов</b> — жёлтая шкала под полоской HP: ремонтник чинит ограниченное чи"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.recharge",
+     "text": "🔧 {{nick}} — {{ship}} пополнил материалы на базе (зарядов {{count}})"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.rechargeFog",
+     "text": "🔧 {{nick}} пополняет ремонтника"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.portRepaired",
+     "text": "🔧 {{nick}} — ремонт порта: +{{hp}} прочности (стало {{left}})"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.portRepairedFog",
+     "text": "🔧 {{nick}} чинит порт"
+    },
+    {
+     "src": "game.html",
+     "line": 55,
+     "text": "<button class=\"small repair hidden\" id=\"btnRecharge\" data-i18n=\"game.btnRecharge\">🔧 Пополнить</button>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 58,
+     "text": "<span class=\"move-hint hidden\" id=\"rechargeNote\" data-i18n=\"game.rechargeNote\">🔧 нет материалов — вернись на ",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 295,
+     "text": "<p data-i18n-html=\"wiki.repairer.p2\">🔧 <b>Запас материалов</b> — жёлтая шкала под полоской HP: ремонтник чини",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 2707,
+     "text": "$('#btnRecharge').classList.toggle('hidden', !canShipRecharge(sel)); // 🔧 Пополнить (у базы)",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 2807,
+     "text": "if (canShipRecharge(sel)) acts.push({ key: 'recharge', icon: '🔧', label: t('game.wheel.recharge'), off: commi",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 3032,
+     "text": "$('#btnRecharge').addEventListener('click', () => sendAction({ type: 'recharge', shipId: selectedShipId })); /",
+     "canvas": false
+    },
+    {
+     "src": "server/config.js",
+     "key": "portRepair",
+     "text": "icon: '🔧'"
+    }
+   ],
+   "name": "Гаечный ключ",
+   "role": "пополнить заряды ремонтника · перк «ремонт порта»",
+   "onCanvas": false,
+   "count": 18
+  },
+  {
+   "char": "🧭",
+   "cp": "1f9ed",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "profile.title",
+     "text": "🧭 Капитанский журнал"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.btnMove",
+     "text": "🧭 Плыть"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.turn.single.liMove",
+     "text": "🧭 <b>передвинуть</b> один корабль;"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.turn.multi.liMove",
+     "text": "🧭 <b>передвинуть</b> корабль;"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.move.h",
+     "text": "🧭 Движение «по линейке»"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.fleet.legend",
+     "text": "❤️ прочность · ⚔️ урон · 🎯 дальность огня · 🧭 ход (в клетках)"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.move",
+     "text": "🧭 {{nick}} — ход: {{ship}}"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.moveFog",
+     "text": "🧭 {{nick}} — ход: {{ship}}"
+    },
+    {
+     "src": "index.html",
+     "line": 190,
+     "text": "<h2 style=\"margin:0; flex:1\" data-i18n=\"profile.title\">🧭 Капитанский журнал</h2>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 49,
+     "text": "<button class=\"small\" id=\"btnMove\" data-i18n=\"game.btnMove\">🧭 Плыть</button>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 246,
+     "text": "<li data-i18n-html=\"wiki.turn.single.liMove\">🧭 <b>передвинуть</b> один корабль;</li>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 255,
+     "text": "<li data-i18n-html=\"wiki.turn.multi.liMove\">🧭 <b>передвинуть</b> корабль;</li>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 277,
+     "text": "<h3 data-i18n=\"wiki.move.h\">🧭 Движение «по линейке»</h3>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 327,
+     "text": "<p class=\"muted\" style=\"margin:0 0 8px\" data-i18n-html=\"wiki.fleet.legend\">❤️ прочность · ⚔️ урон · 🎯 дальнос",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 2990,
+     "text": "<span class=\"st\">${st.price}з · ❤️${st.hp} · ${power} · 🎯${(st.fireRange / 40).toFixed(1)} · 🧭${(st.move / 4",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 3221,
+     "text": "<span title=\"${t('game.ship.moveRange')}\">🧭 ${t('game.cells', { n: (st.move / 40).toFixed(1) })}</span>",
+     "canvas": false
+    }
+   ],
+   "name": "Компас",
+   "role": "дальность хода · профиль капитана",
+   "onCanvas": false,
+   "count": 16
+  },
+  {
+   "char": "🛟",
+   "cp": "1f6df",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "game.btnRepair",
+     "text": "🛟 Чинить"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.cdRepair",
+     "text": "🛟 {{sec}}с…"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.perk.heal",
+     "text": "🛟 чинит твои корабли рядом (+{{p}}% прочности/ход)"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.fleet.heal",
+     "text": "🛟 +{{p}}% HP"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.fleet.repairer",
+     "text": "🛟 ремонт"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.repairer.h",
+     "text": "🛟 Ремонтник"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "err.repairCd",
+     "text": "🛟 Ремонт перезаряжается"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.repair",
+     "text": "🛟 {{nick}} — ремонт: {{ship}} латает {{target}} (+{{hp}} HP, осталось зарядов {{left}})"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.repairFog",
+     "text": "🛟 {{nick}} ремонтирует свой флот"
+    },
+    {
+     "src": "game.html",
+     "line": 51,
+     "text": "<button class=\"small repair hidden\" id=\"btnRepair\" data-i18n=\"game.btnRepair\">🛟 Чинить</button>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 293,
+     "text": "<h3 data-i18n=\"wiki.repairer.h\">🛟 Ремонтник</h3>",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 2692,
+     "text": "$('#btnRepair').classList.toggle('hidden', !st.repairer);      // 🛟 Чинить",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 2779,
+     "text": "key: 'repair', icon: '🛟', label: t(noCharges ? 'game.wheel.noMaterials' : 'game.wheel.repair'),",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 3218,
+     "text": "? `<span title=\"${t('game.ship.healTitle')}\">🛟 +${Math.round(st.healFrac * 100)}% HP</span>`",
+     "canvas": false
+    },
+    {
+     "src": "server/config.js",
+     "key": "repair",
+     "text": "icon: '🛟'"
+    }
+   ],
+   "name": "Спасательный круг",
+   "role": "починить корабль · класс «ремонтник»",
+   "onCanvas": false,
+   "count": 15
+  },
+  {
+   "char": "⚡",
+   "cp": "26a1",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "home.opt.rt",
+     "text": "⚡ Полный вперёд!"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.tabRt",
+     "text": "⚡ Полный вперёд — Морской бой"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.banner.rt",
+     "text": "⚡ Полный вперёд — реалтайм, жми и плыви!"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.hintRt",
+     "text": "⚡ Полный вперёд (бета): без ходов! Корабли плывут к точке сами (кликай куда угодно), залп "
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.rt.h",
+     "text": "⚡ Полный вперёд! (бета) — реалтайм"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "tag.realtime",
+     "text": "⚡ Полный вперёд! βeta"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "err.rtNotInMode",
+     "text": "⚡ Реалтайм недоступен в этом режиме"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "err.rtNoHotseat",
+     "text": "⚡ Реалтайм на одном устройстве не сыграть — одна мышь на всех. Выбери «Против компьютера» "
+    },
+    {
+     "src": "index.html",
+     "line": 67,
+     "text": "<label class=\"fog-toggle\"><input type=\"checkbox\" id=\"onlineRealtime\"><span class=\"fog-label\"><span data-i18n=\"",
+     "canvas": false
+    },
+    {
+     "src": "index.html",
+     "line": 119,
+     "text": "<label class=\"fog-toggle\"><input type=\"checkbox\" id=\"botRealtime\"><span class=\"fog-label\"><span data-i18n=\"hom",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 271,
+     "text": "<h3 data-i18n=\"wiki.rt.h\">⚡ Полный вперёд! (бета) — реалтайм</h3>",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 895,
+     "text": "if (pc.leftMs != null) { // ⚡ реалтайм: мир по времени — обратный отсчёт (обновляется тиками стейта)",
+     "canvas": false
+    },
+    {
+     "src": "js/home.js",
+     "line": 498,
+     "text": "realtime: $('#onlineRealtime').checked, // ⚡ «Полный вперёд» (бета) — реалтайм без ходов",
+     "canvas": false
+    },
+    {
+     "src": "js/home.js",
+     "line": 549,
+     "text": "realtime: $('#botRealtime').checked, // ⚡ «Полный вперёд» (бета) — реалтайм без ходов",
+     "canvas": false
+    }
+   ],
+   "name": "Молния",
+   "role": "режим «Полный вперёд» (реалтайм)",
+   "onCanvas": false,
+   "count": 14
+  },
+  {
+   "char": "👑",
+   "cp": "1f451",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "home.rules.li6",
+     "text": "По морю бродят нейтральные пираты 🏴‍☠️ — они медленно дрейфуют между ходами, могут исчеза"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "home.rules.li10",
+     "text": "Последний выживший порт побеждает. 👑"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.finish.winner",
+     "text": "👑 Победитель — {{nick}}!"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.goal.p",
+     "text": "Разбей <b>порт</b> соперника — и он выбывает. Последний выживший порт побеждает баттл. 👑"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.pirates.p",
+     "text": "Нейтральные корабли дрейфуют по морю между ходами, могут растворяться в тумане и появлятьс"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "tut.pirates",
+     "text": "По морю бродят <b>пираты</b> 🏴‍☠️ — потопи и забери награду. А жирный <b>👑-босс</b> несё"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.bossCame",
+     "text": "👑🏴‍☠️ В водах объявился ПИРАТСКИЙ БОСС с богатой добычей!"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.winner",
+     "text": "👑 {{nick}} побеждает в баттле!"
+    },
+    {
+     "src": "index.html",
+     "line": 134,
+     "text": "<li data-i18n-html=\"home.rules.li6\">По морю бродят нейтральные пираты 🏴‍☠️ — они медленно дрейфуют между хода",
+     "canvas": false
+    },
+    {
+     "src": "index.html",
+     "line": 138,
+     "text": "<li data-i18n-html=\"home.rules.li10\">Последний выживший порт побеждает. 👑</li>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 30,
+     "text": "<option value=\"boss\">босс 👑</option>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 238,
+     "text": "<p data-i18n-html=\"wiki.goal.p\">Разбей <b>порт</b> соперника — и он выбывает. Последний выживший порт побеждае",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 338,
+     "text": "<p data-i18n-html=\"wiki.pirates.p\">Нейтральные корабли дрейфуют по морю между ходами, могут растворяться в тум",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 2232,
+     "text": "SBIcons.text(ctx, s.boss ? '👑🏴‍☠️' : '🏴‍☠️', px, py - L * 0.5);",
+     "canvas": true
+    }
+   ],
+   "name": "Корона",
+   "role": "пират-босс · победитель партии",
+   "onCanvas": true,
+   "count": 14
+  },
+  {
+   "char": "⛺",
+   "cp": "26fa",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "game.btnOutpost",
+     "text": "⛺ Аванпост"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.outpost.h",
+     "text": "⛺ Аванпосты на островах"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.outpost.p1",
+     "text": "Залутал остров — он твой плацдарм: подведи корабль вплотную и нажми <b>«⛺ Аванпост»</b>. Д"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.outpost.lvl1",
+     "text": "⛺ <b>Аванпост</b> (150) — <b>дозор</b>: снимает туман вокруг острова + доход <b>3</b>/ход."
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "tut.outpost",
+     "text": "⛺ Залутанный остров — уже <b>плацдарм</b>: подведи корабль вплотную → <b>«⛺ Аванпост»</b>."
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "tut.outpost",
+     "text": "⛺ Залутанный остров — уже <b>плацдарм</b>: подведи корабль вплотную → <b>«⛺ Аванпост»</b>."
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.outpostBuildFog",
+     "text": "⛺ {{nick}} ставит аванпост на острове"
+    },
+    {
+     "src": "game.html",
+     "line": 54,
+     "text": "<button class=\"small hidden\" id=\"btnOutpost\" data-i18n=\"game.btnOutpost\">⛺ Аванпост</button>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 310,
+     "text": "<h3 data-i18n=\"wiki.outpost.h\">⛺ Аванпосты на островах</h3>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 311,
+     "text": "<p data-i18n-html=\"wiki.outpost.p1\">Залутал остров — он твой плацдарм: подведи корабль вплотную и нажми <b>«⛺ ",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 313,
+     "text": "<li data-i18n-html=\"wiki.outpost.lvl1\">⛺ <b>Аванпост</b> (150) — <b>дозор</b>: снимает туман вокруг острова + ",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 190,
+     "text": "updateOutpostPanel(); // ⛺ открытая панель аванпоста: обновить hp/золото, закрыть если снесли",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 1492,
+     "text": "const def = (state.outposts?.levels || [])[op.level - 1] || { icon: '⛺', hp: 120 };",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 1634,
+     "text": "for (const isl of m.lootIslands || []) { // ⛺ чужие аванпосты в радиусе мортиры — тоже цели",
+     "canvas": false
+    }
+   ],
+   "name": "Палатка",
+   "role": "аванпост 1-го уровня · кнопка постройки",
+   "onCanvas": false,
+   "count": 14
+  },
+  {
+   "char": "🔥",
+   "cp": "1f525",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "game.banner.myTurn",
+     "text": "🔥 Твой ход!"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.turn.liFire",
+     "text": "🔥 <b>выстрелить</b> кораблём по цели;"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.mortarPirate",
+     "text": "🔥 {{nick}} — мортира: {{ship}} по пиратам (−{{dmg}} HP)"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.mortarPirateVolley",
+     "text": "🔥 {{nick}} — мортира: {{ship}} по пиратам (−{{dmg}} HP, залпом ×{{volley}})"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.mortarShip",
+     "text": "🔥 {{nick}} — мортира: {{ship}}, цель: {{foeShip}} ({{foe}}), −{{dmg}} HP"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.mortarShipVolley",
+     "text": "🔥 {{nick}} — мортира: {{ship}}, цель: {{foeShip}} ({{foe}}), −{{dmg}} HP залпом ×{{volley"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.attackPiratesFog",
+     "text": "🔥 {{nick}} напал на пиратов"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.attackFleetFog",
+     "text": "🔥 {{nick}} напал на флот игрока {{foe}}"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.mortarPort",
+     "text": "🔥 {{nick}} обстреливает порт игрока {{victim}} (−{{dmg}} HP, осталось {{left}})"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.mortarPortFog",
+     "text": "🔥 {{nick}} напал на базу игрока {{victim}}"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.outpostHit",
+     "text": "🔥 {{nick}} — мортира: {{ship}}, цель: {{icon}} {{building}} ({{victim}}), −{{dmg}} HP, ос"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.outpostHitFog",
+     "text": "🔥 {{nick}} обстреливает чужую постройку"
+    },
+    {
+     "src": "game.html",
+     "line": 247,
+     "text": "<li data-i18n-html=\"wiki.turn.liFire\">🔥 <b>выстрелить</b> кораблём по цели;</li>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 256,
+     "text": "<li data-i18n-html=\"wiki.turn.liFire\">🔥 <b>выстрелить</b> кораблём по цели;</li>",
+     "canvas": false
+    }
+   ],
+   "name": "Огонь",
+   "role": "баннер «твой ход»",
+   "onCanvas": false,
+   "count": 14
+  },
+  {
+   "char": "✖",
+   "cp": "2716",
+   "needsVs16": true,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "common.close",
+     "text": "✖"
+    },
+    {
+     "src": "index.html",
+     "line": 161,
+     "text": "<button class=\"small\" id=\"loginClose\" data-i18n=\"common.close\">✖</button>",
+     "canvas": false
+    },
+    {
+     "src": "index.html",
+     "line": 175,
+     "text": "<button class=\"small\" id=\"busyClose\" data-i18n=\"common.close\">✖</button>",
+     "canvas": false
+    },
+    {
+     "src": "index.html",
+     "line": 191,
+     "text": "<button class=\"small\" id=\"profileClose\" data-i18n=\"common.close\">✖</button>",
+     "canvas": false
+    },
+    {
+     "src": "index.html",
+     "line": 202,
+     "text": "<button class=\"small\" id=\"lobbiesClose\" data-i18n=\"common.close\">✖</button>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 56,
+     "text": "<button class=\"small\" id=\"btnCancel\" data-i18n=\"common.close\">✖</button>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 66,
+     "text": "<button class=\"small\" id=\"outpostClose\" data-i18n=\"common.close\">✖</button>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 187,
+     "text": "<button class=\"small\" id=\"shopClose\" data-i18n=\"common.close\">✖</button>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 227,
+     "text": "<button class=\"small\" id=\"infoClose\">✖</button>",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 1513,
+     "text": "SBIcons.text(ctx, isl.looted ? '✖' : '💰', sx(isl.x), sy(isl.y) + 5);",
+     "canvas": true
+    },
+    {
+     "src": "js/game.js",
+     "line": 3326,
+     "text": "const rm = isCreator ? `<button class=\"small slot-x\" data-rmbot=\"${p.id}\" title=\"${t('game.lobby.rmBot')}\">✖</",
+     "canvas": false
+    }
+   ],
+   "name": "Крестик",
+   "role": "закрыть окно · разграбленный остров",
+   "onCanvas": true,
+   "count": 11
+  },
+  {
+   "char": "🛒",
+   "cp": "1f6d2",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "game.btnShop",
+     "text": "🛒 Верфь"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.shop.title",
+     "text": "🛒 Верфь"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.banner.buyFleet",
+     "text": "🛒 Собери флот — на всё золото!"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.turn.single.liShop",
+     "text": "🛒 сходить в <b>верфь</b> (купить корабли)."
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.turn.multi.liShop",
+     "text": "🛒 сходить в <b>верфь</b>."
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.duelBuy",
+     "text": "🛒 Дуэль: соберите флот в верфи — на всё золото! — затем в бой"
+    },
+    {
+     "src": "game.html",
+     "line": 83,
+     "text": "<button class=\"small primary\" id=\"btnShop\" data-i18n-attr=\"title:game.btnShop\" title=\"🛒 Верфь\">🛒 <span class",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 83,
+     "text": "<button class=\"small primary\" id=\"btnShop\" data-i18n-attr=\"title:game.btnShop\" title=\"🛒 Верфь\">🛒 <span class",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 184,
+     "text": "<h2 style=\"margin:0; flex:1\" data-i18n=\"game.shop.title\">🛒 Верфь</h2>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 249,
+     "text": "<li data-i18n-html=\"wiki.turn.single.liShop\">🛒 сходить в <b>верфь</b> (купить корабли).</li>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 258,
+     "text": "<li data-i18n-html=\"wiki.turn.multi.liShop\">🛒 сходить в <b>верфь</b>.</li>",
+     "canvas": false
+    }
+   ],
+   "name": "Тележка",
+   "role": "верфь (магазин). Рисуется цветом текста — кнопка верфи всегда на тёмном",
+   "onCanvas": false,
+   "count": 11
+  },
+  {
+   "char": "🌫",
+   "cp": "1f32b",
+   "needsVs16": true,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "home.opt.fog",
+     "text": "🌫 Туман войны"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.fog.h",
+     "text": "🌫 Туман войны"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.pirateGone",
+     "text": "🌫 Пиратский корабль растворился в тумане…"
+    },
+    {
+     "src": "index.html",
+     "line": 65,
+     "text": "<label class=\"fog-toggle\"><input type=\"checkbox\" id=\"onlineFog\" checked><span class=\"fog-label\" data-i18n=\"hom",
+     "canvas": false
+    },
+    {
+     "src": "index.html",
+     "line": 117,
+     "text": "<label class=\"fog-toggle\"><input type=\"checkbox\" id=\"botFog\" checked><span class=\"fog-label\" data-i18n=\"home.o",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 24,
+     "text": "<button class=\"small\" id=\"dbgFog\" title=\"Показать карту целиком\">🌫 туман</button>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 332,
+     "text": "<h3 data-i18n=\"wiki.fog.h\">🌫 Туман войны</h3>",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 3705,
+     "text": "$('#dbgFog').textContent = debugFog === 'off' ? '🌫 туман: снят'",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 3706,
+     "text": ": debugFog === 'on' ? '🌫 туман: надет' : '🌫 туман';",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 3706,
+     "text": ": debugFog === 'on' ? '🌫 туман: надет' : '🌫 туман';",
+     "canvas": false
+    }
+   ],
+   "name": "Туман",
+   "role": "туман войны",
+   "onCanvas": false,
+   "count": 10
+  },
+  {
+   "char": "⏸",
+   "cp": "23f8",
+   "needsVs16": true,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "game.pause",
+     "text": "⏸ Пауза"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.pausedBy",
+     "text": "⏸ Пауза — игру остановил {{who}}"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.rt.p2",
+     "text": "Доступен <b>во всех режимах</b> (онлайн и против компьютера): в «Развитии» мирное время ид"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "err.paused",
+     "text": "⏸ Игра на паузе"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.paused",
+     "text": "⏸ {{nick}} ставит игру на паузу"
+    },
+    {
+     "src": "game.html",
+     "line": 18,
+     "text": "<div id=\"pauseWho\" data-i18n=\"game.pause\">⏸ Пауза</div>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 73,
+     "text": "<button class=\"small hidden\" id=\"pauseBtn\" data-i18n-attr=\"title:game.pauseTitle\" title=\"Пауза\">⏸</button>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 273,
+     "text": "<p data-i18n-html=\"wiki.rt.p2\">Доступен <b>во всех режимах</b> (онлайн и против компьютера): в «Развитии» мирн",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 193,
+     "text": "updatePauseUI(s); // ⏸ пауза реалтайма: кнопка + оверлей",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 915,
+     "text": "btn.textContent = paused ? '▶️' : '⏸';",
+     "canvas": false
+    }
+   ],
+   "name": "Пауза",
+   "role": "пауза в реалтайме",
+   "onCanvas": false,
+   "count": 10
+  },
+  {
+   "char": "🌬",
+   "cp": "1f32c",
+   "needsVs16": true,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "game.wind",
+     "text": "🌬 ветер"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.wind.h",
+     "text": "🌬 Ветер"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.move.p",
+     "text": "Выбери свой корабль и нажми «Плыть». Вокруг появится <b>контур дальности</b> — поставь кор"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "tut.move",
+     "text": "Нажми на свой корабль → <b>«Плыть»</b> (в пределах контура; 🌬 по ветру он вытянут — уплыв"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "err.windTooFar",
+     "text": "🌬 Против ветра так далеко не уплыть"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.windShift",
+     "text": "🌬 Ветер меняется…"
+    },
+    {
+     "src": "game.html",
+     "line": 266,
+     "text": "<h3 data-i18n=\"wiki.wind.h\">🌬 Ветер</h3>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 278,
+     "text": "<p data-i18n-html=\"wiki.move.p\">Выбери свой корабль и нажми «Плыть». Вокруг появится <b>контур дальности</b> —",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 1718,
+     "text": "if (state.wind && state.status === 'active') drawWindCompass(); // 🌬 компас ветра — во всех режимах",
+     "canvas": false
+    }
+   ],
+   "name": "Ветер",
+   "role": "роза ветров, направление ветра",
+   "onCanvas": false,
+   "count": 9
+  },
+  {
+   "char": "🪙",
+   "cp": "1fa99",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "tut.pirates",
+     "text": "По морю бродят <b>пираты</b> 🏴‍☠️ — потопи и забери награду. А жирный <b>👑-босс</b> несё"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "err.noCoinsFor",
+     "text": "Не хватает монет (нужно {{price}} 🪙)"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.pirateSunk",
+     "text": "💥 Пиратский корабль потоплен! {{nick}} забирает награду {{gold}} золота и {{coins}} 🪙"
+    },
+    {
+     "src": "game.html",
+     "line": 38,
+     "text": "<button class=\"small\" id=\"dbgCoins\" title=\"+10 монет себе\">🪙 +10</button>",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 655,
+     "text": "SBIcons.text(ctx, `+${e.amount} 🪙`, gx, gy, { stroke: true });",
+     "canvas": true
+    },
+    {
+     "src": "js/game.js",
+     "line": 3100,
+     "text": "$('#myCoins').innerHTML = (purseOn && state.perkShop && wallet.coins != null) ? money('🪙', wallet.coins) : ''",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 3126,
+     "text": "const coinsOf = p => (p.coins === null || p.coins === undefined) ? '' : `${money('🪙', p.coins)} · `;",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 3207,
+     "text": "$('#shopCoins').innerHTML = (perkShop && me.coins != null) ? money('🪙', me.coins) : '';",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 3241,
+     "text": "const cost = `${money('💰', def.gold)}${def.coins ? ' + ' + money('🪙', def.coins) : ''}`;",
+     "canvas": false
+    }
+   ],
+   "name": "Монета",
+   "role": "вторая валюта — падает с пиратов",
+   "onCanvas": true,
+   "count": 9
+  },
+  {
+   "char": "🕊",
+   "cp": "1f54a",
+   "needsVs16": true,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "game.peaceTimer",
+     "text": "🕊 Мирное время — до войны {{time}}"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.peaceRounds_one",
+     "text": "🕊 Мирное время — до войны {{count}} раунд"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.peaceRounds_few",
+     "text": "🕊 Мирное время — до войны {{count}} раунда"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.peaceRounds_many",
+     "text": "🕊 Мирное время — до войны {{count}} раундов"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "err.peaceNoApproach",
+     "text": "🕊 Мирное время: к чужой базе подходить нельзя"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "err.peaceNoBuildings",
+     "text": "🕊 Мирное время: чужие постройки трогать нельзя"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "err.peaceNoAttack",
+     "text": "🕊 Мирное время: на игроков нападать нельзя"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "err.peaceNoBases",
+     "text": "🕊 Мирное время: базы трогать нельзя"
+    }
+   ],
+   "name": "Голубь",
+   "role": "мирное время (режим «Развитие»)",
+   "onCanvas": false,
+   "count": 8
+  },
+  {
+   "char": "🐞",
+   "cp": "1f41e",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "game.html",
+     "line": 118,
+     "text": "<b>🐞 Решения бота</b>",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 50,
+     "text": "let debugPass = false;   // 🐞 авто-пропуск: мой ход сдаётся сам, партию доигрывают боты",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 201,
+     "text": "maybeAutoPass(); // 🐞 включён авто-пропуск — сдаём свой ход и смотрим, как играют боты",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 2263,
+     "text": "if (DEBUG_ON && debugTool && pointers.size === 1) {   // 🐞 инструмент забирает клик себе",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 3775,
+     "text": "const send = (op, note) => socket.emit('debug', op, r => debugLine(r?.ok ? '🐞 ' + note : '❌ ' + (errText(r) |",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 3778,
+     "text": "if (!hit) return debugLine('🐞 лечить: мимо корабля');",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 3792,
+     "text": "if (!hit) return debugLine('🐞 перенести: сначала ткни в корабль');",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 3795,
+     "text": "return debugLine('🐞 взят ' + shipName(hit.type));",
+     "canvas": false
+    }
+   ],
+   "name": "Жук",
+   "role": "режим отладки",
+   "onCanvas": false,
+   "count": 8
+  },
+  {
+   "char": "🤖",
+   "cp": "1f916",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "home.mode.bot",
+     "text": "🤖 Против компьютера"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.lobby.addBot",
+     "text": "🤖 Добавить бота"
+    },
+    {
+     "src": "index.html",
+     "line": 34,
+     "text": "<button class=\"mode-btn\" data-mode=\"bot\"><span data-i18n=\"home.mode.bot\">🤖 Против компьютера</span>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 163,
+     "text": "<button class=\"small\" id=\"addBotBtn\" data-i18n=\"game.lobby.addBot\">🤖 Добавить бота</button>",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 3136,
+     "text": "<span>${p.isBot ? '🤖 ' : ''}${escapeHtml(nickOf(p))}${p.id === myId ? ' ' + t('game.youTag') : ''}</span>",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 3327,
+     "text": "return `<div class=\"slot filled\">${dot}🤖 ${escapeHtml(nickOf(p))}${rm}</div>`;",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 3750,
+     "text": ".map((p, i) => `<option value=\"${i}\">${escapeHtml(nickOf(p))}${p.isBot ? ' 🤖' : ''}</option>`).join('');",
+     "canvas": false
+    }
+   ],
+   "name": "Робот",
+   "role": "игра против компьютера · игрок-бот",
+   "onCanvas": false,
+   "count": 7
+  },
+  {
+   "char": "📯",
+   "cp": "1f4ef",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "home.rules.li9",
+     "text": "Застрял соперник? «📯 Поторопить» — и у него останется 10 минут на ход. Сам застрял безнад"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.btnNudge",
+     "text": "📯 Поторопить"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.nudgeMail",
+     "text": "📯 Письмо отправлено, у игрока 10 минут"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.nudgeOk",
+     "text": "📯 У игрока 10 минут на ход"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.nudge",
+     "text": "📯 {{who}} торопит игрока {{target}} — 10 минут на ход!"
+    },
+    {
+     "src": "index.html",
+     "line": 137,
+     "text": "<li data-i18n-html=\"home.rules.li9\">Застрял соперник? «📯 Поторопить» — и у него останется 10 минут на ход. Са",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 85,
+     "text": "<button class=\"small\" id=\"btnNudge\" data-i18n=\"game.btnNudge\">📯 Поторопить</button>",
+     "canvas": false
+    }
+   ],
+   "name": "Рожок",
+   "role": "«поторопить» соперника",
+   "onCanvas": false,
+   "count": 7
+  },
+  {
+   "char": "⏭",
+   "cp": "23ed",
+   "needsVs16": true,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "game.btnSkip",
+     "text": "⏭ Пропустить"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.skipTurn",
+     "text": "⏭ {{nick}} пропускает ход"
+    },
+    {
+     "src": "game.html",
+     "line": 36,
+     "text": "<button class=\"small\" id=\"dbgPass\" title=\"Пропускать мои ходы автоматически — боты играют сами\">⏭ пропускать х",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 84,
+     "text": "<button class=\"small\" id=\"btnSkip\" data-i18n=\"game.btnSkip\">⏭ Пропустить</button>",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 771,
+     "text": "b.textContent = debugPass ? '⏭ пропускаю ходы' : '⏭ пропускать ходы';",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 771,
+     "text": "b.textContent = debugPass ? '⏭ пропускаю ходы' : '⏭ пропускать ходы';",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 783,
+     "text": "debugLine('⏭ авто-пропуск выключен: ' + (errText(r) || 'ход не принят'));",
+     "canvas": false
+    }
+   ],
+   "name": "Перемотка",
+   "role": "пропустить ход",
+   "onCanvas": false,
+   "count": 7
+  },
+  {
+   "char": "🐟",
+   "cp": "1f41f",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "game.ship.fishIncome",
+     "text": "🐟 +{{gold}}/ход"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.econ.fish",
+     "text": "🐟 <b>Рыбные места</b> — баркас, стоящий в зоне, сам приносит золото в начале каждого твое"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "tut.fish",
+     "text": "Поставь <b>баркас</b> в эту <b>🐟-рыбную зону</b> — он будет сам приносить золото каждый х"
+    },
+    {
+     "src": "game.html",
+     "line": 301,
+     "text": "<li data-i18n-html=\"wiki.econ.fish\">🐟 <b>Рыбные места</b> — баркас, стоящий в зоне, сам приносит золото в нач",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 1474,
+     "text": "SBIcons.text(ctx, '🐟', sx(z.x), sy(z.y) + 6);",
+     "canvas": true
+    },
+    {
+     "src": "js/game.js",
+     "line": 2983,
+     "text": "st.fishing ? `🐟 +${st.fishing}` : '',",
+     "canvas": false
+    },
+    {
+     "src": "server/config.js",
+     "key": "fishery",
+     "text": "icon: '🐟'"
+    }
+   ],
+   "name": "Рыба",
+   "role": "рыбное место · доход баркаса · перк «рыбный промысел»",
+   "onCanvas": true,
+   "count": 7
+  },
+  {
+   "char": "🏳️",
+   "cp": "1f3f3-fe0f",
+   "needsVs16": false,
+   "composite": true,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "home.rules.li9",
+     "text": "Застрял соперник? «📯 Поторопить» — и у него останется 10 минут на ход. Сам застрял безнад"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.surrender",
+     "text": "🏳️ Сдаться"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.leftFlag",
+     "text": "🏳️ {{nick}} спускает флаг и покидает баттл"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.leftDuel",
+     "text": "🏳️ {{nick}} теряет весь флот и покидает баттл"
+    },
+    {
+     "src": "index.html",
+     "line": 137,
+     "text": "<li data-i18n-html=\"home.rules.li9\">Застрял соперник? «📯 Поторопить» — и у него останется 10 минут на ход. Са",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 108,
+     "text": "<button class=\"small danger\" id=\"btnSurrender\" data-i18n=\"game.surrender\">🏳️ Сдаться</button>",
+     "canvas": false
+    }
+   ],
+   "name": "Белый флаг",
+   "role": "сдаться",
+   "onCanvas": false,
+   "count": 6
+  },
+  {
+   "char": "▶️",
+   "cp": "25b6-fe0f",
+   "needsVs16": false,
+   "composite": true,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "game.pauseResume",
+     "text": "▶️ Продолжить"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.turn.h",
+     "text": "▶️ Ход"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.resumed",
+     "text": "▶️ {{nick}} снимает паузу — полный вперёд!"
+    },
+    {
+     "src": "game.html",
+     "line": 19,
+     "text": "<button id=\"pauseResumeBtn\" data-i18n=\"game.pauseResume\" type=\"button\">▶️ Продолжить</button>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 242,
+     "text": "<h3 data-i18n=\"wiki.turn.h\">▶️ Ход</h3>",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 915,
+     "text": "btn.textContent = paused ? '▶️' : '⏸';",
+     "canvas": false
+    }
+   ],
+   "name": "Плей",
+   "role": "продолжить после паузы",
+   "onCanvas": false,
+   "count": 6
+  },
+  {
+   "char": "❤️",
+   "cp": "2764-fe0f",
+   "needsVs16": false,
+   "composite": true,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.fleet.legend",
+     "text": "❤️ прочность · ⚔️ урон · 🎯 дальность огня · 🧭 ход (в клетках)"
+    },
+    {
+     "src": "game.html",
+     "line": 26,
+     "text": "<button class=\"small\" id=\"dbgHeal\" title=\"Восстановить прочность корабля\">❤️ лечить</button>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 327,
+     "text": "<p class=\"muted\" style=\"margin:0 0 8px\" data-i18n-html=\"wiki.fleet.legend\">❤️ прочность · ⚔️ урон · 🎯 дальнос",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 2990,
+     "text": "<span class=\"st\">${st.price}з · ❤️${st.hp} · ${power} · 🎯${(st.fireRange / 40).toFixed(1)} · 🧭${(st.move / 4",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 3131,
+     "text": "const stats = show ? `${goldOf(p)}${coinsOf(p)}${money('❤️', p.portHp)}` : '';",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 3216,
+     "text": "<span title=\"${t('game.ship.hp')}\">❤️ ${st.hp}</span>",
+     "canvas": false
+    }
+   ],
+   "name": "Сердце",
+   "role": "прочность корабля и порта (HP)",
+   "onCanvas": false,
+   "count": 6
+  },
+  {
+   "char": "💀",
+   "cp": "1f480",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "home.lvlHard",
+     "text": "💀 Адмирал — придётся попотеть"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.lobby.lvlHard",
+     "text": "💀 Адмирал"
+    },
+    {
+     "src": "index.html",
+     "line": 113,
+     "text": "<option value=\"hard\" data-i18n=\"home.lvlHard\">💀 Адмирал — придётся попотеть</option>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 161,
+     "text": "<option value=\"hard\" data-i18n=\"game.lobby.lvlHard\">💀 Адмирал</option>",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 1182,
+     "text": "else if (!alive) { ctx.font = `${20 * view.scale + 8}px serif`; SBIcons.text(ctx, '💀', sx(b.x), sy(b.y) + 6);",
+     "canvas": true
+    }
+   ],
+   "name": "Череп",
+   "role": "уровень бота «адмирал» · выбитая база",
+   "onCanvas": true,
+   "count": 5
+  },
+  {
+   "char": "📖",
+   "cp": "1f4d6",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "home.rules.title",
+     "text": "📖 Правила (как на уроке)"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.infobase",
+     "text": "📖 Инфобаза"
+    },
+    {
+     "src": "index.html",
+     "line": 127,
+     "text": "<h2 data-i18n=\"home.rules.title\">📖 Правила (как на уроке)</h2>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 91,
+     "text": "<button class=\"small\" id=\"infoBtn\" data-i18n-attr=\"title:game.infoTitle\" title=\"Инфобаза — флот, правила, обуч",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 225,
+     "text": "<h2 style=\"margin:0; flex:1\" data-i18n=\"game.infobase\">📖 Инфобаза</h2>",
+     "canvas": false
+    }
+   ],
+   "name": "Книга",
+   "role": "правила · вики",
+   "onCanvas": false,
+   "count": 5
+  },
+  {
+   "char": "⬆",
+   "cp": "2b06",
+   "needsVs16": true,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "game.btnOutpostUp",
+     "text": "⬆ Улучшить"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.outpost.p1",
+     "text": "Залутал остров — он твой плацдарм: подведи корабль вплотную и нажми <b>«⛺ Аванпост»</b>. Д"
+    },
+    {
+     "src": "game.html",
+     "line": 64,
+     "text": "<button class=\"small primary hidden\" id=\"btnOutpostUp\" data-i18n=\"game.btnOutpostUp\">⬆ Улучшить</button>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 311,
+     "text": "<p data-i18n-html=\"wiki.outpost.p1\">Залутал остров — он твой плацдарм: подведи корабль вплотную и нажми <b>«⛺ ",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 2652,
+     "text": "btn.textContent = `⬆ ${next.icon} ${outpostName(op.level)} (${next.price})`;",
+     "canvas": false
+    }
+   ],
+   "name": "Стрелка вверх",
+   "role": "улучшить аванпост",
+   "onCanvas": false,
+   "count": 5
+  },
+  {
+   "char": "✅",
+   "cp": "2705",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "game.btnFinishTurn",
+     "text": "✅ Завершить ход"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.turn.multi.budget",
+     "text": "Любое из этих действий тратит один из трёх ходов. Закончил раньше (1–2 корабля — не повод "
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "tut.turnMulti",
+     "text": "Ходите <b>по очереди</b>. За ход — до <b>трёх действий</b>: двигай и стреляй <b>разными</b"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.endTurn",
+     "text": "✅ {{nick}} завершает ход"
+    },
+    {
+     "src": "game.html",
+     "line": 260,
+     "text": "<p data-i18n-html=\"wiki.turn.multi.budget\">Любое из этих действий тратит один из трёх ходов. Закончил раньше (",
+     "canvas": false
+    }
+   ],
+   "name": "Галочка",
+   "role": "завершить ход",
+   "onCanvas": false,
+   "count": 5
+  },
+  {
+   "char": "⏩",
+   "cp": "23e9",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "home.opt.multi",
+     "text": "⏩ Ход тремя судами"
+    },
+    {
+     "src": "index.html",
+     "line": 66,
+     "text": "<label class=\"fog-toggle\"><input type=\"checkbox\" id=\"onlineMulti\" checked><span class=\"fog-label\" data-i18n=\"h",
+     "canvas": false
+    },
+    {
+     "src": "index.html",
+     "line": 84,
+     "text": "<label class=\"fog-toggle\"><input type=\"checkbox\" id=\"hotseatMulti\" checked><span class=\"fog-label\" data-i18n=\"",
+     "canvas": false
+    },
+    {
+     "src": "index.html",
+     "line": 118,
+     "text": "<label class=\"fog-toggle\"><input type=\"checkbox\" id=\"botMulti\" checked><span class=\"fog-label\" data-i18n=\"home",
+     "canvas": false
+    }
+   ],
+   "name": "Тройной плей",
+   "role": "опция «ход тремя судами» — до трёх действий за ход",
+   "onCanvas": false,
+   "count": 4
+  },
+  {
+   "char": "🎮",
+   "cp": "1f3ae",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "home.opt.mode",
+     "text": "🎮 Режим"
+    },
+    {
+     "src": "index.html",
+     "line": 68,
+     "text": "<div class=\"mode-row\"><span class=\"fog-label\" data-i18n=\"home.opt.mode\">🎮 Режим</span><span id=\"onlineMode\" c",
+     "canvas": false
+    },
+    {
+     "src": "index.html",
+     "line": 85,
+     "text": "<div class=\"mode-row\"><span class=\"fog-label\" data-i18n=\"home.opt.mode\">🎮 Режим</span><span id=\"hotseatMode\" ",
+     "canvas": false
+    },
+    {
+     "src": "index.html",
+     "line": 120,
+     "text": "<div class=\"mode-row\"><span class=\"fog-label\" data-i18n=\"home.opt.mode\">🎮 Режим</span><span id=\"botMode\" clas",
+     "canvas": false
+    }
+   ],
+   "name": "Геймпад",
+   "role": "выбор режима партии",
+   "onCanvas": false,
+   "count": 4
+  },
+  {
+   "char": "🐣",
+   "cp": "1f423",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "home.lvlEasy",
+     "text": "🐣 Юнга — для разминки"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.lobby.lvlEasy",
+     "text": "🐣 Юнга"
+    },
+    {
+     "src": "index.html",
+     "line": 111,
+     "text": "<option value=\"easy\" data-i18n=\"home.lvlEasy\">🐣 Юнга — для разминки</option>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 159,
+     "text": "<option value=\"easy\" data-i18n=\"game.lobby.lvlEasy\">🐣 Юнга</option>",
+     "canvas": false
+    }
+   ],
+   "name": "Птенец",
+   "role": "уровень бота «юнга»",
+   "onCanvas": false,
+   "count": 4
+  },
+  {
+   "char": "⏳",
+   "cp": "23f3",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "game.tabLobby",
+     "text": "⏳ Лобби — Морской бой"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.cooldown",
+     "text": "⏳ Перезарядка: {{sec}}с"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.banner.lobby",
+     "text": "⏳ Сбор флота…"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.banner.waitFleet",
+     "text": "⏳ Ждём, пока соперник соберёт флот…"
+    }
+   ],
+   "name": "Песочные часы",
+   "role": "лобби, ожидание игроков",
+   "onCanvas": false,
+   "count": 4
+  },
+  {
+   "char": "🔑",
+   "cp": "1f511",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "common.login",
+     "text": "🔑 Войти"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "home.login.title",
+     "text": "🔑 Вход"
+    },
+    {
+     "src": "index.html",
+     "line": 160,
+     "text": "<h2 style=\"margin:0; flex:1\" data-i18n=\"home.login.title\">🔑 Вход</h2>",
+     "canvas": false
+    }
+   ],
+   "name": "Ключ",
+   "role": "вход в аккаунт",
+   "onCanvas": false,
+   "count": 3
+  },
+  {
+   "char": "✏️",
+   "cp": "270f-fe0f",
+   "needsVs16": false,
+   "composite": true,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "home.newBattle",
+     "text": "✏️ Новый баттл"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.banner.hotseat",
+     "text": "✏️ Ходит: {{nick}} (№{{n}})"
+    },
+    {
+     "src": "index.html",
+     "line": 22,
+     "text": "<h2 data-i18n=\"home.newBattle\">✏️ Новый баттл</h2>",
+     "canvas": false
+    }
+   ],
+   "name": "Карандаш",
+   "role": "новый баттл",
+   "onCanvas": false,
+   "count": 3
+  },
+  {
+   "char": "🌐",
+   "cp": "1f310",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "home.mode.online",
+     "text": "🌐 Онлайн"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "lobby.empty",
+     "text": "Пока нет открытых лобби. Создай свой через «🌐 Онлайн» — и он появится здесь у всех!"
+    },
+    {
+     "src": "index.html",
+     "line": 27,
+     "text": "<button class=\"mode-btn\" data-mode=\"online\"><span data-i18n=\"home.mode.online\">🌐 Онлайн</span>",
+     "canvas": false
+    }
+   ],
+   "name": "Глобус",
+   "role": "онлайн-партия",
+   "onCanvas": false,
+   "count": 3
+  },
+  {
+   "char": "🛳",
+   "cp": "1f6f3",
+   "needsVs16": true,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "home.rules.li7",
+     "text": "Линкор 🛳 бьёт по вражескому порту в 1.5 раза сильнее — главный осадный корабль, но и ему "
+    },
+    {
+     "src": "index.html",
+     "line": 135,
+     "text": "<li data-i18n-html=\"home.rules.li7\">Линкор 🛳 бьёт по вражескому порту в 1.5 раза сильнее — главный осадный ко",
+     "canvas": false
+    },
+    {
+     "src": "server/config.js",
+     "key": "linkor",
+     "text": "icon: '🛳'"
+    }
+   ],
+   "name": "Линкор",
+   "role": "класс «линкор» — самый крупный, два ряда пушечных портов",
+   "onCanvas": false,
+   "count": 3
+  },
+  {
+   "char": "👥",
+   "cp": "1f465",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "home.lobbies.title",
+     "text": "👥 Открытые лобби"
+    },
+    {
+     "src": "index.html",
+     "line": 29,
+     "text": "<button class=\"mode-btn join-btn\" id=\"browseLobbiesBtn\" title=\"Открытые лобби\" data-i18n-attr=\"title:home.mode",
+     "canvas": false
+    },
+    {
+     "src": "index.html",
+     "line": 201,
+     "text": "<h2 style=\"margin:0; flex:1\" data-i18n=\"home.lobbies.title\">👥 Открытые лобби</h2>",
+     "canvas": false
+    }
+   ],
+   "name": "Двое",
+   "role": "открытые лобби · число игроков в строке лобби",
+   "onCanvas": false,
+   "count": 3
+  },
+  {
+   "char": "🚪",
+   "cp": "1f6aa",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "game.lobby.leave",
+     "text": "🚪 Выйти из лобби"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.leftLobby",
+     "text": "🚪 {{nick}} покинул лобби"
+    },
+    {
+     "src": "game.html",
+     "line": 174,
+     "text": "<button class=\"small\" id=\"leaveLobbyBtn\" data-i18n=\"game.lobby.leave\">🚪 Выйти из лобби</button>",
+     "canvas": false
+    }
+   ],
+   "name": "Дверь",
+   "role": "выйти из лобби",
+   "onCanvas": false,
+   "count": 3
+  },
+  {
+   "char": "🎖",
+   "cp": "1f396",
+   "needsVs16": true,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "game.shop.perks",
+     "text": "🎖 Перки"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.perkBoughtFog",
+     "text": "🎖 {{nick}} что-то прикупил"
+    },
+    {
+     "src": "game.html",
+     "line": 199,
+     "text": "<h3 class=\"shop-h\" data-i18n=\"game.shop.perks\">🎖 Перки</h3>",
+     "canvas": false
+    }
+   ],
+   "name": "Медаль",
+   "role": "перки (раздел верфи)",
+   "onCanvas": false,
+   "count": 3
+  },
+  {
+   "char": "🏠",
+   "cp": "1f3e0",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "game.finish.home",
+     "text": "🏠 На главную"
+    },
+    {
+     "src": "game.html",
+     "line": 76,
+     "text": "<button class=\"small\" id=\"homeBtn\" data-i18n-attr=\"title:game.homeTitle\" title=\"На главную — баттл продолжит ж",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 215,
+     "text": "<a class=\"btn\" href=\"/\" data-i18n=\"game.finish.home\">🏠 На главную</a>",
+     "canvas": false
+    }
+   ],
+   "name": "Домик",
+   "role": "на главную",
+   "onCanvas": false,
+   "count": 3
+  },
+  {
+   "char": "🏪",
+   "cp": "1f3ea",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.outpost.lvl2",
+     "text": "🏪 <b>Фактория</b> (250) — доход <b>8</b>/ход + <b>чинит твои корабли</b> рядом (≈3% прочн"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "tut.outpost",
+     "text": "⛺ Залутанный остров — уже <b>плацдарм</b>: подведи корабль вплотную → <b>«⛺ Аванпост»</b>."
+    },
+    {
+     "src": "game.html",
+     "line": 314,
+     "text": "<li data-i18n-html=\"wiki.outpost.lvl2\">🏪 <b>Фактория</b> (250) — доход <b>8</b>/ход + <b>чинит твои корабли</",
+     "canvas": false
+    }
+   ],
+   "name": "Лавка",
+   "role": "аванпост 2-го уровня (фактория)",
+   "onCanvas": false,
+   "count": 3
+  },
+  {
+   "char": "🛠",
+   "cp": "1f6e0",
+   "needsVs16": true,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "log.buy",
+     "text": "🛠 {{nick}} покупает: {{ships}} (−{{cost}} зол.)"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "log.buyFog",
+     "text": "🛠 {{nick}} сходил на верфь"
+    },
+    {
+     "src": "server/config.js",
+     "key": "shipyard",
+     "text": "icon: '🛠'"
+    }
+   ],
+   "name": "Молоток и ключ",
+   "role": "покупка в журнале · перк «верфь на потоке»",
+   "onCanvas": false,
+   "count": 3
+  },
+  {
+   "char": "💬",
+   "cp": "1f4ac",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "game.html",
+     "line": 44,
+     "text": "<span class=\"chat-prompt\">💬</span>",
+     "canvas": false
+    },
+    {
+     "src": "game.html",
+     "line": 74,
+     "text": "<button class=\"small hidden\" id=\"chatBtn\" data-i18n-attr=\"title:game.chatTitle\" title=\"Чат\">💬</button>",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 3648,
+     "text": "socket.on('chat', ({ author, text }) => hudToast(`💬 ${author}: ${text}`, 4000));",
+     "canvas": false
+    }
+   ],
+   "name": "Реплика",
+   "role": "чат / строка ввода",
+   "onCanvas": false,
+   "count": 3
+  },
+  {
+   "char": "🔊",
+   "cp": "1f50a",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "game.html",
+     "line": 75,
+     "text": "<button class=\"small\" id=\"muteBtn\" data-i18n-attr=\"title:game.soundTitle\" title=\"Звук\">🔊</button>",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 2967,
+     "text": "$('#muteBtn').textContent = Sound.muted ? '🔇' : '🔊';",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 2969,
+     "text": "$('#muteBtn').textContent = Sound.toggleMute() ? '🔇' : '🔊';",
+     "canvas": false
+    }
+   ],
+   "name": "Динамик",
+   "role": "звук включён. Одноцветный, по цвету текста",
+   "onCanvas": false,
+   "count": 3
+  },
+  {
+   "char": "☰",
+   "cp": "2630",
+   "needsVs16": true,
+   "composite": false,
+   "uses": [
+    {
+     "src": "game.html",
+     "line": 77,
+     "text": "<button class=\"small\" id=\"panelToggle\" data-i18n-attr=\"title:game.menuTitle\" title=\"Меню\">☰</button>",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 3017,
+     "text": "$('#panelToggle').textContent = collapsed ? '☰' : '✕';",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 3442,
+     "text": "$('#panelToggle').textContent = collapsed ? '☰' : '✕';",
+     "canvas": false
+    }
+   ],
+   "name": "Три полоски",
+   "role": "меню боковой панели",
+   "onCanvas": false,
+   "count": 3
+  },
+  {
+   "char": "❌",
+   "cp": "274c",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "js/game.js",
+     "line": 3726,
+     "text": "if (!r?.ok) debugLine('❌ ' + (errText(r) || 'не вышло'));",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 3729,
+     "text": "if (!r?.ok) debugLine('❌ ' + (errText(r) || 'не вышло'));",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 3775,
+     "text": "const send = (op, note) => socket.emit('debug', op, r => debugLine(r?.ok ? '🐞 ' + note : '❌ ' + (errText(r) |",
+     "canvas": false
+    }
+   ],
+   "name": "Красный крест",
+   "role": "отказ в отладочной консоли",
+   "onCanvas": false,
+   "count": 3
+  },
+  {
+   "char": "👤",
+   "cp": "1f464",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "js/home.js",
+     "line": 72,
+     "text": "<div class=\"meta\">👤 ${l.players}/${l.max}${(l.tags && l.tags.length) ? ' · ' + l.tags.map(x => escapeHtml(tr(",
+     "canvas": false
+    },
+    {
+     "src": "js/home.js",
+     "line": 209,
+     "text": ": '<span class=\"ava\">👤</span>';",
+     "canvas": false
+    },
+    {
+     "src": "js/home.js",
+     "line": 322,
+     "text": ": '<span class=\"ava\">👤</span>';",
+     "canvas": false
+    }
+   ],
+   "name": "Силуэт",
+   "role": "игрок · аватар-заглушка в бейдже",
+   "onCanvas": false,
+   "count": 3
+  },
+  {
+   "char": "📱",
+   "cp": "1f4f1",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "home.mode.hotseat",
+     "text": "📱 На одном устройстве"
+    },
+    {
+     "src": "index.html",
+     "line": 32,
+     "text": "<button class=\"mode-btn\" data-mode=\"hotseat\"><span data-i18n=\"home.mode.hotseat\">📱 На одном устройстве</span>",
+     "canvas": false
+    }
+   ],
+   "name": "Телефон",
+   "role": "игра на одном устройстве (хотсит)",
+   "onCanvas": false,
+   "count": 2
+  },
+  {
+   "char": "🏆",
+   "cp": "1f3c6",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "home.lb.title",
+     "text": "🏆 Лидерборд"
+    },
+    {
+     "src": "index.html",
+     "line": 143,
+     "text": "<h2 data-i18n=\"home.lb.title\">🏆 Лидерборд</h2>",
+     "canvas": false
+    }
+   ],
+   "name": "Кубок",
+   "role": "лидерборд",
+   "onCanvas": false,
+   "count": 2
+  },
+  {
+   "char": "©",
+   "cp": "a9",
+   "needsVs16": true,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "home.footer",
+     "text": "© 2026 «Морской бой на листке в клетку»"
+    },
+    {
+     "src": "index.html",
+     "line": 211,
+     "text": "<span data-i18n=\"home.footer\">© 2026 «Морской бой на листке в клетку»</span>",
+     "canvas": false
+    }
+   ],
+   "name": "Копирайт",
+   "role": "подвал главной",
+   "onCanvas": false,
+   "count": 2
+  },
+  {
+   "char": "📜",
+   "cp": "1f4dc",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "game.logTitle",
+     "text": "📜 Журнал"
+    },
+    {
+     "src": "game.html",
+     "line": 103,
+     "text": "<h3 style=\"margin-bottom:4px\" data-i18n=\"game.logTitle\">📜 Журнал</h3>",
+     "canvas": false
+    }
+   ],
+   "name": "Свиток",
+   "role": "журнал боя",
+   "onCanvas": false,
+   "count": 2
+  },
+  {
+   "char": "🎓",
+   "cp": "1f393",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "game.tutToggle",
+     "text": "🎓 Показывать обучающие подсказки в начале игры"
+    },
+    {
+     "src": "game.html",
+     "line": 232,
+     "text": "<span data-i18n=\"game.tutToggle\">🎓 Показывать обучающие подсказки в начале игры</span>",
+     "canvas": false
+    }
+   ],
+   "name": "Шапочка выпускника",
+   "role": "обучающие подсказки",
+   "onCanvas": false,
+   "count": 2
+  },
+  {
+   "char": "🏁",
+   "cp": "1f3c1",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "game.tabOver",
+     "text": "🏁 Баттл окончен — Морской бой"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.banner.over",
+     "text": "🏁 Баттл окончен"
+    }
+   ],
+   "name": "Клетчатый флаг",
+   "role": "баттл окончен",
+   "onCanvas": false,
+   "count": 2
+  },
+  {
+   "char": "🚫",
+   "cp": "1f6ab",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "game.convoyOutOfRange",
+     "text": "🚫 Строй идёт по самому медленному — точка вне круга"
+    },
+    {
+     "src": "locales/ru.json",
+     "key": "game.outOfRange",
+     "text": "🚫 Слишком далеко — точка вне круга хода"
+    }
+   ],
+   "name": "Запрет",
+   "role": "недоступное действие (точка вне круга и т.п.)",
+   "onCanvas": false,
+   "count": 2
+  },
+  {
+   "char": "👁",
+   "cp": "1f441",
+   "needsVs16": true,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "game.perk.watch",
+     "text": "👁 дозор: снимает туман вокруг"
+    },
+    {
+     "src": "game.html",
+     "line": 35,
+     "text": "<button class=\"small\" id=\"dbgEyes\" title=\"Показать, что видит и о чём думает бот\">👁 глазами бота</button>",
+     "canvas": false
+    }
+   ],
+   "name": "Глаз",
+   "role": "дозор: снятие тумана (маяк)",
+   "onCanvas": false,
+   "count": 2
+  },
+  {
+   "char": "🏝",
+   "cp": "1f3dd",
+   "needsVs16": true,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "wiki.econ.loot",
+     "text": "🏝 <b>Острова с кладом</b> — любой корабль, дотянувшийся до острова, лутает клад."
+    },
+    {
+     "src": "game.html",
+     "line": 302,
+     "text": "<li data-i18n-html=\"wiki.econ.loot\">🏝 <b>Острова с кладом</b> — любой корабль, дотянувшийся до острова, лутае",
+     "canvas": false
+    }
+   ],
+   "name": "Остров",
+   "role": "остров с кладом",
+   "onCanvas": false,
+   "count": 2
+  },
+  {
+   "char": "📋",
+   "cp": "1f4cb",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "game.html",
+     "line": 169,
+     "text": "<button class=\"small\" id=\"copyBtn\">📋</button>",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 3384,
+     "text": "setTimeout(() => { $('#copyBtn').textContent = '📋'; }, 1500);",
+     "canvas": false
+    }
+   ],
+   "name": "Планшет",
+   "role": "скопировать ссылку-приглашение",
+   "onCanvas": false,
+   "count": 2
+  },
+  {
+   "char": "⛈️",
+   "cp": "26c8-fe0f",
+   "needsVs16": false,
+   "composite": true,
+   "uses": [
+    {
+     "src": "js/game.js",
+     "line": 739,
+     "text": "if (state.rt) return !spectator && myIdx() >= 0 && !!state.players[myIdx()]?.alive; // ⛈️ шторм: действуй когд",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 3151,
+     "text": "btnSkip.classList.toggle('hidden', !!state.rt);   // ⛈️ шторм: ходов нет — нечего пропускать",
+     "canvas": false
+    }
+   ],
+   "name": "Гроза",
+   "role": "шторм / реалтайм",
+   "onCanvas": false,
+   "count": 2
+  },
+  {
+   "char": "🎛",
+   "cp": "1f39b",
+   "needsVs16": true,
+   "composite": false,
+   "uses": [
+    {
+     "src": "js/game.js",
+     "line": 1717,
+     "text": "drawCommandWheel(); // 🎛 штурвал выбранного корабля — поверх всего",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 2573,
+     "text": "wheelBornAt = performance.now(); // 🎛 штурвал раскрывается вокруг корабля",
+     "canvas": false
+    }
+   ],
+   "name": "Пульт",
+   "role": "штурвал выбранного корабля",
+   "onCanvas": false,
+   "count": 2
+  },
+  {
+   "char": "🔇",
+   "cp": "1f507",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "js/game.js",
+     "line": 2967,
+     "text": "$('#muteBtn').textContent = Sound.muted ? '🔇' : '🔊';",
+     "canvas": false
+    },
+    {
+     "src": "js/game.js",
+     "line": 2969,
+     "text": "$('#muteBtn').textContent = Sound.toggleMute() ? '🔇' : '🔊';",
+     "canvas": false
+    }
+   ],
+   "name": "Динамик перечёркнут",
+   "role": "звук выключен. Одноцветный, по цвету текста",
+   "onCanvas": false,
+   "count": 2
+  },
+  {
+   "char": "🥇",
+   "cp": "1f947",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "js/game.js",
+     "line": 3355,
+     "text": "const medals = ['🥇', '🥈', '🥉', '4.'];",
+     "canvas": false
+    },
+    {
+     "src": "js/home.js",
+     "line": 569,
+     "text": "const medals = ['🥇', '🥈', '🥉'];",
+     "canvas": false
+    }
+   ],
+   "name": "Золотая медаль",
+   "role": "1-е место",
+   "onCanvas": false,
+   "count": 2
+  },
+  {
+   "char": "🥈",
+   "cp": "1f948",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "js/game.js",
+     "line": 3355,
+     "text": "const medals = ['🥇', '🥈', '🥉', '4.'];",
+     "canvas": false
+    },
+    {
+     "src": "js/home.js",
+     "line": 569,
+     "text": "const medals = ['🥇', '🥈', '🥉'];",
+     "canvas": false
+    }
+   ],
+   "name": "Серебряная медаль",
+   "role": "2-е место",
+   "onCanvas": false,
+   "count": 2
+  },
+  {
+   "char": "🥉",
+   "cp": "1f949",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "js/game.js",
+     "line": 3355,
+     "text": "const medals = ['🥇', '🥈', '🥉', '4.'];",
+     "canvas": false
+    },
+    {
+     "src": "js/home.js",
+     "line": 569,
+     "text": "const medals = ['🥇', '🥈', '🥉'];",
+     "canvas": false
+    }
+   ],
+   "name": "Бронзовая медаль",
+   "role": "3-е место",
+   "onCanvas": false,
+   "count": 2
+  },
+  {
+   "char": "🟢",
+   "cp": "1f7e2",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "game.tabMyTurn",
+     "text": "🟢 Твой ход! — Морской бой"
+    }
+   ],
+   "name": "Зелёный круг",
+   "role": "во вкладке браузера: твой ход",
+   "onCanvas": false,
+   "count": 1
+  },
+  {
+   "char": "🔴",
+   "cp": "1f534",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "game.tabTurnOf",
+     "text": "🔴 Ход: {{nick}} — Морской бой"
+    }
+   ],
+   "name": "Красный круг",
+   "role": "во вкладке браузера: ход соперника",
+   "onCanvas": false,
+   "count": 1
+  },
+  {
+   "char": "↩",
+   "cp": "21a9",
+   "needsVs16": true,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "game.aimCancel",
+     "text": "↩ отмена"
+    }
+   ],
+   "name": "Стрелка возврата",
+   "role": "отмена прицеливания",
+   "onCanvas": false,
+   "count": 1
+  },
+  {
+   "char": "👇",
+   "cp": "1f447",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "game.tutSeen",
+     "text": "Подсказки в этом матче уже показаны — заново не включить. Вся нужная информация — в инфоба"
+    }
+   ],
+   "name": "Палец вниз",
+   "role": "указатель в подсказке",
+   "onCanvas": false,
+   "count": 1
+  },
+  {
+   "char": "⏱",
+   "cp": "23f1",
+   "needsVs16": true,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "game.turnTimeLeft",
+     "text": "⏱ {{time}} до конца хода"
+    }
+   ],
+   "name": "Секундомер",
+   "role": "остаток времени на ход",
+   "onCanvas": false,
+   "count": 1
+  },
+  {
+   "char": "⛈",
+   "cp": "26c8",
+   "needsVs16": true,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "err.convoyInRt",
+     "text": "⛈ В шторме строй не водят — суда плывут сами"
+    }
+   ],
+   "name": "Гроза (без вариатора)",
+   "role": "отказ «в шторме строй не водят» — тот же символ, что ⛈️, но записан иначе",
+   "onCanvas": false,
+   "count": 1
+  },
+  {
+   "char": "⏰",
+   "cp": "23f0",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "locales/ru.json",
+     "key": "log.timeout",
+     "text": "⏰ Время вышло — ход игрока {{nick}} пропущен"
+    }
+   ],
+   "name": "Будильник",
+   "role": "время хода вышло",
+   "onCanvas": false,
+   "count": 1
+  },
+  {
+   "char": "✋",
+   "cp": "270b",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "game.html",
+     "line": 25,
+     "text": "<button class=\"small\" id=\"dbgMove\" title=\"Взять любой корабль и поставить в другую точку\">✋ перенести</button>",
+     "canvas": false
+    }
+   ],
+   "name": "Ладонь",
+   "role": "отладка: перенести корабль",
+   "onCanvas": false,
+   "count": 1
+  },
+  {
+   "char": "👆",
+   "cp": "1f446",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "js/game.js",
+     "line": 1902,
+     "text": "ctx.fillText('👆', fx, fy + 2);",
+     "canvas": true
+    }
+   ],
+   "name": "Палец вверх",
+   "role": "указатель на канве",
+   "onCanvas": true,
+   "count": 1
+  },
+  {
+   "char": "🏚",
+   "cp": "1f3da",
+   "needsVs16": true,
+   "composite": false,
+   "uses": [
+    {
+     "src": "js/game.js",
+     "line": 2645,
+     "text": "$('#outpostTitle').textContent = `${def.icon} ${outpostName(op.level - 1)}${op.hp < def.hp ? ` · 🏚${op.hp}/${",
+     "canvas": false
+    }
+   ],
+   "name": "Развалины",
+   "role": "разрушенный аванпост",
+   "onCanvas": false,
+   "count": 1
+  },
+  {
+   "char": "✔",
+   "cp": "2714",
+   "needsVs16": true,
+   "composite": false,
+   "uses": [
+    {
+     "src": "js/game.js",
+     "line": 3383,
+     "text": "$('#copyBtn').textContent = '✔';",
+     "canvas": false
+    }
+   ],
+   "name": "Галочка тонкая",
+   "role": "«ссылка скопирована»",
+   "onCanvas": false,
+   "count": 1
+  },
+  {
+   "char": "🛥",
+   "cp": "1f6e5",
+   "needsVs16": true,
+   "composite": false,
+   "uses": [
+    {
+     "src": "server/config.js",
+     "key": "shkhuna",
+     "text": "icon: '🛥'"
+    }
+   ],
+   "name": "Шхуна",
+   "role": "класс «шхуна» — две мачты, косые паруса",
+   "onCanvas": false,
+   "count": 1
+  },
+  {
+   "char": "🚢",
+   "cp": "1f6a2",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "server/config.js",
+     "key": "fregat",
+     "text": "icon: '🚢'"
+    }
+   ],
+   "name": "Фрегат",
+   "role": "класс «фрегат» — три мачты, прямые паруса",
+   "onCanvas": false,
+   "count": 1
+  },
+  {
+   "char": "🛩",
+   "cp": "1f6e9",
+   "needsVs16": true,
+   "composite": false,
+   "uses": [
+    {
+     "src": "server/config.js",
+     "key": "carrier",
+     "text": "icon: '🛩'"
+    }
+   ],
+   "name": "Самолёт",
+   "role": "авианосец (чит-корабль)",
+   "onCanvas": false,
+   "count": 1
+  },
+  {
+   "char": "📈",
+   "cp": "1f4c8",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "server/config.js",
+     "key": "market",
+     "text": "icon: '📈'"
+    }
+   ],
+   "name": "График вверх",
+   "role": "перк «торговый ряд»",
+   "onCanvas": false,
+   "count": 1
+  },
+  {
+   "char": "🗼",
+   "cp": "1f5fc",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "server/config.js",
+     "key": "lighthouse",
+     "text": "icon: '🗼'"
+    }
+   ],
+   "name": "Башня",
+   "role": "перк «маяк»",
+   "onCanvas": false,
+   "count": 1
+  },
+  {
+   "char": "🛡",
+   "cp": "1f6e1",
+   "needsVs16": true,
+   "composite": false,
+   "uses": [
+    {
+     "src": "server/config.js",
+     "key": "garrison",
+     "text": "icon: '🛡'"
+    }
+   ],
+   "name": "Щит",
+   "role": "перк «гарнизон» (скрыт)",
+   "onCanvas": false,
+   "count": 1
+  },
+  {
+   "char": "📦",
+   "cp": "1f4e6",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "server/config.js",
+     "key": "warehouse",
+     "text": "icon: '📦'"
+    }
+   ],
+   "name": "Коробка",
+   "role": "перк «склад»",
+   "onCanvas": false,
+   "count": 1
+  },
+  {
+   "char": "🏯",
+   "cp": "1f3ef",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "server/config.js",
+     "key": "bastion",
+     "text": "icon: '🏯'"
+    }
+   ],
+   "name": "Пагода",
+   "role": "аванпост 4-го уровня (бастион)",
+   "onCanvas": false,
+   "count": 1
+  },
+  {
+   "char": "🪝",
+   "cp": "1fa9d",
+   "needsVs16": false,
+   "composite": false,
+   "uses": [
+    {
+     "src": "server/config.js",
+     "key": "grapnels",
+     "text": "icon: '🪝'"
+    }
+   ],
+   "name": "Крюк",
+   "role": "перк «абордажные крючья»",
+   "onCanvas": false,
+   "count": 1
+  }
+ ]
+}

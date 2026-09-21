@@ -105,6 +105,9 @@
     const full = box.dataset.langSwitch === 'full';
     box.replaceChildren();
     box.classList.add('lang-dd');
+    // Русский помечен 🏴‍☠️ — но здесь он стоит флагом в ряду с 🇺🇦 и 🇬🇧, и древко лишнее.
+    // Метка переключает значки внутри на «флажный» вариант (см. public/js/icons.js).
+    box.dataset.iconVariant = 'flag';
     box.classList.toggle('lang-dd-full', full);   // текстом — значит и стрелка, и обычный кегль
     const opts = LANGS.map(code => ({ key: code, name: `${FLAGS[code] || ''} ${NAMES[code] || code}`.trim() }));
     renderModeDropdown(box, opts, lang, code => set(code), m => full ? m.name : (FLAGS[m.key] || m.key));

@@ -639,8 +639,7 @@ function drawEffects(under = false) {
       ctx.lineWidth = 3.5;
       ctx.strokeStyle = '#fdfbf3';
       ctx.fillStyle = '#a87900';
-      ctx.strokeText(`+${e.amount} 💰`, gx, gy);
-      ctx.fillText(`+${e.amount} 💰`, gx, gy);
+      SBIcons.text(ctx, `+${e.amount} 💰`, gx, gy, { stroke: true });
       ctx.globalAlpha = 1;
     } else if (e.kind === 'coin') {
       // то же «+N», что у золота, и в той же точке — но показывается, когда золото уже растаяло
@@ -653,8 +652,7 @@ function drawEffects(under = false) {
       ctx.lineWidth = 3.5;
       ctx.strokeStyle = '#fdfbf3';
       ctx.fillStyle = '#8a6410';
-      ctx.strokeText(`+${e.amount} 🪙`, gx, gy);
-      ctx.fillText(`+${e.amount} 🪙`, gx, gy);
+      SBIcons.text(ctx, `+${e.amount} 🪙`, gx, gy, { stroke: true });
       ctx.globalAlpha = 1;
     } else if (e.kind === 'dmg') {
       // «−N» всплывает над подбитой целью, красным и чуть мельче золота
@@ -1178,10 +1176,10 @@ function drawBase(b, i, { alive, hpFrac, dim }) {
   drawFort(sx(b.x), sy(b.y), b.radius * view.scale * 0.54, p.color, alive ? FORT_STONE : FORT_DEAD, alive);
   ctx.font = `bold ${Math.max(12, 15 * view.scale)}px Neucha, cursive`;
   ctx.fillStyle = '#2b3a55'; ctx.textAlign = 'center';
-  ctx.fillText(nickOf(p), sx(b.x), sy(b.y + b.radius) + 16);
+  SBIcons.text(ctx, nickOf(p), sx(b.x), sy(b.y + b.radius) + 16);
   ctx.globalAlpha = 1;
   if (alive && hpFrac != null) hpBar(sx(b.x), sy(b.y + b.radius) + 22, 56, hpFrac, '#27ae60');
-  else if (!alive) { ctx.font = `${20 * view.scale + 8}px serif`; ctx.fillText('💀', sx(b.x), sy(b.y) + 6); }
+  else if (!alive) { ctx.font = `${20 * view.scale + 8}px serif`; SBIcons.text(ctx, '💀', sx(b.x), sy(b.y) + 6); }
 }
 
 // ===== Туман войны — чисто клиентский визуал (см. config.fog) =====
@@ -1473,7 +1471,7 @@ function render(canvasOnly) {
     dashedCircle(z.x, z.y, z.radius, 'rgba(80,130,180,.6)');
     ctx.font = `${Math.max(14, 22 * view.scale)}px serif`;
     ctx.textAlign = 'center';
-    ctx.fillText('🐟', sx(z.x), sy(z.y) + 6);
+    SBIcons.text(ctx, '🐟', sx(z.x), sy(z.y) + 6);
     // счётчик занятых рыбацких мест — мелким шрифтом, тем же синим, что и зона
     const taken = state.ships.filter(s => ST(s.type).fishing > 0 &&
       Math.hypot(s.x - z.x, s.y - z.y) <= z.radius).length;
@@ -1495,7 +1493,7 @@ function render(canvasOnly) {
       const col = state.players[op.owner]?.color || '#666';
       if (op.owner === myIdx()) // радиус перков — только своих (чужие не палим детально)
         dashedCircle(isl.x, isl.y, state.outposts?.radius || 240, col + '66', 1.2);
-      ctx.fillText(def.icon, sx(isl.x), sy(isl.y) + 5);
+      SBIcons.text(ctx, def.icon, sx(isl.x), sy(isl.y) + 5);
       // флажок владельца над постройкой
       const fx0 = sx(isl.x) + 10 * view.scale, fy0 = sy(isl.y) - 16 * view.scale;
       ctx.strokeStyle = '#2b3a55'; ctx.lineWidth = 1.4;
@@ -1512,7 +1510,7 @@ function render(canvasOnly) {
         ctx.fillStyle = '#c0392b'; ctx.fillRect(x0, y0, w * Math.max(0, op.hp / def.hp), 4);
       }
     } else {
-      ctx.fillText(isl.looted ? '✖' : '💰', sx(isl.x), sy(isl.y) + 5);
+      SBIcons.text(ctx, isl.looted ? '✖' : '💰', sx(isl.x), sy(isl.y) + 5);
     }
     if (!isl.looted) {
       ctx.font = `bold ${Math.max(11, 14 * view.scale)}px Neucha, cursive`;
@@ -1577,7 +1575,7 @@ function render(canvasOnly) {
       ctx.font = `${Math.max(11, 14 * view.scale)}px serif`;
       ctx.textAlign = 'center';
       ctx.fillStyle = '#2b3a55';
-      ctx.fillText('⚓', sx(s.x), sy(s.y) - ((SHIP_LEN[s.type] || 46) * 0.5 + 14) * view.scale);
+      SBIcons.text(ctx, '⚓', sx(s.x), sy(s.y) - ((SHIP_LEN[s.type] || 46) * 0.5 + 14) * view.scale);
       ctx.globalAlpha = 1;
     }
   }
@@ -1682,7 +1680,7 @@ function render(canvasOnly) {
     ctx.textAlign = 'center';
     if (aim && aim.cancel) {
       ctx.fillStyle = '#9aa0a8';
-      ctx.fillText(t('game.aimCancel'), sx(sel.x), sy(sel.y) - 24);
+      SBIcons.text(ctx, t('game.aimCancel'), sx(sel.x), sy(sel.y) - 24);
     } else {
       ctx.fillStyle = ok ? '#2b3a55' : '#c0392b';
       ctx.fillText(t('game.cells', { n: (d / 40).toFixed(1) }), mx, my - 8);
@@ -1744,7 +1742,7 @@ function drawConvoy(lead) {
     ctx.font = `bold ${Math.max(11, 13 * view.scale)}px Neucha, cursive`;
     ctx.textAlign = 'center';
     ctx.fillStyle = '#b8860b';
-    ctx.fillText(i === 0 ? t('game.flagship') : String(i + 1), sx(s.x), sy(s.y) - (20 * view.scale + 10));
+    SBIcons.text(ctx, i === 0 ? t('game.flagship') : String(i + 1), sx(s.x), sy(s.y) - (20 * view.scale + 10));
     if (off && i > 0) {   // призрак спутника на новом месте (флагмана рисует общая «линейка»)
       ctx.globalAlpha = 0.35;
       drawShip({ ...s, x: s.x + off.x, y: s.y + off.y, _headingOverride: Math.atan2(off.y, off.x) }, false);
@@ -1776,7 +1774,7 @@ function drawConvoyHint(text) {
   ctx.fillStyle = '#2b3a55';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(text, canvas.clientWidth / 2, y + h / 2 + 1);
+  SBIcons.text(ctx, text, canvas.clientWidth / 2, y + h / 2 + 1);
   ctx.restore();
 }
 
@@ -1822,7 +1820,7 @@ function drawWindCompass() {
   ctx.font = '12px Neucha, cursive';
   ctx.fillStyle = '#2b3a55';
   ctx.textAlign = 'center';
-  ctx.fillText(t('game.wind'), cx, cy + R + 14);
+  SBIcons.text(ctx, t('game.wind'), cx, cy + R + 14);
   ctx.restore();
 }
 
@@ -2231,10 +2229,10 @@ function drawShip(s, selected) {
   if (isPirate) {
     ctx.font = `${Math.max(9, 16 * k)}px serif`;
     ctx.textAlign = 'center';
-    ctx.fillText(s.boss ? '👑🏴‍☠️' : '🏴‍☠️', px, py - L * 0.5);
+    SBIcons.text(ctx, s.boss ? '👑🏴‍☠️' : '🏴‍☠️', px, py - L * 0.5);
     ctx.font = `bold ${Math.max(9, 14 * k)}px Neucha, cursive`;
     ctx.fillStyle = s.boss ? '#a87900' : '#2b3a55';
-    ctx.fillText(`💰${s.bounty}`, px, py + L * 0.62 + 16 * k);
+    SBIcons.text(ctx, `💰${s.bounty}`, px, py + L * 0.62 + 16 * k);
   }
 
   hpBar(px, py + L * 0.42 + 4, Math.max(16, L * 0.9), s.hp / (s.maxHp || st.hp), '#27ae60');
@@ -2577,7 +2575,7 @@ function handleTap(pos, isTouch) {
     if (!WHEEL_UI) {
       $('#shipActions').classList.remove('hidden');
       positionActionBar(clickedShip); // панель — на противоположной кораблю половине экрана
-      $('#shipActionsTitle').textContent = ST(clickedShip.type).icon + ' ' + shipName(clickedShip.type);
+      $('#shipActionsTitle').innerHTML = SBIcons.ship(clickedShip.type, ST(clickedShip.type).icon) + ' ' + escapeHtml(shipName(clickedShip.type));
     }
     updateActionButtons();
     render();
@@ -2878,12 +2876,12 @@ function drawCommandWheel() {
     ctx.font = `${Math.round(L.Ic * 1.05)}px serif`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.globalAlpha = w.act.off ? k * 0.45 : k;
-    ctx.fillText(w.act.icon, wx, wy + 1);
+    SBIcons.text(ctx, w.act.icon, wx, wy + 1);
     ctx.globalAlpha = k;
     // подпись — радиально снаружи (или секунды перезарядки)
     ctx.font = 'bold 11px Neucha, cursive'; ctx.fillStyle = 'rgba(43,58,85,.8)';
     const lx = wx + Math.cos(w.ang) * (L.Ic + 12), ly = wy + Math.sin(w.ang) * (L.Ic + 12) + 4;
-    ctx.fillText(w.act.cdMs > 0 ? t('game.cdSec', { sec: Math.ceil(w.act.cdMs / 1000) }) : w.act.label, lx, ly);
+    SBIcons.text(ctx, w.act.cdMs > 0 ? t('game.cdSec', { sec: Math.ceil(w.act.cdMs / 1000) }) : w.act.label, lx, ly);
     ctx.textBaseline = 'alphabetic';
   }
   ctx.restore();
@@ -2988,7 +2986,7 @@ function openInfo() {
         ].filter(Boolean).join(' · ');
         const power = st.repairer ? t('game.fleet.repairer') : (cannons ? t('game.fleet.volley', { dmg: st.dmg }) : `⚔️${st.dmg}`);
         return `<div class="info-fleet-row">
-          <span class="nm">${st.icon} ${shipName(type)}</span>
+          <span class="nm">${SBIcons.ship(type, st.icon)} ${shipName(type)}</span>
           <span class="st">${st.price}з · ❤️${st.hp} · ${power} · 🎯${(st.fireRange / 40).toFixed(1)} · 🧭${(st.move / 40).toFixed(1)}${extra ? ' · ' + extra : ''}</span>
         </div>`;
       }).join('');
@@ -3130,7 +3128,7 @@ function renderSidebar() {
   // игроки
   $('#playersList').innerHTML = state.players.map((p, i) => {
     const show = state.status !== 'lobby' && canSee(i);
-    const stats = show ? `${goldOf(p)}${coinsOf(p)}${money('🏠', p.portHp)}` : '';
+    const stats = show ? `${goldOf(p)}${coinsOf(p)}${money('❤️', p.portHp)}` : '';
     // под туманом статус врага — на момент последней разведки (не крестим вслепую)
     const aliveShown = (fogActive() && i !== myIdx()) ? (fogLastSeen[i]?.alive ?? true) : p.alive;
     return `<div class="player-row ${aliveShown ? '' : 'dead'} ${state.status === 'active' && i === state.turn.idx ? 'current' : ''}">
@@ -3213,7 +3211,7 @@ function renderShop() {
     const cantAddMore = total + price(type) > me.gold;
     return `
     <div class="ship-card ${cantAddMore && !basket[type] ? 'unaffordable' : ''}" title="${shipDesc(type)}">
-      <div class="head"><span>${st.icon}</span><span class="nm">${shipName(type)}</span><span class="price">${t('game.shop.price', { gold: price(type) })}</span></div>
+      <div class="head"><span>${SBIcons.ship(type, st.icon)}</span><span class="nm">${shipName(type)}</span><span class="price">${t('game.shop.price', { gold: price(type) })}</span></div>
       <div class="stats">
         <span title="${t('game.ship.hp')}">❤️ ${st.hp}</span>
         ${st.repairer

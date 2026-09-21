@@ -63,7 +63,7 @@
     "opt": {
       "fog": "🌫 Fog of war",
       "fogHint": "— you can't see the enemy until you get close",
-      "multi": "⚓ Three ships per turn",
+      "multi": "⏩ Three ships per turn",
       "multiHint": "— up to 3 actions per turn",
       "rt": "⚡ Full speed ahead!",
       "beta": "beta",
@@ -372,7 +372,7 @@
       "p": "Destroy a rival's <b>port</b> and they are out. The last port standing wins the battle. 👑"
     },
     "turn": {
-      "h": "🔄 Turn",
+      "h": "▶️ Turn",
       "single": {
         "p": "Players take turns. One turn — <b>one</b> action:",
         "liMove": "🧭 <b>move</b> one ship;",

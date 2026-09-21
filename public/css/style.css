@@ -437,6 +437,11 @@ aside.panel {
 .busy-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .busy-actions button { flex: 1 1 150px; }
 
+/* Значок из своего набора на месте эмодзи (public/js/icons.js).
+   1em в строку, чуть опущен по базовой линии — чтобы стоял как буква, а не как картинка. */
+.sbi { display: inline-block; width: 1em; height: 1em; vertical-align: -0.16em; }
+.sbi > svg { width: 100%; height: 100%; display: block; }
+
 /* ── профиль капитана ── */
 .pf-head { display: flex; align-items: center; gap: 10px; margin: 10px 0 14px; }
 .pf-head .ava {

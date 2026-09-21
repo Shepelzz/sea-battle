@@ -12,6 +12,7 @@
     ['/control-lab.html','🎛', 'Штурвал'],
     ['/fort-lab.html',   '🏰', 'Форт'],
     ['/draft-fire.html', '🔥', 'Горящая база'],
+    ['/icons-lab.html',  '🎨', 'Иконки'],
   ];
   const here = (location.pathname.split('/').pop() || '').toLowerCase();
 
