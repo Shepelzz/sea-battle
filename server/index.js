@@ -300,7 +300,7 @@ function maybeBotBuy(game) {
   if (game?.phase !== 'buy') return;
   for (let i = 0; i < game.players.length; i++) {
     const p = game.players[i];
-    if (p.isBot && !p.ready) applyAction(game, p.id, { type: 'buyFleet', ships: duelFleetPlan(game, i, p.botLevel || 'mid') });
+    if (p.isBot && !p.ready) applyAction(game, p.id, { type: 'buyFleet', ships: duelFleetPlan(game, i, p.botLevel || 'hard') });
   }
 }
 
@@ -419,7 +419,7 @@ function maybeAutoFinish(game) {
     const cur = game.players[game.turn.idx];
     if (!cur?.alive) break; // подстраховка (advanceTurn и так пропускает выбывших)
     let action;
-    try { action = chooseBotAction(game, game.turn.idx, cur.botLevel || 'mid'); }
+    try { action = chooseBotAction(game, game.turn.idx, cur.botLevel || 'hard'); }
     catch { action = { type: 'skip' }; }
     if (!applyAction(game, cur.id, action).ok) applyAction(game, cur.id, { type: 'skip' });
   }
@@ -551,7 +551,7 @@ app.post('/api/games', (req, res) => {
 
   // против компьютера: человек + 1-3 бота, старт сразу
   if (mode === 'bot') {
-    const level = ['easy', 'mid', 'hard'].includes(req.body.level) ? req.body.level : 'mid';
+    const level = ['easy', 'mid', 'hard'].includes(req.body.level) ? req.body.level : 'hard';
     const gmode = pickMode(req.body.gameMode);
     const duel = !!GAME_MODES[gmode]?.duel;
     const botCount = duel ? 1 : Math.min(3, Math.max(1, +req.body.bots || 1)); // дуэль — ровно 1 бот (1на1)
@@ -724,7 +724,7 @@ io.on('connection', socket => {
     if (game.status !== 'lobby') return ack?.({ ok: false, error: 'err.gameRunning' });
     if (isDuel(game)) return ack?.({ ok: false, error: 'err.duelNeedsHuman' });
     if (game.players[0]?.id !== myPid) return ack?.({ ok: false, error: 'err.hostAddsBots' });
-    const lvl = ['easy', 'mid', 'hard'].includes(level) ? level : 'mid';
+    const lvl = ['easy', 'mid', 'hard'].includes(level) ? level : 'hard';
     const botCount = game.players.filter(p => p.isBot).length;
     const limit = Math.floor(game.config.maxPlayers / 2); // боты — максимум половина слотов
     if (botCount >= limit) return ack?.({ ok: false, error: 'err.botLimit', params: { max: limit } });

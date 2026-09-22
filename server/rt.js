@@ -335,7 +335,7 @@ export function botThink(game, bIdx, now) {
   const pirates = game.ships.filter(s => s.owner === -1);
   // «РАЗГОН»: первые минуты бот не рашит чужую базу — строит экономику и держится своей половины.
   // Игрок успевает освоить реалтайм-управление. Длина разгона — по уровню бота.
-  const aggroDelay = { easy: 180000, mid: 75000, hard: 20000 }[bot.botLevel || 'mid'] ?? 75000;
+  const aggroDelay = { easy: 180000, mid: 75000, hard: 20000 }[bot.botLevel || 'hard'] ?? 20000;
   const rushing = !peace && now - (game.rt.startedAt || 0) >= aggroDelay;
   const enemyPorts = peace ? [] : game.players
     .map((p, i) => (i !== bIdx && p.alive && game.map.bases[i] && !game.map.bases[i].noPort)

@@ -1,6 +1,6 @@
 {
   "name": "sea-battle",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "Улучшенный морской бой — браузерная пошаговая игра с линейкой",
   "main": "server/index.js",
   "type": "module",
