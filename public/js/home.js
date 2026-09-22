@@ -35,8 +35,17 @@ function renderBotColor() {
   renderColorDropdown($('#botColors'), PALETTE, botColor, c => { botColor = c; renderBotColor(); });
 }
 
+// Ошибка в редакторе — снимок ответа сервера, а не вечная истина: «слишком много партий»
+// перестаёт быть правдой, как только игрок закроет лишнюю. Гасим её на каждом действии,
+// после которого сообщение может врать: смена экрана, новая попытка, закрытие партии.
+const EDITOR_ERRORS = ['#createError', '#hotseatError', '#botError'];
+function clearEditorErrors() {
+  EDITOR_ERRORS.forEach(sel => { const el = $(sel); if (el) el.textContent = ''; });
+}
+
 // --- выбор режима ---
 function showMode(mode) {
+  clearEditorErrors();
   $('#modeBtns').classList.toggle('hidden', !!mode);
   $('#editorOnline').classList.toggle('hidden', mode !== 'online');
   $('#editorHotseat').classList.toggle('hidden', mode !== 'hotseat');
@@ -55,6 +64,13 @@ document.querySelectorAll('[data-back]').forEach(b =>
 const socket = io();
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+// Закрытие партии (своё лобби в списке или «моя игра») — одно и то же действие с одним ответом.
+function finishGame(id) {
+  socket.emit('game:finish', { gameId: id, token: getToken() }, res => {
+    if (!res || !res.ok) return alert((res && errText(res)) || t('lobby.failed'));
+    clearEditorErrors();   // партий стало меньше — старое «слишком много» больше не про нас
+  });
 }
 function renderLobbies(list) {
   const box = $('#lobbiesList');
@@ -80,8 +96,7 @@ function renderLobbies(list) {
   box.querySelectorAll('[data-closelobby]').forEach(b =>
     b.addEventListener('click', () => {
       if (!confirm(t('lobby.closeConfirm'))) return;
-      socket.emit('game:finish', { gameId: b.dataset.closelobby, token: getToken() },
-        res => { if (!res || !res.ok) alert((res && errText(res)) || t('lobby.failed')); });
+      finishGame(b.dataset.closelobby);
     }));
 }
 // «Мои игры» — секция сверху браузера: активные игры, в которых я участвую (онлайн и оффлайн)
@@ -108,8 +123,7 @@ function renderMyGames(list) {
   box.querySelectorAll('[data-finish]').forEach(b =>
     b.addEventListener('click', () => {
       if (!confirm(t('lobby.finishConfirm'))) return;
-      socket.emit('game:finish', { gameId: b.dataset.finish, token: getToken() },
-        res => { if (!res || !res.ok) alert((res && errText(res)) || t('lobby.failed')); });
+      finishGame(b.dataset.finish);
     }));
 }
 // Бейдж на кнопке «найти игру»: сколько МОИХ штук ждёт внутри.
@@ -170,6 +184,7 @@ $('#hotseatCount').addEventListener('change', renderHotseatNames);
 renderHotseatNames();
 
 $('#hotseatBtn').addEventListener('click', async () => {
+  clearEditorErrors();
   const nicks = [...document.querySelectorAll('#hotseatNames input.hs-name')].map(i => i.value.trim());
   if (nicks.some(n => !n)) { $('#hotseatError').textContent = t('home.errNames'); return; }
   if (new Set(nicks).size !== nicks.length) { $('#hotseatError').textContent = t('home.errDupNames'); return; }
@@ -499,6 +514,7 @@ $('#loginOverlay').addEventListener('click', e => { if (e.target.id === 'loginOv
 // и сделает новое. Ошибку показываем там, откуда пришли: из формы — под формой, из окна
 // «лобби уже открыто» — в самом окне.
 async function createOnline({ replace = false, errBox = '#createError' } = {}) {
+  clearEditorErrors();
   const nick = $('#nick').value.trim();
   if (!nick) { $('#createError').textContent = t('home.errNickFirst'); return; }
   localStorage.setItem('sb_nick', nick);
@@ -549,6 +565,7 @@ $('#busyOverlay').addEventListener('click', e => { if (e.target.id === 'busyOver
 // --- против компьютера ---
 $('#botNick').value = localStorage.getItem('sb_nick') || '';
 $('#botBtn').addEventListener('click', async () => {
+  clearEditorErrors();
   const nick = $('#botNick').value.trim();
   if (!nick) { $('#botError').textContent = t('home.errNick'); return; }
   localStorage.setItem('sb_nick', nick);
