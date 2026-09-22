@@ -349,6 +349,11 @@ function renderProfile() {
     </div>
     <p class="pf-msg" id="pfMsg"></p>
     <div class="pf-row"><span>${t('profile.lang')}</span><span data-lang-switch="full"></span></div>
+    <label class="fog-toggle pf-mail" title="${escapeHtml(t('profile.mailHint'))}">
+      <input type="checkbox" id="pfMail"${d.mailNudge ? ' checked' : ''}>
+      <span>${t('profile.mail')}</span>
+    </label>
+    <p class="muted pf-note" style="margin:0">${t('profile.mailHint')}</p>
     <h3 class="pf-h">${t('profile.stats')}</h3>
     ${stats}
     <p class="muted pf-note">${t('profile.rankedNote')}</p>
@@ -357,6 +362,21 @@ function renderProfile() {
       <button class="small" id="pfLogout" type="button">${t('common.logout')}</button>
     </div>`;
   SBI18n.mount($('#profileBody [data-lang-switch]'));
+  // Согласие сохраняем сразу по щелчку: отдельная кнопка «применить» для одного тумблера — лишняя.
+  // Не сохранилось — возвращаем тумблер назад, чтобы он не врал про состояние на сервере.
+  $('#pfMail').addEventListener('change', async e => {
+    const on = e.target.checked;
+    try {
+      const r = await fetch('/api/profile/mail', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mailNudge: on })
+      });
+      if (!r.ok) throw new Error('save');
+      profileData.mailNudge = on;
+    } catch {
+      e.target.checked = !on;
+      const msg = $('#pfMsg'); msg.className = 'pf-msg error'; msg.textContent = t('home.errNet');
+    }
+  });
   $('#pfSave').addEventListener('click', saveNick);
   $('#pfNick').addEventListener('keydown', e => { if (e.key === 'Enter') saveNick(); });
   $('#pfLogout').addEventListener('click', doLogout);

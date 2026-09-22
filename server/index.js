@@ -24,16 +24,34 @@ import {
 import { chooseBotAction, BOT_NAMES, duelFleetPlan } from './bot.js';
 import { LANGS, LANG_COOKIE, SOURCE_LANG, DEFAULT_LANG, normLang, pickLang, buildLangCookie } from './i18n.js';
 import { applyCheat } from './cheats.js';
-import { ogHead, gameFacts, previewLang, absUrl, canonicalPath, ogImage, OG_IMAGE, LANG_PARAM } from './og.js';
+import {
+  ogHead, gameFacts, previewLang, absUrl, canonicalPath, ogImage, canonicalUrl, indexable,
+  gameSchema, robotsTxt, sitemapXml, OG_IMAGE, LANG_PARAM
+} from './og.js';
 import { VERSION, versionLabel } from './version.js';
 import { rtStart, rtStop } from './rt.js';
-import { CHEATS_ENABLED, DEBUG, GAME_MODES, enabledModes, DEFAULT_MODE, isDuel, isRealtime, realtimeAllowed, SHIP_TYPES, PIRATE } from './config.js';
+import {
+  CHEATS_ENABLED, DEBUG, DEBUG_REQUESTED, PRODUCTION, MAX_ACTIVE_GAMES, NUDGE_MAIL_COOLDOWN_MS,
+  GAME_MODES, enabledModes, DEFAULT_MODE, isDuel, isRealtime, realtimeAllowed, SHIP_TYPES, PIRATE
+} from './config.js';
 // валидируем игровой режим из запроса (classic/deathmatch/develop) — только из включённых
 const pickMode = m => enabledModes().includes(m) ? m : DEFAULT_MODE;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
+app.disable('x-powered-by');   // не подсказываем сканерам, на чём мы написаны
 app.set('trust proxy', 1); // за прокси (Render): корректный протокол — нужно для Secure-cookie
+
+// Заголовки безопасности на КАЖДЫЙ ответ. CSP тут нет: она зависит от nonce конкретной
+// страницы и ставится в renderPage (см. ниже) — и только на две боевые страницы, чтобы не
+// ломать лаборатории в public/, у которых свои встроенные скрипты.
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');          // не угадывать тип по содержимому
+  res.setHeader('X-Frame-Options', 'DENY');                    // старый запрет фреймов (для старых браузеров)
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin'); // не светим полный путь наружу
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=(), payment=()');
+  next();
+});
 const server = http.createServer(app);
 const io = new Server(server);
 const PORT = process.env.PORT || 3456;
@@ -52,6 +70,7 @@ const langDict = code => fsp.readFile(path.join(PUBLIC, 'locales', code + '.json
 
 // Готовая страница на каждый (файл, язык). Файлов два, языков три — шесть строк в памяти;
 // пересобираем, только если правили HTML или словарь (следим по mtime, чтобы --watch не мешал).
+const NONCE_MARK = '__CSP_NONCE__';   // метка в кэше страницы; на отправке меняется на живой nonce
 const pageCache = new Map();
 const mtime = f => fsp.stat(f).then(s => s.mtimeMs);
 
@@ -85,7 +104,10 @@ async function buildPage(file, lang) {
     .replace(/<html lang="[^"]*"/, `<html lang="${lang}"`)
     // 3. словарь в <head> — он нужен уже только для динамики: журнал, тосты, смена языка на лету.
     //    '<' экранируем: строка вида "</script>" в словаре иначе закрыла бы тег.
-    .replace('</head>', `  <script>window.__SB_I18N=${JSON.stringify(boot).replace(/</g, '\\u003c')}</script>\n</head>`);
+    // ⚠ Вшитый словарь — ВСТРОЕННЫЙ скрипт, и его срезает наш же CSP. Реальный nonce у каждого
+    // запроса свой, а страница кэшируется на (файл, язык) — поэтому в кэш кладём метку, а
+    // подменяем её на живой nonce перед самой отправкой (renderPage).
+    .replace('</head>', `  <script nonce="${NONCE_MARK}">window.__SB_I18N=${JSON.stringify(boot).replace(/</g, '\\u003c')}</script>\n</head>`);
 
   pageCache.set(key, { stamp, html });
   return html;
@@ -116,7 +138,9 @@ async function ogImageUrl() {
   return ogImage(ogVersion);
 }
 
-async function ogBlock(req, game) {
+const escAttr = v => String(v ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+
+async function ogBlock(req, game, nonce = '') {
   // язык превью — из ссылки (?l=, его туда кладёт «скопировать» у отправителя),
   // иначе язык создателя партии, иначе дефолт. На саму страницу это не влияет.
   const hostLang = game?.hostPid ? (await db.getPlayer(game.hostPid))?.lang : null;
@@ -131,22 +155,58 @@ async function ogBlock(req, game) {
     image: absUrl(origin, await ogImageUrl()),
     imageAlt: await T('og.imageAlt')
   };
-  if (!game) return ogHead({ ...base, title: await T('og.homeTitle'), description: await T('og.homeDesc') });
+  // Для поисковика: canonical (у страницы один настоящий адрес — без ?l= и прочего хвоста)
+  // и, для страницы партии, запрет индексации.
+  const seo = [`  <link rel="canonical" href="${escAttr(canonicalUrl(origin, req.path))}">`];
+  if (!indexable(!!game)) seo.push('  <meta name="robots" content="noindex, nofollow">');
+
+  if (!game) {
+    const desc = await T('og.homeDesc');
+    // Разметка для поисковика. Тег со script — под nonce, иначе его срежет наш же CSP.
+    const schema = gameSchema({ siteName: base.siteName, description: desc, url: canonicalUrl(origin, '/'), image: base.image });
+    seo.push(`  <script type="application/ld+json"${nonce ? ` nonce="${nonce}"` : ''}>${JSON.stringify(schema).replace(/</g, '\\u003c')}</script>`);
+    return ogHead({ ...base, title: await T('og.homeTitle'), description: desc }) + seo.join('\n') + '\n';
+  }
   // описание — только НЕИЗМЕНЯЕМЫЕ приметы партии (см. предупреждение в og.js)
   const facts = [];
   for (const f of gameFacts(game)) facts.push(await T(f.k, f.p));
-  return ogHead({ ...base, title: await T('og.gameTitle'), description: facts.join(' · ') });
+  return ogHead({ ...base, title: await T('og.gameTitle'), description: facts.join(' · ') }) + seo.join('\n') + '\n';
 }
+
+// Content-Security-Policy. Сеть страницы описана явно: что не перечислено — браузер не загрузит.
+// Это страховка от XSS: даже если чужой текст когда-нибудь просочится в разметку, выполнить его
+// будет нечем. Внешние адреса тут только гугловы — вход, шрифты и аватарки.
+// ⚠ style-src 'unsafe-inline' пока нужен: в разметке десятки style="…" и лаборатории вставляют
+//   свои <style>. Убрать можно только вместе с ними — отдельной уборкой.
+const csp = (nonce) => [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+  "frame-ancestors 'none'",                                  // нас нельзя вложить в чужой фрейм
+  "form-action 'self'",
+  `script-src 'self' 'nonce-${nonce}' https://accounts.google.com https://apis.google.com`,
+  "frame-src https://accounts.google.com",                   // окно входа Google
+  "connect-src 'self' https://accounts.google.com",          // сюда же попадает наш WebSocket
+  "img-src 'self' data: https://*.googleusercontent.com https://*.gstatic.com",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' https://fonts.gstatic.com"
+].join('; ');
 
 async function renderPage(file, req, res, game = null) {
   try {
     let html = await buildPage(file, await reqLang(req));
+    const nonce = crypto.randomBytes(16).toString('base64url');
+    html = html.replaceAll(NONCE_MARK, nonce);
+    res.setHeader('Content-Security-Policy', csp(nonce));
+    // Страницу партии из индекса убираем ещё и заголовком: он сильнее мета-тега — действует,
+    // даже если краулер не дочитал до <head> или получил страницу по редиректу.
+    if (!indexable(!!game)) res.setHeader('X-Robots-Tag', 'noindex, nofollow');
     // Вставляем В НАЧАЛО <head>, а не перед </head>: там уже лежит вшитый словарь на десятки
     // килобайт, а краулеры читают только начало страницы — за ним теги можно и не найти.
     // Но ПОСЛЕ <meta charset>: объявление кодировки обязано идти первым, иначе кириллица в
     // самих тегах рискует быть разобранной не в той кодировке.
     // Готовая страница в памяти при этом не меняется: правим копию перед самой отправкой.
-    const og = await ogBlock(req, game).catch(e => (console.error('og:', e.message), ''));
+    const og = await ogBlock(req, game, nonce).catch(e => (console.error('og:', e.message), ''));
     if (og) html = html.includes(CHARSET_META)
       ? html.replace(CHARSET_META, CHARSET_META + '\n' + og.replace(/\n$/, ''))
       : html.replace('<head>', '<head>\n' + og);
@@ -156,8 +216,26 @@ async function renderPage(file, req, res, game = null) {
     res.sendFile(path.join(PUBLIC, file));   // сломался рендер — отдаём как есть, на языке разметки
   }
 }
+// Поисковикам: что можно обходить и где карта сайта. Отдаём динамически — адрес сайта
+// зависит от того, как нас открыли (BASE_URL или заголовки запроса), в статике его не зашить.
+app.get('/robots.txt', (req, res) =>
+  res.type('text/plain').set('Cache-Control', 'public, max-age=3600').send(robotsTxt(reqOrigin(req))));
+app.get('/sitemap.xml', (req, res) =>
+  res.type('application/xml').set('Cache-Control', 'public, max-age=3600').send(sitemapXml(reqOrigin(req))));
+
 app.get(['/', '/index.html'], (req, res) => renderPage('index.html', req, res));
 app.get('/game.html', (req, res) => renderPage('game.html', req, res));
+
+// ЛАБОРАТОРИИ (*-lab.html и их обвязка) — инструменты разработки: подбор эффектов, звуков,
+// сравнение иконок. На бою им делать нечего: чужому человеку они бесполезны, а нам это лишняя
+// поверхность (у них свои встроенные скрипты, под которые CSP намеренно не натянут).
+// Поэтому на проде их просто нет — отдаём 404 до того, как до файла доберётся express.static.
+const LAB_PATH = /^\/(?:[\w-]*lab[\w-]*\.html|draft-[\w-]*\.html|js\/lab-nav\.js|icons-data\.json)$/;
+export const isLabPath = p => LAB_PATH.test(p);
+app.use((req, res, next) => {
+  if (PRODUCTION && isLabPath(req.path)) return res.status(404).type('text/plain').send('Not found');
+  next();
+});
 
 // no-cache ≠ «не кэшировать»: браузер хранит файл, но ПЕРЕПРОВЕРЯЕТ перед использованием (304 если
 // не менялся). Без этого заголовка браузеры кэшируют по эвристике и после апдейта игры днями
@@ -211,8 +289,27 @@ async function mailT(lang, key, params = {}) {
   return String(line).replace(/{{\s*(\w+)\s*}}/g, (_, k) => params[k] ?? '');
 }
 
-async function sendNudgeEmail(email, nick, gameUrl, lang = SOURCE_LANG) {
+// Когда кому в последний раз уходило письмо-напоминание. Ключ — адрес получателя, а не партия:
+// иначе, ведя пять партий с одним человеком, ему можно написать пять раз подряд.
+// Карта живёт в памяти: рестарт сервера сбрасывает паузу — не страшно, это защита от потока,
+// а не учёт. Чистим по ходу, чтобы не росла без предела.
+const nudgeMailAt = new Map();
+function mayMailNudge(email) {
+  const now = Date.now();
+  if (nudgeMailAt.size > 500) for (const [k, t] of nudgeMailAt) if (now - t > NUDGE_MAIL_COOLDOWN_MS) nudgeMailAt.delete(k);
+  const last = nudgeMailAt.get(email);
+  if (last && now - last < NUDGE_MAIL_COOLDOWN_MS) return false;
+  nudgeMailAt.set(email, now);
+  return true;
+}
+
+// Письмо уходит, только если получатель СОГЛАСЕН (чекбокс в профиле, по умолчанию включён)
+// и ему давно не писали. Согласие — главное: пауза лишь страхует от потока, но молчаливо
+// слать почту тому, кто её не просил, нельзя даже раз в полчаса.
+async function sendNudgeEmail(email, nick, gameUrl, lang = SOURCE_LANG, allowed = true) {
   if (!mailer || !email) return false;
+  if (!allowed) return false;               // человек отказался от напоминаний — в игре ход всё равно торопится
+  if (!mayMailNudge(email)) return false;   // недавно уже писали — в игре «поторопить» сработает, письма не будет
   try {
     await mailer.sendMail({
       from: process.env.SMTP_FROM || process.env.SMTP_USER,
@@ -243,6 +340,22 @@ const games = new Map();
 function getGame(id) {
   return games.get(id) || null;
 }
+
+// Сколько НЕзавершённых партий этот игрок СОЗДАЛ: лобби, онлайн, бот, хотсит — всё вместе.
+// Ресурсы съедает именно создание (полный JSON состояния в памяти и в базе), поэтому потолок
+// висит на создателе. Партии, куда его позвали гостем, не считаем: чужое лобби ему ничего не
+// стоит, а наказывать за приглашения — глупо. Доигранные тоже мимо: они никому не мешают.
+function createdGamesOf(pid) {
+  if (!pid) return 0;
+  let n = 0;
+  for (const g of games.values()) {
+    if (g.status === 'finished') continue;
+    if (g.hostPid === pid || g.hotseatOwner === pid) n++;
+  }
+  return n;
+}
+// true → отказать: своих партий уже слишком много
+const tooManyGames = pid => createdGamesOf(pid) >= MAX_ACTIVE_GAMES;
 
 // Персональная рассылка состояния: каждому сокету — со своей видимостью золота.
 async function broadcastState(game) {
@@ -488,7 +601,7 @@ app.get('/api/profile', async (req, res) => {
   res.json({
     nick: prof?.nick || '', email: prof?.email || '', avatar: prof?.avatar || '',
     provider: prof?.provider || '', lang: normLang(prof?.lang),
-    createdAt: prof?.createdAt || null, stats
+    createdAt: prof?.createdAt || null, mailNudge: prof?.mailNudge !== false, stats
   });
 });
 
@@ -500,6 +613,16 @@ app.post('/api/profile/nick', async (req, res) => {
   if (!nick) return res.status(400).json({ error: 'err.nickEmpty' });
   renameEverywhere(pid, nick);
   res.json({ ok: true, nick });
+});
+
+// Согласие на письма-напоминания «твой ход». Отказ — это отказ: письмо не уйдёт, даже если
+// соперник жмёт «поторопить». Сама механика (укорочение таймера) работает в любом случае.
+app.post('/api/profile/mail', async (req, res) => {
+  const pid = accountPidFromReq(req);
+  if (!pid) return res.status(401).json({ error: 'err.needLogin' });
+  const on = !!req.body?.mailNudge;
+  await db.setPlayerMailNudge(pid, on);
+  res.json({ ok: true, mailNudge: on });
 });
 
 // Смена языка. Гостю — кука, вошедшему — ещё и профиль (тогда язык едет за ним на любое устройство).
@@ -525,6 +648,9 @@ app.post('/api/games', (req, res) => {
   const accountPid = accountPidFromReq(req);                 // вошёл через Google? (по cookie)
   const pid = accountPid || (token ? pidOf(token) : null);   // иначе — гостевой токен (одиночка/хотсит)
   if (!pid) return res.status(400).json({ error: 'err.needToken' });
+  // Потолок на одновременные партии — единственная защита от «накрутить тысячу игр скриптом».
+  if (tooManyGames(pid))
+    return res.status(429).json({ error: 'err.tooManyGames', params: { max: MAX_ACTIVE_GAMES } });
   const id = crypto.randomBytes(5).toString('base64url');
 
   // хотсит: все игроки вводятся сразу, лобби нет — игра стартует мгновенно
@@ -562,6 +688,7 @@ app.post('/api/games', (req, res) => {
       return res.status(400).json({ error: 'err.rtNotInMode' });
     const game = createGame(id, { maxPlayers: 1 + botCount, turnTimer: 0 });
     game.config.botGame = true;
+    game.hostPid = pid;   // создатель: по нему считается потолок своих партий (в онлайне то же поле)
     game.config.realtime = !!req.body.realtime;           // ⚡ реалтайм-партия (бета)
     game.config.fog = req.body.fog !== false; // туман войны (по умолчанию вкл), визуал для игрока
     // ход тремя судами (по умолчанию вкл); в реалтайме ходов нет — форсим выкл, что бы ни прислал клиент
@@ -859,7 +986,9 @@ io.on('connection', socket => {
     const origin = process.env.BASE_URL
       || socket.handshake.headers.origin
       || `http://localhost:${PORT}`;
-    sendNudgeEmail(email, target.nick, `${origin}/game/${game.id}`, normLang(prof?.lang) || SOURCE_LANG)
+    // prof.mailNudge !== false — старые записи без колонки считаем согласием (так и было раньше)
+    sendNudgeEmail(email, target.nick, `${origin}/game/${game.id}`, normLang(prof?.lang) || SOURCE_LANG,
+      prof?.mailNudge !== false)
       .then(sent => ack?.({ ok: true, emailSent: sent }));
   });
 
@@ -966,6 +1095,12 @@ async function bootstrap() {
   }
   server.listen(PORT, () => {
     console.log(`⚓ Sea Battle ${versionLabel()}: http://localhost:${PORT}`);
+    // Молча проглотить SB_DEBUG на проде — худшее, что можно сделать: человек будет уверен,
+    // что отладка работает. Поэтому говорим вслух, почему её нет.
+    if (DEBUG_REQUESTED && !DEBUG)
+      console.warn('⚠  SB_DEBUG=1 ПРОИГНОРИРОВАН: это боевой запуск (NODE_ENV=production или внешняя база).\n' +
+                   '   Отладка раскрывает казну всех игроков, поэтому на проде она выключена намертво.');
+    if (DEBUG) console.warn('🐞 Режим отладки ВКЛЮЧЁН: финансы всех игроков видны в стейте. Только для локальной разработки.');
   });
 }
 

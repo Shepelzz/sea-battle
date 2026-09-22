@@ -465,6 +465,11 @@ aside.panel {
 .pf-row:last-of-type { border-bottom: 0; }
 .pf-row > span { color: var(--pencil); }
 .pf-note { font-size: 13px; margin: 10px 0 0; }
+/* тумблер писем в профиле: тот же переключатель, что в формах создания, но плотнее по вертикали */
+.pf-mail { margin: 12px 0 2px; }
+.pf-mail input { width: 42px; height: 23px; }
+.pf-mail input::before { width: 15px; height: 15px; }
+.pf-mail input:checked::before { transform: translateX(19px); }
 .pf-foot {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   flex-wrap: wrap; margin-top: 14px; padding-top: 10px; border-top: 1.5px solid var(--ink-light);

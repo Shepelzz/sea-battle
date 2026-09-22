@@ -72,6 +72,62 @@ const esc = s => String(s ?? '')
 const OG_LOCALE = { uk: 'uk_UA', ru: 'ru_RU', en: 'en_US' };
 
 /** Блок мета-тегов для вставки перед </head>. Все строки — уже переведённые. */
+// ─── Поисковики ───────────────────────────────────────────────────────────────
+// canonical: у страницы один «настоящий» адрес. og:url для поиска не считается — это разные вещи.
+// ⚠ Язык в canonical НЕ включаем: сейчас все три языка живут на одном адресе и выбираются кукой,
+// поэтому canonical у них общий. Когда языки разъедутся по /ru/ и /en/, здесь появится hreflang.
+export const canonicalUrl = (origin, pathname) => absUrl(origin, String(pathname || '/').split('?')[0]);
+
+// Страницу партии индексировать НЕЛЬЗЯ: она живёт часы, её адрес — случайный ключ, и тысячи
+// таких страниц только размоют сайт в выдаче. Главная — наоборот, единственное, что нужно в индексе.
+export const indexable = (isGamePage) => !isGamePage;
+
+// Разметка для поисковика (schema.org). Отдаём объектом: тег и экранирование — дело вызывающего.
+export function gameSchema({ siteName, description, url, image }) {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'VideoGame',
+    name: siteName,
+    description,
+    url,
+    image,
+    applicationCategory: 'GameApplication',
+    genre: ['Strategy', 'Naval', 'Turn-based'],
+    gamePlatform: 'Web browser',
+    playMode: ['SinglePlayer', 'MultiPlayer'],
+    inLanguage: ['uk', 'ru', 'en'],
+    operatingSystem: 'Any',
+    offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' }
+  };
+}
+
+// robots.txt. Партии закрыты, остальное открыто, снизу — ссылка на карту сайта.
+export const robotsTxt = (origin) => [
+  'User-agent: *',
+  'Disallow: /game/',        // страницы партий: эфемерные, индексировать нечего
+  'Disallow: /api/',
+  'Disallow: /*-lab.html$',   // лаборатории: на проде их и так нет, но пусть не ищут
+  'Allow: /',
+  '',
+  `Sitemap: ${absUrl(origin, '/sitemap.xml')}`,
+  ''
+].join('\n');
+
+// sitemap.xml. Страница у нас ровно одна — главная: всё остальное либо эфемерно (партии),
+// либо служебное. Врать поисковику про несуществующие адреса хуже, чем отдать честный минимум.
+export const sitemapXml = (origin, lastmod = new Date()) => [
+  '<?xml version="1.0" encoding="UTF-8"?>',
+  '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+  '  <url>',
+  `    <loc>${esc(absUrl(origin, '/'))}</loc>`,
+  `    <lastmod>${new Date(lastmod).toISOString().slice(0, 10)}</lastmod>`,
+  '    <changefreq>weekly</changefreq>',
+  '    <priority>1.0</priority>',
+  '  </url>',
+  '</urlset>',
+  ''
+].join('\n');
+
 export function ogHead({ lang, siteName, title, description, url, image, imageAlt }) {
   const meta = [
     ['og:type', 'website'],

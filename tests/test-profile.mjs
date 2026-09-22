@@ -52,6 +52,11 @@ const { DatabaseSync } = await import('node:sqlite');
     damage INTEGER NOT NULL, sunk INTEGER NOT NULL, lost INTEGER NOT NULL, gold INTEGER NOT NULL,
     finished_at INTEGER NOT NULL, PRIMARY KEY (game_id, player_token));`);
   raw.prepare('INSERT INTO results VALUES (?,?,?,?,?,?,?,?,?)').run('old1', 'A', 1, 1, 100, 1, 0, 200, Date.now());
+  // и старая players — без mail_nudge: согласие на письма появилось позже
+  raw.exec(`CREATE TABLE players (
+    token TEXT PRIMARY KEY, nick TEXT NOT NULL, email TEXT,
+    provider TEXT, avatar TEXT, created_at INTEGER NOT NULL);`);
+  raw.prepare('INSERT INTO players VALUES (?,?,?,?,?,?)').run('OLD', 'Ветеран', 'v@ex.com', 'google', null, Date.now());
   raw.close();
 }
 
@@ -65,6 +70,19 @@ await db.init();   // повторный старт (рестарт сервер
   yes('миграция добавила колонку ranked', cols.includes('ranked'));
   eq('старые строки считаются рейтинговыми', raw.prepare("SELECT ranked FROM results WHERE game_id = 'old1'").get().ranked, 1);
   raw.close();
+}
+
+// === 2а. Письма-напоминания: согласие по умолчанию есть, и его можно снять ===
+// Кто регистрировался до появления колонки, писем и так ждал — поэтому DEFAULT 1.
+{
+  const vet = await db.getPlayer('OLD');
+  eq('у старой записи согласие на письма есть', vet.mailNudge, true);
+  await db.upsertPlayer('M', 'Молчун');
+  eq('у новой записи тоже', (await db.getPlayer('M')).mailNudge, true);
+  await db.setPlayerMailNudge('M', false);
+  eq('отказ сохраняется', (await db.getPlayer('M')).mailNudge, false);
+  await db.setPlayerMailNudge('M', true);
+  eq('и возвращается обратно', (await db.getPlayer('M')).mailNudge, true);
 }
 
 // === 3. Профиль считает все партии, лидерборд — только рейтинговые ===
