@@ -15,7 +15,7 @@
 // ⚠ И НИКАКИХ НИКОВ: превью видит любой, кому попала ссылка, — включая ботов-пересыльщиков
 // и превью-прокси мессенджера. Кто именно играет, их не касается.
 import { GAME_MODES, DEFAULT_MODE, isDuel } from './config.js';
-import { normLang, DEFAULT_LANG } from './i18n.js';
+import { normLang, DEFAULT_LANG, langFromPath, langAlternates } from './i18n.js';
 
 export const OG_IMAGE = '/og-card.png';   // карточка 1200×630 (public/)
 
@@ -24,16 +24,17 @@ export const OG_IMAGE = '/og-card.png';   // карточка 1200×630 (public/
 // файлом — значит новая картинка доезжает сама. Чистую логику файлами не пачкаем: версию
 // вычисляет index.js и передаёт сюда готовой.
 export const ogImage = (version) => version ? `${OG_IMAGE}?v=${version}` : OG_IMAGE;
-export const LANG_PARAM = 'l';            // ?l=uk — язык превью, см. previewLang
 
 // ЯЗЫК ПРЕВЬЮ. Сервер не знает, кто отправил ссылку: за карточкой приходит бот мессенджера,
-// анонимно и без кук. Поэтому язык кладётся В САМУ ССЫЛКУ в момент «скопировать» — на клиенте,
-// где язык отправителя известен. Нет параметра (ссылку обрезали, она старая) — берём язык
-// создателя партии, а нет и его — дефолт.
+// анонимно и без кук. Но знать и не надо: приглашение шлёт создатель партии, а его язык
+// лежит в профиле (hostLang). Раньше тут был ещё параметр ?l= — он дублировал то же самое
+// и только мусорил в ссылке, поэтому убран.
+// Язык из ПУТИ учитываем на случай, если ссылку скопировали прямо из адресной строки
+// (/ru/game/xxx): тогда он и есть язык того, кто копировал.
 // ⚠ На саму страницу это не влияет: живой человек всегда получает её по обычному правилу
 // (профиль → кука → дефолт). Параметр читает только сборка превью.
-export function previewLang({ param, hostLang } = {}) {
-  return normLang(param) || normLang(hostLang) || DEFAULT_LANG;
+export function previewLang({ path, hostLang } = {}) {
+  return langFromPath(path).lang || normLang(hostLang) || DEFAULT_LANG;
 }
 
 // Неизменяемые приметы партии → ключи словаря (текст подставит вызывающий).
@@ -52,17 +53,9 @@ export function gameFacts(game) {
 export const absUrl = (origin, path) =>
   String(origin || '').replace(/\/+$/, '') + (String(path).startsWith('/') ? path : '/' + path);
 
-// КАНОНИЧЕСКИЙ АДРЕС СТРАНИЦЫ для og:url. Держим в нём ?l=, если он был в запросе.
-// Казалось бы, чище отдавать «голый» путь — но часть мессенджеров считает og:url каноническим
-// и может склеить по нему кэш превью. Тогда русская и английская версии ОДНОЙ ссылки схлопнулись
-// бы в одну карточку, и язык отправителя перестал бы работать. Проверить это наверняка можно лишь
-// на публичном адресе, поэтому просто не оставляем такой возможности: что запросили — то и канон.
-// Остальные параметры отбрасываем: мусор в хвосте ссылки не должен плодить разные карточки.
-export function canonicalPath(pathname, langParam) {
-  const clean = String(pathname || '/').split('?')[0].split('#')[0];
-  const lang = normLang(langParam);
-  return lang ? `${clean}?${LANG_PARAM}=${lang}` : clean;
-}
+// Адрес страницы для og:url — голый путь, без хвостов запроса и якоря: мусор в конце ссылки
+// не должен плодить разные карточки превью.
+export const canonicalPath = pathname => String(pathname || '/').split('?')[0].split('#')[0];
 
 // В атрибут content кладём чужой текст (словари, адрес) — экранируем, иначе кавычка порвёт тег.
 const esc = s => String(s ?? '')
@@ -77,6 +70,11 @@ const OG_LOCALE = { uk: 'uk_UA', ru: 'ru_RU', en: 'en_US' };
 // ⚠ Язык в canonical НЕ включаем: сейчас все три языка живут на одном адресе и выбираются кукой,
 // поэтому canonical у них общий. Когда языки разъедутся по /ru/ и /en/, здесь появится hreflang.
 export const canonicalUrl = (origin, pathname) => absUrl(origin, String(pathname || '/').split('?')[0]);
+
+// hreflang: «эта же страница на других языках». Без него поисковик считает переводы
+// дублями и показывает один. x-default — куда вести того, чей язык мы не знаем.
+export const hreflangLinks = (origin, pathname) =>
+  langAlternates(pathname).map(a => ({ hreflang: a.hreflang, href: absUrl(origin, a.path) }));
 
 // Страницу партии индексировать НЕЛЬЗЯ: она живёт часы, её адрес — случайный ключ, и тысячи
 // таких страниц только размоют сайт в выдаче. Главная — наоборот, единственное, что нужно в индексе.
@@ -104,7 +102,13 @@ export function gameSchema({ siteName, description, url, image }) {
 // robots.txt. Партии закрыты, остальное открыто, снизу — ссылка на карту сайта.
 export const robotsTxt = (origin) => [
   'User-agent: *',
-  'Disallow: /game/',        // страницы партий: эфемерные, индексировать нечего
+  // ⚠ Страницы партий тут НЕ закрываем, хотя индексировать их не надо. Disallow запрещает
+  // СКАЧИВАТЬ страницу, а по ссылке на партию ходит не только поисковик: превью в мессенджерах
+  // строят краулеры, которые robots.txt уважают (Телеграм — в их числе). Закрыв /game/, мы
+  // убили бы карточку приглашения — главный способ, которым игру вообще зовут играть.
+  // Из индекса партии убирает noindex (мета + X-Robots-Tag): он запрещает ИНДЕКСИРОВАТЬ,
+  // но не мешает скачать. Disallow + noindex вместе вообще бессмысленны: не скачав страницу,
+  // краулер не увидит и noindex.
   'Disallow: /api/',
   'Disallow: /*-lab.html$',   // лаборатории: на проде их и так нет, но пусть не ищут
   'Allow: /',
@@ -113,20 +117,29 @@ export const robotsTxt = (origin) => [
   ''
 ].join('\n');
 
-// sitemap.xml. Страница у нас ровно одна — главная: всё остальное либо эфемерно (партии),
-// либо служебное. Врать поисковику про несуществующие адреса хуже, чем отдать честный минимум.
-export const sitemapXml = (origin, lastmod = new Date()) => [
-  '<?xml version="1.0" encoding="UTF-8"?>',
-  '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
-  '  <url>',
-  `    <loc>${esc(absUrl(origin, '/'))}</loc>`,
-  `    <lastmod>${new Date(lastmod).toISOString().slice(0, 10)}</lastmod>`,
-  '    <changefreq>weekly</changefreq>',
-  '    <priority>1.0</priority>',
-  '  </url>',
-  '</urlset>',
-  ''
-].join('\n');
+// sitemap.xml. Страница у нас ровно одна — главная, но у неё три языковые версии, и каждая
+// должна попасть в карту со ссылками на соседей (иначе поисковик считает их дублями).
+// Партии сюда не идут: они эфемерны и закрыты noindex.
+export const sitemapXml = (origin, lastmod = new Date()) => {
+  const alts = langAlternates('/');
+  const day = new Date(lastmod).toISOString().slice(0, 10);
+  const entry = a => [
+    '  <url>',
+    `    <loc>${esc(absUrl(origin, a.path))}</loc>`,
+    ...alts.map(x => `    <xhtml:link rel="alternate" hreflang="${x.hreflang}" href="${esc(absUrl(origin, x.path))}"/>`),
+    `    <lastmod>${day}</lastmod>`,
+    '    <changefreq>weekly</changefreq>',
+    '    <priority>1.0</priority>',
+    '  </url>'
+  ];
+  return [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">',
+    ...alts.filter(a => a.hreflang !== 'x-default').flatMap(entry),
+    '</urlset>',
+    ''
+  ].join('\n');
+};
 
 export function ogHead({ lang, siteName, title, description, url, image, imageAlt }) {
   const meta = [

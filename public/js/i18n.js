@@ -38,6 +38,17 @@
 
   let lang = boot.lang || readCookie('sb_lang') || DEFAULT;
 
+  // ─── ЯЗЫК В АДРЕСЕ ──────────────────────────────────────────────────────────
+  // Страницы живут по адресам /uk/, /ru/game/xxx — язык виден поисковику. Значит все ссылки,
+  // которые строит клиент, обязаны нести префикс, иначе каждый переход ловил бы лишний 302.
+  const LANG_RE = new RegExp('^/(' + LANGS.join('|') + ')(?=/|$)');
+  const strip = p => String(p || '/').replace(LANG_RE, '') || '/';
+  // path('/game/x') → '/ru/game/x'. Корень со слэшем — как в canonical на сервере.
+  const path = (p = '/', code = lang) => {
+    const rest = strip(p);
+    return rest === '/' ? `/${code}/` : `/${code}${rest}`;
+  };
+
   function norm(raw) {
     const base = String(raw || '').trim().toLowerCase().split(/[-_]/)[0];
     return LANGS.includes(base) ? base : null;
@@ -131,6 +142,17 @@
     lang = code;
     await i18next.changeLanguage(code);
     document.documentElement.lang = code;
+    // Адрес переписываем БЕЗ перезагрузки: мгновенная смена языка — то, за что её любят,
+    // а полный переход посреди партии был бы шагом назад. Поисковику важен сам адрес
+    // страницы, а не то, как её получил живой человек, — replaceState его и даёт.
+    //
+    // ⚠ Префикс только ПОДМЕНЯЕМ, но не добавляем. Голый адрес есть ровно у страницы партии,
+    // и он такой намеренно: человек копирует ссылку из адресной строки, и она обязана открыться
+    // у получателя на ЕГО языке. Приклей мы туда /uk/, копия стала бы навязывать чужой язык.
+    try {
+      if (LANG_RE.test(location.pathname))
+        history.replaceState(null, '', path(location.pathname, code) + location.search + location.hash);
+    } catch { /* file:// и прочая экзотика — адрес не трогаем, язык всё равно сменился */ }
     apply(document);
     if (persist) fetch('/api/lang', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lang: code })
@@ -142,7 +164,9 @@
   window.t = t;
   window.tr = tr;
   window.errText = errText;
-  window.SBI18n = { t, tr, errText, apply, set, mount, lang: () => lang, langs: () => LANGS.slice(), source: SOURCE };
+  window.SBI18n = { t, tr, errText, apply, set, mount, path, stripLang: strip,
+    lang: () => lang, langs: () => LANGS.slice(), source: SOURCE };
+
 
   // Словаря может не быть, если страницу отдали статикой мимо нашего рендера —
   // тогда докачаем нужный язык асинхронно (страница уже показывает эталонный текст).

@@ -6,7 +6,7 @@
 //   • в превью попал НИК — карточку видит любой, кому попала ссылка, включая ботов-пересыльщиков;
 //   • ключ описания есть не во всех словарях — игрок увидит голый `og.players`.
 import { readFileSync } from 'node:fs';
-import { ogHead, gameFacts, previewLang, absUrl, canonicalPath, ogImage, OG_IMAGE, LANG_PARAM } from '../server/og.js';
+import { ogHead, gameFacts, previewLang, absUrl, canonicalPath, ogImage, OG_IMAGE } from '../server/og.js';
 import { DEFAULT_LANG, LANGS } from '../server/i18n.js';
 import { createGame, addPlayer, startGame } from '../server/game.js';
 
@@ -19,10 +19,11 @@ const pick = (o, key) => key.split('.').reduce((x, k) => x?.[k], o);
 const T = (lang, k, p = {}) => String(pick(dicts[lang], k) ?? k).replace(/{{\s*(\w+)\s*}}/g, (_, x) => p[x] ?? '');
 
 // ═══ выбор языка превью ═══
-eq('ссылка важнее всего', previewLang({ param: 'en', hostLang: 'ru' }), 'en');
-eq('локаль из ссылки нормализуется', previewLang({ param: 'uk-UA' }), 'uk');
-eq('мусор в ссылке игнорируем', previewLang({ param: 'zz', hostLang: 'ru' }), 'ru');
-eq('нет параметра → язык создателя', previewLang({ hostLang: 'en' }), 'en');
+// Язык из пути — если ссылку скопировали прямо из адресной строки (/ru/game/xxx).
+// Иначе язык СОЗДАТЕЛЯ партии: приглашение шлёт он, значит показывает своим.
+eq('путь важнее всего', previewLang({ path: '/en/game/x', hostLang: 'ru' }), 'en');
+eq('без пути → язык создателя', previewLang({ path: '/game/x', hostLang: 'en' }), 'en');
+eq('мусор в пути игнорируем', previewLang({ path: '/zz/game/x', hostLang: 'ru' }), 'ru');
 eq('нет ничего → дефолт', previewLang({}), DEFAULT_LANG);
 eq('совсем без аргументов → дефолт', previewLang(), DEFAULT_LANG);
 
@@ -123,22 +124,16 @@ for (const lang of LANGS) yes(`${lang}: og.players держит {{n}}`, /{{\s*n\
 // ═══ канонический адрес (og:url) ═══
 // Язык обязан оставаться в og:url: иначе мессенджер, считающий его каноническим, склеит
 // кэш превью для всех языков одной ссылки — и язык отправителя перестанет работать.
-eq('язык остаётся в каноне', canonicalPath('/game/aB3?l=en', 'en'), '/game/aB3?l=en');
-eq('локаль нормализуется', canonicalPath('/game/aB3?l=uk-UA', 'uk-UA'), '/game/aB3?l=uk');
-eq('без языка — чистый путь', canonicalPath('/game/aB3'), '/game/aB3');
-eq('мусорный язык не попадает в канон', canonicalPath('/game/aB3?l=zz', 'zz'), '/game/aB3');
-eq('прочие параметры отбрасываем', canonicalPath('/game/aB3?utm=vk&l=ru', 'ru'), '/game/aB3?l=ru');
-eq('якорь отбрасываем', canonicalPath('/game/aB3#x', null), '/game/aB3');
+eq('хвост запроса отбрасываем', canonicalPath('/game/aB3?utm=vk'), '/game/aB3');
+eq('якорь отбрасываем', canonicalPath('/game/aB3#x'), '/game/aB3');
+eq('чистый путь остаётся собой', canonicalPath('/game/aB3'), '/game/aB3');
 eq('главная без хвостов', canonicalPath('/'), '/');
-{
-  const ru = canonicalPath('/game/aB3?l=ru', 'ru'), en = canonicalPath('/game/aB3?l=en', 'en');
-  yes('разные языки → разные канонические адреса', ru !== en);
-}
+// Разные языки теперь разведены ПУТЁМ, а не хвостом запроса.
+yes('разные языки → разные адреса', canonicalPath('/ru/game/aB3') !== canonicalPath('/en/game/aB3'));
 
 // ═══ абсолютные адреса ═══
 eq('слэши не удваиваются', absUrl('https://sb.ua/', '/og-card.png'), 'https://sb.ua/og-card.png');
 eq('путь без слэша тоже работает', absUrl('https://sb.ua', 'og-card.png'), 'https://sb.ua/og-card.png');
-eq('параметр языка зовётся l', LANG_PARAM, 'l');
 yes('карточка лежит в public', !!readFileSync('public' + OG_IMAGE).length);
 
 // === Метка версии карточки ===

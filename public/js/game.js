@@ -3022,7 +3022,13 @@ $('#panelToggle').addEventListener('click', () => {
 });
 // 🏠 на главную из активного баттла — это НЕ форфейт: игра живёт на сервере,
 // вернуться можно через «Мои игры». (disconnect на сервере — no-op, флот не тонет.)
-$('#homeBtn')?.addEventListener('click', () => { location.href = '/'; });
+$('#homeBtn')?.addEventListener('click', () => { location.href = SBI18n.path('/'); });
+// Ссылка «на главную» на экране финала лежит в разметке статикой — подставляем ей язык,
+// иначе каждый переход по ней ловил бы лишний редирект.
+const fixHomeLinks = () => document.querySelectorAll('a[href="/"], a[data-home-link]')
+  .forEach(a => { a.href = SBI18n.path('/'); a.dataset.homeLink = '1'; });
+fixHomeLinks();
+window.addEventListener('sb:lang', fixHomeLinks);
 // на телефоне меню по умолчанию свёрнуто — карта на весь экран над панелью
 if (window.matchMedia('(max-width: 900px)').matches) {
   $('#panel').classList.add('collapsed');
@@ -3060,13 +3066,13 @@ $('#btnSurrender').addEventListener('click', () => {
 $('#leaveLobbyBtn').addEventListener('click', () => {
   socket.emit('leave', res => {
     if (!res.ok) toast(errText(res));
-    else location.href = '/';
+    else location.href = SBI18n.path('/');
   });
 });
 // свернуть лобби: уходим на главную, лобби продолжает ждать — можно вернуться (через «найти игру») как хост
-$('#lobbyMinimize')?.addEventListener('click', () => { location.href = '/'; });
+$('#lobbyMinimize')?.addEventListener('click', () => { location.href = SBI18n.path('/'); });
 // хост закрыл лобби (вышел совсем) — всех участников на главную
-socket.on('lobbyClosed', () => { location.href = '/'; });
+socket.on('lobbyClosed', () => { location.href = SBI18n.path('/'); });
 $('#btnBuy').addEventListener('click', () => {
   const ships = Object.entries(basket).flatMap(([t, n]) => Array(n).fill(t));
   if (!ships.length) { toast(t('game.basketEmpty')); return; }
@@ -3370,13 +3376,19 @@ function renderOverlays() {
   }
 }
 
-// Ссылка-приглашение с языком ОТПРАВИТЕЛЯ: сервер не знает, кто её кинул (за превью
-// приходит бот мессенджера, анонимно и без кук), поэтому язык кладём прямо в ссылку.
-// Влияет ТОЛЬКО на карточку превью — открывший её человек увидит игру на своём языке.
+// ССЫЛКА-ПРИГЛАШЕНИЕ — голый /game/<id>, без языка в любом виде.
+//
+// Языковой префикс тут не нужен: на каком языке откроется страница, решает ПОЛУЧАТЕЛЬ
+// (профиль → кука → дефолт). Приклей мы /en/, и украинец, открыв приглашение, получил бы
+// английскую игру.
+//
+// Параметра с языком отправителя тоже не нужно: карточку превью сервер строит на языке
+// СОЗДАТЕЛЯ партии, а приглашение шлёт как раз он — язык уже лежит в его профиле.
 function shareUrl() {
   try {
     const u = new URL(location.href);
-    u.searchParams.set('l', window.SBI18n?.lang?.() || document.documentElement.lang || 'uk');
+    u.pathname = window.SBI18n?.stripLang?.(u.pathname) || u.pathname;
+    u.search = '';
     return u.toString();
   } catch { return location.href; }
 }

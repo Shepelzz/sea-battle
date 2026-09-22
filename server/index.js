@@ -22,11 +22,14 @@ import {
   buildSetCookie, buildClearCookie, createSessionStore, newSessionToken
 } from './auth.js';
 import { chooseBotAction, BOT_NAMES, duelFleetPlan } from './bot.js';
-import { LANGS, LANG_COOKIE, SOURCE_LANG, DEFAULT_LANG, normLang, pickLang, buildLangCookie } from './i18n.js';
+import {
+  LANGS, LANG_COOKIE, SOURCE_LANG, DEFAULT_LANG, normLang, pickLang, buildLangCookie,
+  langFromPath, withLang, stripLang, langAlternates
+} from './i18n.js';
 import { applyCheat } from './cheats.js';
 import {
   ogHead, gameFacts, previewLang, absUrl, canonicalPath, ogImage, canonicalUrl, indexable,
-  gameSchema, robotsTxt, sitemapXml, OG_IMAGE, LANG_PARAM
+  gameSchema, robotsTxt, sitemapXml, hreflangLinks, OG_IMAGE
 } from './og.js';
 import { VERSION, versionLabel } from './version.js';
 import { rtStart, rtStop } from './rt.js';
@@ -114,11 +117,18 @@ async function buildPage(file, lang) {
 }
 
 // Язык этого запроса: профиль аккаунта > кука > дефолт (см. pickLang в i18n.js).
+// Язык для страницы. АДРЕС ГЛАВНЕЕ ВСЕГО: /en/ обязан показать английский, даже если в профиле
+// русский — иначе canonical начнёт врать, а страница спорить сама с собой. Профиль и кука решают
+// только одно: куда увести с голого адреса без префикса (см. redirectToLang ниже).
 async function reqLang(req) {
-  const pid = accountPidFromReq(req);
-  const profile = pid ? (await db.getPlayer(pid))?.lang : null;
-  return pickLang({ profile, cookie: parseCookies(req.headers.cookie)[LANG_COOKIE] });
+  const fromPath = langFromPath(req.path).lang;
+  if (fromPath) return fromPath;
+  return pickLang({ profile: await profileLang(req), cookie: parseCookies(req.headers.cookie)[LANG_COOKIE] });
 }
+const profileLang = async req => {
+  const pid = accountPidFromReq(req);
+  return pid ? (await db.getPlayer(pid))?.lang : null;
+};
 
 // --- ПРЕВЬЮ ССЫЛКИ (Open Graph): что мессенджер покажет вместо голого URL ---
 // Правила и формат — в og.js. Тут только «достать данные и подставить текст».
@@ -144,11 +154,10 @@ async function ogBlock(req, game, nonce = '') {
   // язык превью — из ссылки (?l=, его туда кладёт «скопировать» у отправителя),
   // иначе язык создателя партии, иначе дефолт. На саму страницу это не влияет.
   const hostLang = game?.hostPid ? (await db.getPlayer(game.hostPid))?.lang : null;
-  const lang = previewLang({ param: req.query?.[LANG_PARAM], hostLang });
+  const lang = previewLang({ path: req.path, hostLang });
   const T = (k, p) => mailT(lang, k, p);                  // тот же резолвер, что у писем
   const origin = reqOrigin(req);
-  // og:url = ровно тот адрес, по которому пришли (вместе с ?l=) — см. canonicalPath в og.js
-  const url = absUrl(origin, canonicalPath(req.originalUrl, req.query?.[LANG_PARAM]));
+  const url = absUrl(origin, canonicalPath(req.originalUrl));
   const base = {
     lang, url,
     siteName: await T('og.site'),
@@ -158,12 +167,18 @@ async function ogBlock(req, game, nonce = '') {
   // Для поисковика: canonical (у страницы один настоящий адрес — без ?l= и прочего хвоста)
   // и, для страницы партии, запрет индексации.
   const seo = [`  <link rel="canonical" href="${escAttr(canonicalUrl(origin, req.path))}">`];
-  if (!indexable(!!game)) seo.push('  <meta name="robots" content="noindex, nofollow">');
+  // hreflang: «эта же страница на других языках». Без него поисковик считает переводы дублями
+  // и показывает один — ровно та беда, ради которой языки и разъехались по адресам.
+  // Страницам партий не нужен: они всё равно noindex.
+  if (indexable(!!game))
+    for (const a of hreflangLinks(origin, req.path))
+      seo.push(`  <link rel="alternate" hreflang="${a.hreflang}" href="${escAttr(a.href)}">`);
+  else seo.push('  <meta name="robots" content="noindex">');
 
   if (!game) {
     const desc = await T('og.homeDesc');
     // Разметка для поисковика. Тег со script — под nonce, иначе его срежет наш же CSP.
-    const schema = gameSchema({ siteName: base.siteName, description: desc, url: canonicalUrl(origin, '/'), image: base.image });
+    const schema = gameSchema({ siteName: base.siteName, description: desc, url: canonicalUrl(origin, req.path), image: base.image });
     seo.push(`  <script type="application/ld+json"${nonce ? ` nonce="${nonce}"` : ''}>${JSON.stringify(schema).replace(/</g, '\\u003c')}</script>`);
     return ogHead({ ...base, title: await T('og.homeTitle'), description: desc }) + seo.join('\n') + '\n';
   }
@@ -200,7 +215,7 @@ async function renderPage(file, req, res, game = null) {
     res.setHeader('Content-Security-Policy', csp(nonce));
     // Страницу партии из индекса убираем ещё и заголовком: он сильнее мета-тега — действует,
     // даже если краулер не дочитал до <head> или получил страницу по редиректу.
-    if (!indexable(!!game)) res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+    if (!indexable(!!game)) res.setHeader('X-Robots-Tag', 'noindex');
     // Вставляем В НАЧАЛО <head>, а не перед </head>: там уже лежит вшитый словарь на десятки
     // килобайт, а краулеры читают только начало страницы — за ним теги можно и не найти.
     // Но ПОСЛЕ <meta charset>: объявление кодировки обязано идти первым, иначе кириллица в
@@ -223,7 +238,21 @@ app.get('/robots.txt', (req, res) =>
 app.get('/sitemap.xml', (req, res) =>
   res.type('application/xml').set('Cache-Control', 'public, max-age=3600').send(sitemapXml(reqOrigin(req))));
 
-app.get(['/', '/index.html'], (req, res) => renderPage('index.html', req, res));
+// ─── СТРАНИЦЫ ────────────────────────────────────────────────────────────────
+// У каждого языка свой адрес: /uk/, /ru/, /en/ и /<язык>/game/<id>. Без этого поисковик
+// видит только одну версию — краулер приходит без куки и профиля.
+//
+// Голые адреса ('/' и '/game/xxx') НЕ ломаем: они уже разосланы по чатам и лежат в закладках.
+// Они отвечают 302 на языковую версию — по профилю, иначе по куке, иначе дефолт.
+const LANG_SEG = ':lang(' + LANGS.join('|') + ')';
+const redirectToLang = async (req, res) => {
+  const lang = pickLang({ profile: await profileLang(req), cookie: parseCookies(req.headers.cookie)[LANG_COOKIE] });
+  const q = req.originalUrl.slice(req.path.length);   // хвост запроса переносим как есть
+  res.redirect(302, withLang(lang, req.path) + q);
+};
+
+app.get([`/${LANG_SEG}`, `/${LANG_SEG}/index.html`], (req, res) => renderPage('index.html', req, res));
+app.get(['/', '/index.html'], redirectToLang);
 app.get('/game.html', (req, res) => renderPage('game.html', req, res));
 
 // ЛАБОРАТОРИИ (*-lab.html и их обвязка) — инструменты разработки: подбор эффектов, звуков,
@@ -751,6 +780,11 @@ app.post('/api/games', (req, res) => {
 
 app.get('/api/leaderboard', async (_req, res) => res.json(await db.getLeaderboard()));
 
+app.get(`/${LANG_SEG}/game/:id`, (req, res) => renderPage('game.html', req, res, getGame(req.params.id)));
+// ⚠ Голый /game/<id> РИСУЕМ, а не редиректим. Это адрес из приглашения, и по нему ходит бот
+// мессенджера за карточкой превью — лишний 302 для него риск остаться без карточки. Человеку
+// редирект тоже не нужен: язык он и так получит свой (профиль → кука → дефолт), а страница
+// партии всё равно noindex, так что два адреса у неё поисковику не мешают — их разводит canonical.
 app.get('/game/:id', (req, res) => renderPage('game.html', req, res, getGame(req.params.id)));
 
 // --- WebSocket ---

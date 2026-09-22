@@ -43,6 +43,44 @@ export function pickLang({ profile, cookie } = {}) {
   return normLang(profile) || normLang(cookie) || DEFAULT_LANG;
 }
 
+// ─── ЯЗЫК В АДРЕСЕ ────────────────────────────────────────────────────────────
+// У каждого языка свой URL: /uk/, /ru/game/xxx, /en/. Иначе поисковик видит только одну
+// версию сайта — краулер приходит без куки и профиля, и две трети перевода для него
+// просто не существует.
+//
+// ⚠ АДРЕС ГЛАВНЕЕ ПРОФИЛЯ. Если /en/ показать по-русски (потому что так в профиле), то
+// canonical начнёт врать, а страница — спорить сама с собой. Профиль решает только одно:
+// куда увести с ГОЛОГО адреса без префикса.
+
+// '/ru/game/x' → { lang: 'ru', rest: '/game/x' }; без префикса → { lang: null, rest: путь }.
+export function langFromPath(pathname) {
+  const m = /^\/([A-Za-z]{2})(?=\/|$)(.*)$/.exec(String(pathname || '/'));
+  const lang = m && normLang(m[1]);
+  return lang ? { lang, rest: m[2] || '/' } : { lang: null, rest: String(pathname || '/') || '/' };
+}
+
+// Приклеить язык к пути: withLang('ru', '/game/x') → '/ru/game/x'. Уже приклеенный — заменит.
+// Корень отдаём со слэшем ('/ru/'), глубже — без хвостового ('/ru/game/x'): у canonical
+// должна быть ОДНА форма адреса, иначе поисковик посчитает '/ru' и '/ru/' за разные страницы.
+export function withLang(lang, pathname = '/') {
+  const code = normLang(lang) || DEFAULT_LANG;
+  const { rest } = langFromPath(pathname);
+  return rest === '/' ? `/${code}/` : `/${code}${rest}`;
+}
+
+// Путь без языка — им ключуется «одна и та же страница на разных языках».
+export const stripLang = pathname => langFromPath(pathname).rest;
+
+// Адреса всех языковых версий этой же страницы — для hreflang и карты сайта.
+// x-default ведёт на язык по умолчанию: он же стоит на голом адресе после редиректа.
+export function langAlternates(pathname = '/') {
+  const rest = stripLang(pathname);
+  return [
+    ...LANGS.map(code => ({ hreflang: code, path: withLang(code, rest) })),
+    { hreflang: 'x-default', path: withLang(DEFAULT_LANG, rest) }
+  ];
+}
+
 // Кука языка — НЕ httpOnly: клиент читает её сам, когда страницу отдал не наш рендер
 // (например статикой из кэша). Ничего секретного в ней нет.
 export function buildLangCookie(lang, { secure = false, ttlMs = LANG_TTL_MS } = {}) {

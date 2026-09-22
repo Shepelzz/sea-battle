@@ -297,5 +297,54 @@ ok('результат сдачи записан в лидерборд');
   clara.close();
 }
 
+// === Язык в адресе ===
+// Голые адреса разосланы по чатам и лежат в закладках — они обязаны РАБОТАТЬ, а не отдавать 404.
+{
+  const head = (u, cookie) => fetch(BASE + u, {
+    redirect: 'manual', headers: cookie ? { Cookie: cookie } : {}
+  });
+
+  let r = await head('/');
+  if (r.status !== 302) fail(`голый / должен редиректить, а отдал ${r.status}`);
+  if (r.headers.get('location') !== '/uk/') fail('без куки / должен вести на дефолтный /uk/, а ведёт на ' + r.headers.get('location'));
+  ok('голый / уводит на язык по умолчанию');
+
+  r = await head('/', 'sb_lang=en');
+  if (r.headers.get('location') !== '/en/') fail('кука языка при редиректе не учтена: ' + r.headers.get('location'));
+  ok('кука языка учитывается при редиректе');
+
+  const g = await (await fetch(BASE + '/api/games', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token: 'tokLANG', nick: 'Мовник', mode: 'bot', maxPlayers: 2, turnTimer: 0 })
+  })).json();
+  // Ссылка-приглашение — голый /game/<id>: без языка в любом виде и БЕЗ редиректа.
+  // Лишний 302 — риск остаться без превью в мессенджере, а превью тут главный способ позвать играть.
+  const inv = await fetch(`${BASE}/game/${g.gameId}`, { headers: { 'User-Agent': 'TelegramBot (like TwitterBot)' } });
+  if (inv.status !== 200) fail(`приглашение должно отдаваться сразу, а отдало ${inv.status}`);
+  const card = await inv.text();
+  if (!/og:title" content="[^"]+"/.test(card)) fail('в приглашении нет og:title — карточка не построится');
+  if (!/og:image" content="[^"]+"/.test(card)) fail('в приглашении нет og:image');
+  if (!/og:description" content="[^"]+"/.test(card)) fail('в приглашении нет og:description');
+  if (!card.includes('<html lang="uk"')) fail('страница должна открыться на языке ПОЛУЧАТЕЛЯ');
+  if (!card.includes('content="noindex"')) fail('страница партии должна быть noindex');
+  ok('приглашение: карточка на месте, страница на языке получателя, без редиректа');
+
+  const robots = await (await fetch(BASE + '/robots.txt')).text();
+  if (/Disallow: \/(\*\/)?game\//.test(robots)) fail('robots.txt закрыл партии — краулер превью не скачает страницу');
+  ok('robots.txt не мешает краулеру превью');
+
+  for (const [path, lang] of [['/uk/', 'uk'], ['/ru/', 'ru'], ['/en/', 'en']]) {
+    const html = await (await fetch(BASE + path)).text();
+    if (!html.includes(`<html lang="${lang}"`)) fail(`${path} отдался не на ${lang}`);
+    if (!html.includes(`rel="alternate" hreflang="${lang}"`)) fail(`${path} без hreflang`);
+  }
+  ok('каждый язык отдаётся по своему адресу и знает про соседей');
+
+  const gameHtml = await (await fetch(`${BASE}/en/game/${g.gameId}`)).text();
+  if (!gameHtml.includes('<html lang="en"')) fail('страница партии не уважает язык из адреса');
+  if (!gameHtml.includes('noindex')) fail('страница партии должна быть noindex');
+  ok('страница партии: язык из адреса, индексация закрыта');
+}
+
 console.log('\n🎉 Все проверки пройдены');
 process.exit(0);
