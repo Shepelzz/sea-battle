@@ -11,6 +11,7 @@ import {
   WIND_STRENGTH, WIND_TURN_STEP, WIND_STR_STEP, windMoveMult, REALTIME_TAG,
   OUTPOST_LEVELS, OUTPOST_RADIUS, OUTPOST_BUILD_REACH,
   FISH_DRIFT_PER_TURN, FISH_HOME_RADIUS, FISH_MIN_GAP, FISH_BASE_GAP,
+  RANKED_MIN_ROUNDS, RANKED_MIN_DAMAGE, RANKED_MIN_SUNK_ON_QUIT, RANKED_BROKE_SHIP, RANKED_PORT_WRECK,
   MAP_EDGE_MARGIN, ISLAND_BLOCK_GAP, SPAWN_FAN_N, SPAWN_FAN_RINGS, SPAWN_FAN_R0, SPAWN_FAN_RING_STEP,
   PIRATE, PIRATE_MAX, PIRATE_ENGAGE_MULT, PIRATE_MIN_LIFETIME, PIRATE_STEP_MIN, pirateCoins,
   PERKS, PERK_KEYS, perksEnabled, hasPerk, shipPrice, portReturnDmg, wreckLootFrac, shopPerks,
@@ -744,6 +745,7 @@ function eliminatePlayer(game, victimIdx, killer) {
 // Аварийное завершение партии: выбивает слабейших живых, пока не останется один —
 // победитель. Используется, если авто-дорешка за ботов упёрлась в лимит ходов.
 export function forceFinish(game) {
+  game.forcedFinish = true;   // победа «по обрыву», а не по бою — в рейтинг такая не идёт
   const powerOf = i => game.ships.filter(s => s.owner === i)
     .reduce((a, x) => a + x.hp + SHIP_TYPES[x.type].dmg, 0) + (game.players[i].portHp || 0);
   let guard = 0;
@@ -756,10 +758,63 @@ export function forceFinish(game) {
   }
 }
 
-// В лидерборд (ranked) идут только онлайн-баттлы: игры с ботами и «на одном устройстве»
-// не засчитываются — нельзя нафармить статистику. `listed` ставится лишь онлайн-играм.
-// В рейтинг идут только онлайн-партии; ⚡ реалтайм пока БЕТА — лидерборд не трогает
-export const isRanked = game => !!(game?.config?.listed) && !isRealtime(game);
+// ─── Рейтинг: за что даём очки ───────────────────────────────────────────────
+// Правило одно: очки — за СОСТОЯВШИЙСЯ бой между людьми, а не за строчку в таблице
+// результатов. Раньше признак был единственный — «это онлайн-партия», и накрутить
+// рейтинг можно было тремя способами:
+//   • добавить в онлайн-лобби бота (в лобби на двоих разрешён один) — двух «игроков»
+//     хватает, чтобы нажать «Начать», и победа над ботом шла в рейтинг;
+//   • договориться с альтом и сдаться на первом ходу: победителю +3, сдавшемуся +1
+//     (второе место) — четыре очка за полминуты;
+//   • начать партию с альтом и прибить её кнопкой «завершить» (forceFinish).
+// Сдача сама по себе НЕ наказывается: сдаться в безнадёге на 20-м ходу — нормально,
+// и победитель очки получает. Не считается именно партия, которой не было.
+const humans = game => (game.players || []).filter(p => !p.isBot);
+const humanDamage = game => humans(game)
+  .reduce((a, p) => a + Math.max(0, (p.stats?.damageDealt || 0) - (p.stats?.npcDamage || 0)), 0);
+// потоплено кораблей людьми у людей (пираты и флот ботов не в счёт)
+const humanSunk = game => humans(game)
+  .reduce((a, p) => a + Math.max(0, (p.stats?.shipsSunk || 0) - (p.stats?.npcSunk || 0)), 0);
+// Сдавшийся и правда разбит? Два условия сразу:
+//   • в казне меньше цены брига — отстроить флот ему уже не на что;
+//   • и позиция проиграна: людьми потоплено достаточно кораблей ЛИБО его порт в руинах
+//     (победа осадой обходится без размена флотами — потопленных там может не быть вовсе).
+const crushedOnQuit = game => {
+  const sunk = humanSunk(game);
+  return humans(game).filter(p => p.resigned).every(p =>
+    (p.gold || 0) < SHIP_TYPES[RANKED_BROKE_SHIP].price
+    && (sunk >= RANKED_MIN_SUNK_ON_QUIT || (p.portHp || 0) < PORT_HP * RANKED_PORT_WRECK));
+};
+
+// Почему партия вне рейтинга — ключом, а не фразой: причину показываем игрокам
+// (и в лобби до старта, и на финальном экране), а язык у каждого свой.
+export function rankedWhy(game) {
+  if (!game?.config?.listed) return 'rank.offline';      // боты/хотсит — сольная игра
+  if (isRealtime(game)) return 'rank.realtime';          // ⚡ БЕТА: лидерборд не трогаем
+  if ((game.players || []).some(p => p.isBot)) return 'rank.bots';
+  if (game.forcedFinish) return 'rank.forced';           // партию прибил хост, а не соперник
+  if (game.status === 'finished' && !battleHappened(game))
+    return game.quitFinish ? 'rank.quit' : 'rank.short';
+  return null;
+}
+// Бой состоялся?
+//
+// Минимум для любой партии: прожила RANKED_MIN_ROUNDS раундов И люди обменялись уроном.
+// Если партию решил БОЙ (снесли порт, выбили флот) — этого хватает: такой финал не подаришь,
+// не отыграв партию целиком.
+//
+// Если партию решила СДАЧА — спрос строже. Раунды накликиваются пропуском хода, а один
+// выстрел делается на первом же раунде, поэтому смотрим на положение сдавшегося: пустая
+// казна плюс разгром — выбитый флот или разрушенный порт. Это и есть «сдался, потому что
+// проиграл», а не «вышел, чтобы подарить очки».
+export function battleHappened(game) {
+  if ((game.turn?.round || 0) < RANKED_MIN_ROUNDS) return false;
+  if (humanDamage(game) < RANKED_MIN_DAMAGE) return false;
+  if (!game.quitFinish) return true;
+  return crushedOnQuit(game);
+}
+
+export const isRanked = game => !rankedWhy(game);
 
 // Смена цвета в лобби (валидируем: из палитры и не занят другим игроком).
 export function setColor(game, playerId, color) {
@@ -790,7 +845,9 @@ export function leaveGame(game, playerId) {
   if (!game.players[idx].alive) return { ok: false, error: 'err.alreadyOut' };
   const wasTheirTurn = game.turn.idx === idx;
   freshEvents(game);
+  game.players[idx].resigned = true;     // вышел сам — для рейтинга это не то же, что быть разбитым
   eliminatePlayer(game, idx, null);
+  if (game.status === 'finished') game.quitFinish = true;   // партию решила сдача, а не бой
   if (game.status === 'active' && wasTheirTurn) advanceTurn(game);
   return { ok: true };
 }
@@ -840,6 +897,8 @@ export function myGameSummary(game, viewerPid) {
 export function lobbyTags(game) {
   const c = game.config || {}, tags = [];
   if (c.realtime) tags.push({ k: REALTIME_TAG });                                // ⚡ реалтайм-партия
+  // бот в онлайн-лобби — партия вне рейтинга: видно ДО того, как зашёл и начал
+  else if ((game.players || []).some(p => p.isBot)) tags.push({ k: 'tag.unranked' });
   if (c.mode && c.mode !== DEFAULT_MODE && GAME_MODES[c.mode])
     tags.push({ k: `mode.${c.mode}.name` });                                     // режим ≠ классики
   if (c.turnTimer) tags.push({ k: 'tag.timer', p: { min: c.turnTimer / 60 } });   // дефолт — без таймера
@@ -1599,6 +1658,9 @@ export function publicState(game, viewerPid) {
     // личные записи (сводка доходов) видит только их адресат — чужая казна не его дело
     log: game.log.filter(l => !l.to || l.to === viewerPid),
     winner: game.winner,
+    // Рейтинг: идёт ли партия в лидерборд и, если нет, почему (ключ — клиент переведёт сам).
+    // Видно и в лобби (бот в составе — сразу предупреждаем), и на финальном экране.
+    ranked: { ok: isRanked(game), why: rankedWhy(game) },
     events: game.events || [],
     eventSeq: game.eventSeq || 0,
     lootReach: LOOT_REACH,

@@ -10,7 +10,7 @@ import path from 'node:path';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..');
 
-const tests = ['test-i18n.mjs', 'test-docs.mjs', 'test-og.mjs', 'test-security.mjs', 'test-icons.mjs', 'test-log.mjs', 'test-config.mjs', 'test-broadside.mjs', 'test-pirates.mjs', 'test-coins.mjs', 'test-perks.mjs', 'test-balance2.mjs', 'test-bot.mjs', 'test-multimove.mjs', 'test-cheats.mjs', 'test-shipyard.mjs', 'test-repair.mjs', 'test-modes.mjs', 'test-auth.mjs', 'test-duel.mjs', 'test-lobby.mjs', 'test-stats.mjs', 'test-profile.mjs', 'test-storm.mjs', 'test-islands.mjs'];
+const tests = ['test-i18n.mjs', 'test-docs.mjs', 'test-og.mjs', 'test-security.mjs', 'test-icons.mjs', 'test-log.mjs', 'test-config.mjs', 'test-broadside.mjs', 'test-pirates.mjs', 'test-coins.mjs', 'test-perks.mjs', 'test-balance2.mjs', 'test-bot.mjs', 'test-multimove.mjs', 'test-cheats.mjs', 'test-shipyard.mjs', 'test-repair.mjs', 'test-modes.mjs', 'test-auth.mjs', 'test-duel.mjs', 'test-lobby.mjs', 'test-stats.mjs', 'test-ranked.mjs', 'test-profile.mjs', 'test-storm.mjs', 'test-islands.mjs'];
 let failed = 0;
 for (const t of tests) {
   const r = spawnSync('node', [path.join(HERE, t)], { encoding: 'utf8', cwd: ROOT });

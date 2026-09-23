@@ -3354,6 +3354,10 @@ function renderOverlays() {
           ? t('game.lobby.canWait', { count: state.config.maxPlayers - state.players.length })
           : t('game.lobby.allAboard'))
       : t('game.lobby.waitHost');
+    // Партия вне рейтинга (бот в составе) — предупреждаем ДО старта, а не после.
+    // Причину сервер шлёт ключом, фразу собираем тут: язык у каждого свой.
+    const why = state.ranked && !state.ranked.ok && state.ranked.why;
+    $('#lobbyUnranked').textContent = why ? t('game.lobby.unranked', { why: t(why) }) : '';
   }
 
   // финал
@@ -3372,6 +3376,11 @@ function renderOverlays() {
         <td>${p.stats.shipsLost}</td>
         <td>${p.stats.goldCollected}</td>
       </tr>`).join('');
+    // Почему партия не пошла в рейтинг: без этой строки честный игрок решит, что очки потерялись.
+    // Пишем только про ОНЛАЙН-партии: в игре с ботами и за одним устройством очков никто и не ждал.
+    const rank = state.ranked || {};
+    $('#finishUnranked').textContent = state.config?.listed && rank.ok === false && rank.why
+      ? t('game.finish.unranked', { why: t(rank.why) }) : '';
     $('#finishOverlay').classList.remove('hidden');
   }
 }

@@ -14,15 +14,19 @@ let ok = 0, fail = 0;
 const yes = (n, c) => { c ? ok++ : (fail++, console.error('✗', n)); };
 const eq = (n, g, w) => { JSON.stringify(g) === JSON.stringify(w) ? ok++ : (fail++, console.error('✗', n, 'получили', JSON.stringify(g), 'ждали', JSON.stringify(w))); };
 
-// доигранная партия: двое людей + бот, места расставлены
-function finished(cfg = {}) {
+// Доигранная партия двоих людей: места расставлены, бой состоялся (раунды + урон друг по другу —
+// без этого партия считается несыгранной и в рейтинг не идёт, см. tests/test-ranked.mjs).
+// С `bot: true` за стол садится ещё и бот — такая партия рейтинговой не бывает.
+function finished(cfg = {}, { bot = false } = {}) {
   const g = createGame('t' + Math.random().toString(36).slice(2, 7), { maxPlayers: 3, turnTimer: 0, seed: 11 });
-  addPlayer(g, 'A', 'Алиса'); addPlayer(g, 'B', 'Боб'); addPlayer(g, 'BOT', 'Бот');
+  addPlayer(g, 'A', 'Алиса'); addPlayer(g, 'B', 'Боб');
+  if (bot) addPlayer(g, 'BOT', 'Бот');
   startGame(g, 'A');
   Object.assign(g.config, cfg);
-  g.players[2].isBot = true;
+  if (bot) g.players[2].isBot = true;
   g.status = 'finished';
-  g.players[0].placement = 1; g.players[1].placement = 2; g.players[2].placement = 3;
+  g.turn.round = 12;                       // партия шла, а не схлопнулась на первом ходу
+  g.players.forEach((p, i) => { p.placement = i + 1; });
   for (const p of g.players) Object.assign(p.stats, { damageDealt: 500, shipsSunk: 4, shipsLost: 2, goldCollected: 1000 });
   return g;
 }
@@ -33,7 +37,15 @@ eq('онлайн-партия → ranked 1', rankedOf(resultRows(finished({ list
 eq('игра с ботами (не в лобби) → ranked 0', rankedOf(resultRows(finished({ listed: false }))), [0, 0]);
 eq('реалтайм-онлайн → ranked 0 (вне рейтинга)', rankedOf(resultRows(finished({ listed: true, realtime: true }))), [0, 0]);
 eq('хотсит не пишется вовсе', resultRows(finished({ hotseat: true })), []);
-eq('боты в статистику не идут', resultRows(finished({ listed: true })).map(r => r[1]), ['A', 'B']);
+eq('бот за столом → ranked 0 (победу над ботом не считаем)',
+  rankedOf(resultRows(finished({ listed: true }, { bot: true }))), [0, 0]);
+eq('боты в статистику не идут', resultRows(finished({ listed: true }, { bot: true })).map(r => r[1]), ['A', 'B']);
+// сдача на первом ходу — не партия: победителю нечего засчитывать, сдавшемуся нечего фармить
+{
+  const quick = finished({ listed: true });
+  quick.turn.round = 1;
+  eq('мгновенная сдача → ranked 0', rankedOf(resultRows(quick)), [0, 0]);
+}
 
 // === 2. Живая база: старая схема доезжает до новой сама ===
 const TMP = path.join(os.tmpdir(), `sb-profile-${process.pid}.db`);

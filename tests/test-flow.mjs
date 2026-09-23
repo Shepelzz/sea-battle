@@ -197,12 +197,13 @@ if (fin[0].placement !== 1 || fin[1].placement !== 2) fail('места расп�
 if (fin[0].stats.damageDealt <= 0) fail('статистика урона пуста');
 ok('статистика: урон=' + fin[0].stats.damageDealt + ', золото Алисы=' + fin[0].gold);
 
-// лидерборд (в БД могут быть и реальные игроки — проверяем только строку Алисы)
+// Лидерборд: этой победы в нём быть НЕ должно. Боб сдался, не будучи разбитым (кораблей у него
+// никто не топил, казна цела) — по анти-накрутке такая победа очков не приносит, иначе «соперник
+// вышел» и есть способ фармить рейтинг. Правила целиком — tests/test-ranked.mjs.
 const lb = await (await fetch(BASE + '/api/leaderboard')).json();
-const aliceRow = lb.find(r => r.nick === 'Алиса');
-if (!aliceRow || aliceRow.wins < 1) fail('Алисы нет в лидерборде: ' + JSON.stringify(lb));
-const aliceWinsBefore = aliceRow.wins;
-ok('лидерборд обновился: у Алисы побед ' + aliceWinsBefore);
+const aliceWinsBefore = lb.find(r => r.nick === 'Алиса')?.wins || 0;
+if (aliceWinsBefore) fail('сдача из живой позиции попала в лидерборд: ' + JSON.stringify(lb));
+ok('сдача из живой позиции в лидерборд не пошла');
 
 // --- вторая игра: выход из лобби и сдача ---
 const res2 = await fetch(BASE + '/api/games', {
@@ -248,9 +249,9 @@ if (A2.state.ships.some(s => s.owner === 1)) fail('флот сдавшегося
 ok('сдача работает: Боб спустил флаг, Алиса победила');
 
 const lb2 = await (await fetch(BASE + '/api/leaderboard')).json();
-const aliceAfter = lb2.find(r => r.nick === 'Алиса');
-if (!aliceAfter || aliceAfter.wins !== aliceWinsBefore + 1) fail('победа после сдачи не записалась в лидерборд');
-ok('результат сдачи записан в лидерборд');
+const aliceAfter = lb2.find(r => r.nick === 'Алиса')?.wins || 0;
+if (aliceAfter !== aliceWinsBefore) fail('мгновенная сдача принесла очки: ' + JSON.stringify(lb2));
+ok('мгновенная сдача очков не принесла');
 
 // === Одно открытое лобби на аккаунт ===
 // Раньше повторное «Создать» молча уводило в старое лобби — человек жал кнопку с новыми

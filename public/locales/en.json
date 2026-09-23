@@ -226,7 +226,8 @@
       "canWait_other": "You can wait for {{count}} more or start now",
       "allAboard": "Everyone is aboard!",
       "waitHost": "Waiting for the host to start the game…",
-      "nickEmpty": "The name cannot be empty"
+      "nickEmpty": "The name cannot be empty",
+      "unranked": "Unranked battle: {{why}}"
     },
     "shop": {
       "title": "🛒 Shipyard",
@@ -254,7 +255,8 @@
       "loot": "Loot",
       "home": "🏠 Main page",
       "map": "Look at the map",
-      "winner": "👑 The winner is {{nick}}!"
+      "winner": "👑 The winner is {{nick}}!",
+      "unranked": "Unranked battle: {{why}}"
     },
     "coach": {
       "skip": "Skip",
@@ -583,7 +585,8 @@
     "realtime": "⚡ Full speed ahead! βeta",
     "timer": "timer {{min}} min",
     "noFog": "no fog",
-    "singleMove": "one action per turn"
+    "singleMove": "one action per turn",
+    "unranked": "unranked"
   },
   "og": {
     "site": "Sea Battle",
@@ -838,5 +841,13 @@
     "loot": "treasure",
     "cheat": "cheat",
     "support": "port bonus"
+  },
+  "rank": {
+    "offline": "this game is not online",
+    "realtime": "⚡ Full Speed Ahead is beta — it stays out of the rating",
+    "bots": "a bot is in the game",
+    "forced": "the host ended the battle",
+    "short": "no real fight — the battle was too short",
+    "quit": "the loser quit while still in the fight"
   }
 }
