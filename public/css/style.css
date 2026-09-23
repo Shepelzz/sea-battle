@@ -144,11 +144,15 @@ tr:first-child td { font-weight: bold; }
    вешается при загрузке по ширине и остаётся висеть, если окно потом растянули. */
 /* Кошелёк — золото и 🪙 монеты одним блоком: переносится только целиком, монеты всегда
    остаются правее золота. Порознь они на узком экране разъезжались по разным строкам. */
-#actionsRow .purse { display: none; flex: none; align-self: center; align-items: center; gap: 6px; white-space: nowrap; }
+/* Кошелёк прижат к ПРАВОМУ краю ряда — там, где раньше сидела 📖. На узком экране так он
+   не толкается с кнопками и не уезжает на вторую строку (а вторая строка поднимала панель,
+   и карта под ней переставала доставать до края — отсюда белая полоса над панелью). */
+#actionsRow .purse { display: none; flex: none; margin-left: auto; align-self: center; align-items: center; gap: 6px; white-space: nowrap; }
 #panelToggle { display: none; }
 #actionsRow { display: flex; flex-wrap: wrap; gap: 8px; }
 #actionsRow.hidden { display: none; }
-/* нижний ряд: действия слева, «инфобаза» 📖 прижата к правому краю и видна даже когда ходов нет */
+/* нижний ряд: действия слева, «инфобаза» 📖 прижата к правому краю и видна даже когда ходов нет.
+   Исключение — свёрнутая панель на телефоне: там это место занимает кошелёк (правило ниже). */
 .actions-bar { display: flex; align-items: flex-start; gap: 8px; }
 .actions-bar #actionsRow { flex: 1; }
 .actions-bar #infoBtn { margin-left: auto; flex: none; }
@@ -770,6 +774,9 @@ aside.panel {
   /* 💰 …а кошелёк вместо него встаёт в ряд действий, рядом с «Пропустить» — на виду и под рукой.
      Класс .on вешает клиент: обёртка не бывает :empty (внутри элементы), поэтому пустоту не поймать стилями. */
   aside.panel.collapsed #actionsRow .purse.on { display: inline-flex; }
+  /* …и 📖 на это время уходит: вчетвером с кошельком ряд не влезал в строку, а перенос поднимал
+     панель и обрезал карту. Разверни панель (☰) — вики снова на своём месте справа. */
+  aside.panel.collapsed #infoBtn { display: none; }
   #panelToggle { display: inline-block; }
   .panel-head .turn-banner { font-size: 1.1rem; padding: 5px 8px; }
   /* действия с кораблём — сверху по умолчанию; .at-bottom = снизу (зависит от того, в какой
@@ -785,8 +792,8 @@ aside.panel {
    меняется по ходу партии («Пропустить» ↔ «Завершить ход»), ряд от этого то влезал, то нет,
    и кошелёк прыгал на вторую строку. Освободившегося места хватает на оба варианта надписи. */
 @media (max-width: 449px) {
-  #btnShop .btn-label { display: none; }
-  #btnShop { padding-left: 12px; padding-right: 12px; }
+  #btnShop .btn-label, #btnNudge .btn-label { display: none; }
+  #btnShop, #btnNudge { padding-left: 12px; padding-right: 12px; }
 }
 
 @media (pointer: coarse) {

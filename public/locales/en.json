@@ -368,7 +368,8 @@
     "turnTimeLeft": "⏱ {{time}} until the turn ends",
     "goldTitle": "Your treasury",
     "btnShopLabel": "Shipyard",
-    "coinsTitle": "Coins from pirates"
+    "coinsTitle": "Coins from pirates",
+    "btnNudgeLabel": "Hurry up"
   },
   "wiki": {
     "goal": {

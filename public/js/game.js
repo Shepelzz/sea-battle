@@ -1007,6 +1007,20 @@ function resize() {
 }
 window.addEventListener('resize', resize);
 
+// Высота свёрнутой панели меняется не только от смены размеров окна: ряд действий то влезает
+// в строку, то переносится (кнопки появляются и исчезают по ходу партии, надписи меняются с
+// языком). Карту тянем по факту — иначе между ней и панелью оставалась белая полоса без карты,
+// потому что холст был посчитан под прежнюю высоту.
+if (window.ResizeObserver) {
+  let lastPanelH = 0;
+  new ResizeObserver(() => {
+    const h = $('#panel').offsetHeight;
+    if (h === lastPanelH) return;
+    lastPanelH = h;
+    if ($('#mapWrap').style.bottom !== desiredMapBottom()) resize();
+  }).observe($('#panel'));
+}
+
 // «cover»: поле всегда заполняет экран целиком, за края заглянуть нельзя.
 // По короткой стороне — впритык, по длинной — скролл в пределах поля.
 function coverFit() {

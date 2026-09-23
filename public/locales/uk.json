@@ -374,7 +374,8 @@
     "turnTimeLeft": "⏱ {{time}} до кінця ходу",
     "goldTitle": "Твоя скарбниця",
     "btnShopLabel": "Верф",
-    "coinsTitle": "Монети за піратів"
+    "coinsTitle": "Монети за піратів",
+    "btnNudgeLabel": "Поквапити"
   },
   "wiki": {
     "goal": {

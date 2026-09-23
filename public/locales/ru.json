@@ -374,7 +374,8 @@
     "turnTimeLeft": "⏱ {{time}} до конца хода",
     "goldTitle": "Твоя казна",
     "btnShopLabel": "Верфь",
-    "coinsTitle": "Монеты за пиратов"
+    "coinsTitle": "Монеты за пиратов",
+    "btnNudgeLabel": "Поторопить"
   },
   "wiki": {
     "goal": {
