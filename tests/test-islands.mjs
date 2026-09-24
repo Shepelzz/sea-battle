@@ -15,7 +15,8 @@ let ok = 0, fail = 0;
 const check = (n, c, extra = '') => { c ? (ok++, console.log('✓', n, extra)) : (fail++, console.error('✗', n, extra)); };
 
 function newGame({ mode = 'classic', realtime = false, multiMove = true } = {}) {
-  const g = createGame('isl', { maxPlayers: 2, turnTimer: 0, seed: 7 });
+  // mapScale: 1 — геометрия набора рассчитана на ПОЛНУЮ карту 1600×1200 (живая карта двоих — 0.625)
+  const g = createGame('isl', { maxPlayers: 2, turnTimer: 0, seed: 7, mapScale: 1 });
   g.config.mode = mode;
   if (realtime) g.config.realtime = true;
   g.config.multiMove = multiMove;
@@ -104,13 +105,15 @@ const banishPirates = g => {
   const g = newGame();
   const isl = g.map.lootIslands[0];
   isl.looted = true;
-  isl.outpost = { owner: 1, level: 1, hp: L1.hp };
+  // форт (уровень 3): аванпост первого уровня (120 HP) мортира фрегата (126) сносит одним выстрелом
+  const L3 = OUTPOST_LEVELS[2];
+  isl.outpost = { owner: 1, level: 3, hp: L3.hp };
   const fr = put(g, 0, 'fregat', isl.x + isl.radius + 60, isl.y);
   const far = put(g, 0, 'fregat', isl.x + 600, isl.y);
   const rFar = applyAction(g, 'p0', { type: 'attack', shipId: far.id, targetType: 'outpost', targetId: 0 });
   check('мортира: вне дальности — отказ', !rFar.ok && rFar.error === 'err.outpostOutOfRange', rFar.error || '');
   const r1 = applyAction(g, 'p0', { type: 'attack', shipId: fr.id, targetType: 'outpost', targetId: 0 });
-  check('мортира бьёт аванпост полным уроном', r1.ok && isl.outpost.hp === L1.hp - SHIP_TYPES.fregat.dmg, `(hp ${isl.outpost?.hp})`);
+  check('мортира бьёт аванпост полным уроном', r1.ok && isl.outpost?.hp === L3.hp - SHIP_TYPES.fregat.dmg, `(hp ${isl.outpost?.hp})`);
   applyAction(g, 'p0', { type: 'skip' });
   applyAction(g, 'p1', { type: 'skip' });
   isl.outpost.hp = 10; // добьём следующим выстрелом

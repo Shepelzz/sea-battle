@@ -7,7 +7,7 @@ import {
   LOOT_AREA_Y0, LOOT_AREA_YR, LOOT_BASE_GAP, LOOT_GAP, LOOT_VALUE_MIN, LOOT_VALUE_RAND, LOOT_VALUE_STEP,
   FISH_COUNT, FISH_RADIUS_MIN, FISH_RADIUS_RAND, FISH_AREA_X0, FISH_AREA_XR, FISH_AREA_Y0, FISH_AREA_YR,
   FISH_BASE_GAP, FISH_LOOT_GAP, FISH_GAP, fishZoneCap, ISLAND_SHAPE_MIN_PTS, ISLAND_SHAPE_RAND_PTS,
-  ISLAND_SHAPE_R_MIN, ISLAND_SHAPE_R_RAND, START_SPAWN_SPREAD, START_SPAWN_RING
+  ISLAND_SHAPE_R_MIN, ISLAND_SHAPE_R_RAND, START_SPAWN_SPREAD, START_SPAWN_RING, mapScaleFor
 } from './config.js';
 
 function mulberry32(seed) {
@@ -36,7 +36,14 @@ const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
 export function generateMap(seed, playerCount, opts = {}) {
   const rnd = mulberry32(seed);
   if (opts.duel) return duelMap(opts.mapScale || 0.7);   // дуэль: маленькая карта, без баз и островов
-  const W = MAP_W, H = MAP_H, M = BASE_CORNER_MARGIN;
+  // масштаб классической карты — по числу игроков (см. MAP_SCALE_BY_PLAYERS); явный opts.mapScale
+  // перебивает (тесты с геометрией под полную карту передают 1). Порядок rnd() не меняется.
+  const k = opts.mapScale ?? mapScaleFor(playerCount);
+  const W = Math.round(MAP_W * k), H = Math.round(MAP_H * k);
+  // отступ баз от углов ужимается вместе с картой, но не так, чтобы порт вылез за край
+  const M = Math.max(Math.round(BASE_CORNER_MARGIN * k), BASE_RADIUS + BASE_JITTER + 30);
+  const lootBaseGap = LOOT_BASE_GAP * k, lootGap = LOOT_GAP * k;
+  const fishBaseGap = FISH_BASE_GAP * k, fishLootGap = FISH_LOOT_GAP * k, fishGap = FISH_GAP * k;
 
   // Углы для баз. 2 игрока — по диагонали, 3-4 — по углам.
   const corners = [
@@ -63,8 +70,8 @@ export function generateMap(seed, playerCount, opts = {}) {
     const radius = LOOT_RADIUS_MIN + Math.round(rnd() * LOOT_RADIUS_RAND);
     const x = Math.round(W * LOOT_AREA_X0 + rnd() * W * LOOT_AREA_XR);
     const y = Math.round(H * LOOT_AREA_Y0 + rnd() * H * LOOT_AREA_YR);
-    if (bases.some(b => dist(x, y, b.x, b.y) < b.radius + radius + LOOT_BASE_GAP)) continue;
-    if (lootIslands.some(o => dist(x, y, o.x, o.y) < o.radius + radius + LOOT_GAP)) continue;
+    if (bases.some(b => dist(x, y, b.x, b.y) < b.radius + radius + lootBaseGap)) continue;
+    if (lootIslands.some(o => dist(x, y, o.x, o.y) < o.radius + radius + lootGap)) continue;
     lootIslands.push({
       id: 'isl' + lootIslands.length,
       x, y, radius,
@@ -82,7 +89,7 @@ export function generateMap(seed, playerCount, opts = {}) {
     // у всех честный домашний доход на время мирного периода.
     for (const b of bases) {
       const ang = Math.atan2(H / 2 - b.y, W / 2 - b.x);
-      const d = b.radius + bigR + FISH_BASE_GAP;
+      const d = b.radius + bigR + fishBaseGap;
       fishZones.push({ x: Math.round(b.x + Math.cos(ang) * d), y: Math.round(b.y + Math.sin(ang) * d), radius: bigR, cap: fishZoneCap(bigR) });
     }
   } else {
@@ -91,14 +98,14 @@ export function generateMap(seed, playerCount, opts = {}) {
       const radius = opts.allFishZonesBig ? bigR : (FISH_RADIUS_MIN + Math.round(rnd() * FISH_RADIUS_RAND));
       const x = Math.round(W * FISH_AREA_X0 + rnd() * W * FISH_AREA_XR);
       const y = Math.round(H * FISH_AREA_Y0 + rnd() * H * FISH_AREA_YR);
-      if (bases.some(b => dist(x, y, b.x, b.y) < b.radius + radius + FISH_BASE_GAP)) continue;
-      if (lootIslands.some(o => dist(x, y, o.x, o.y) < o.radius + radius + FISH_LOOT_GAP)) continue;
-      if (fishZones.some(z => dist(x, y, z.x, z.y) < z.radius + radius + FISH_GAP)) continue;
+      if (bases.some(b => dist(x, y, b.x, b.y) < b.radius + radius + fishBaseGap)) continue;
+      if (lootIslands.some(o => dist(x, y, o.x, o.y) < o.radius + radius + fishLootGap)) continue;
+      if (fishZones.some(z => dist(x, y, z.x, z.y) < z.radius + radius + fishGap)) continue;
       fishZones.push({ x, y, radius, cap: fishZoneCap(radius) }); // лимит судов зависит от размера зоны
     }
   }
 
-  return { w: W, h: H, bases, lootIslands, fishZones };
+  return { w: W, h: H, scale: k, bases, lootIslands, fishZones };
 }
 
 // Дуэль: маленькая карта (масштаб от обычной), без островов/рыбозон. «Базы» = невидимые

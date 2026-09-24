@@ -21,7 +21,8 @@ const eq = (n, g, w) => { g === w ? ok++ : (fail++, console.error('✗', n, '—
 
 const banish = g => { for (const p of g.ships.filter(s => s.owner === -1)) { p.x = 20; p.y = 20; p.bornTurn = 1e9; } };
 function game(cfg = {}) {
-  const g = createGame('t', { maxPlayers: 2, turnTimer: 0, seed: 7 });
+  // mapScale: 1 — геометрия набора рассчитана на ПОЛНУЮ карту 1600×1200 (живая карта двоих — 0.625)
+  const g = createGame('t', { maxPlayers: 2, turnTimer: 0, seed: 7, mapScale: 1 });
   Object.assign(g.config, { multiMove: true }, cfg);
   addPlayer(g, 'p0', 'A'); addPlayer(g, 'p1', 'B');
   startGame(g, 'p0');
@@ -84,7 +85,7 @@ yes('монеты требует большинство', PERK_KEYS.filter(k => 
 
 // ═══════════ ДУЭЛЬ: ни перков, ни витрины ═══════════
 {
-  const g = createGame('d', { maxPlayers: 2, turnTimer: 0, seed: 7 });
+  const g = createGame('d', { maxPlayers: 2, turnTimer: 0, seed: 7, mapScale: 1 });
   g.config.mode = 'duel';
   addPlayer(g, 'p0', 'A'); addPlayer(g, 'p1', 'B');
   startGame(g, 'p0'); banish(g);

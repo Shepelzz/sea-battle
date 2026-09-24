@@ -7,7 +7,9 @@ let ok = 0, fail = 0;
 const check = (n, c, extra = '') => { c ? (ok++, console.log('✓', n, extra)) : (fail++, console.error('✗', n, extra)); };
 
 function game(multiMove = true) {
-  const g = createGame('b', { maxPlayers: 2, turnTimer: 0, seed: 7 });
+  // mapScale: 1 — геометрия набора (координаты, дистанции) рассчитана на ПОЛНУЮ карту 1600×1200;
+  // живые партии двоих идут на карте 0.625 (см. MAP_SCALE_BY_PLAYERS)
+  const g = createGame('b', { maxPlayers: 2, turnTimer: 0, seed: 7, mapScale: 1 });
   g.config.multiMove = multiMove;
   addPlayer(g, 'A', 'A'); addPlayer(g, 'B', 'B');
   startGame(g, 'A');

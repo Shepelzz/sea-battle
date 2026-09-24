@@ -2,7 +2,7 @@
 // тут проверяем их применение и поведение чит-корабля (волей из 5 снарядов).
 import { createGame, addPlayer, startGame, applyAction, publicState } from '../server/game.js';
 import { applyCheat } from '../server/cheats.js';
-import { SHIP_TYPES, CHEATS_ENABLED } from '../server/config.js';
+import { SHIP_TYPES, CHEATS_ENABLED, MORTAR_SHIP_MULT } from '../server/config.js';
 
 let ok = 0, fail = 0;
 const check = (n, c, extra = '') => { c ? (ok++) : (fail++, console.error('✗', n, extra)); };
@@ -108,9 +108,11 @@ if (CHEATS_ENABLED) {
   const before = foe.hp;
   const r = applyAction(g, 'A', { type: 'attack', shipId: me.id, targetType: 'ship', targetId: foe.id });
   check('атака авианосца ок', r.ok, JSON.stringify(r));
-  eq('урон по цели = 5×33 (мортира по судам ×0.5)', before - foe.hp, 165);
+  // урон снаряда — из конфига: мортира по судам ×0.5 от dmg авианосца (цифра менялась с темпом партии)
+  const per = Math.round(SHIP_TYPES.carrier.dmg * MORTAR_SHIP_MULT);
+  eq(`урон по цели = 5×${per} (мортира по судам ×0.5)`, before - foe.hp, 5 * per);
   eq('ровно 5 событий-выстрелов', g.events.filter(e => e.type === 'shot').length, 5);
-  eq('damageDealt += 165', g.players[0].stats.damageDealt, 165);
+  eq(`damageDealt += ${5 * per}`, g.players[0].stats.damageDealt, 5 * per);
 }
 
 // === Бриг теперь НЕ умеет мортиру (только бортовой залп) ===

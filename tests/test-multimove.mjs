@@ -12,7 +12,9 @@ const eq = (n, got, want) => check(n, JSON.stringify(got) === JSON.stringify(wan
 
 // Чистый стол: партия на 2 игроков, без лута-помех, без денег (если не нужно), корабли ставим руками.
 function setup(multiMove = false) {
-  const g = createGame('t', { maxPlayers: 2, turnTimer: 0, seed: 4242 });
+  // mapScale: 1 — геометрия набора (координаты, дистанции) рассчитана на ПОЛНУЮ карту 1600×1200;
+  // живые партии двоих идут на карте 0.625 (см. MAP_SCALE_BY_PLAYERS)
+  const g = createGame('t', { maxPlayers: 2, turnTimer: 0, seed: 4242, mapScale: 1 });
   addPlayer(g, 'A', 'Алиса');
   addPlayer(g, 'B', 'Боб');
   startGame(g, 'A');

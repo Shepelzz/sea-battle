@@ -7,7 +7,9 @@ let ok = 0, fail = 0;
 const check = (n, c, extra = '') => { c ? (ok++, console.log('✓', n, extra)) : (fail++, console.error('✗', n, extra)); };
 
 function game(mode, n = 2) {
-  const g = createGame('m', { maxPlayers: n, turnTimer: 0, seed: 7 });
+  // mapScale: 1 — геометрия набора (координаты, дистанции) рассчитана на ПОЛНУЮ карту 1600×1200;
+  // живые партии двоих идут на карте 0.625 (см. MAP_SCALE_BY_PLAYERS)
+  const g = createGame('m', { maxPlayers: n, turnTimer: 0, seed: 7, mapScale: 1 });
   g.config.mode = mode;
   for (let i = 0; i < n; i++) addPlayer(g, 'p' + i, 'P' + i);
   startGame(g, 'p0');

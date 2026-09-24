@@ -5,6 +5,16 @@ import { movesBudget, convoyCost, CONVOY_MAX, CONVOY_PICK_MULT, shipRank, tribut
   PERKS, perksEnabled, hasPerk, isPerkHidden, PORT_HP, DRYDOCK_RADIUS } from './config.js';
 import { shipPlacementBlocked, shipInContact, applyAction } from './game.js';
 
+// ─── Шкала урона в ОЦЕНКАХ ───────────────────────────────────────────────────
+// Урон флота утроили ради темпа партии (config.js, «Темп партии»), а веса эвристик ниже —
+// сколько «очков» стоит огневая мощь против прочности, золота, дохода постройки — калиброваны
+// на прежней шкале и мерились A/B-стендом (tools/ab-bot.mjs). Везде, где урон ВЗВЕШИВАЕТСЯ
+// (оценка позиции, приоритеты целей и покупок), приводим его к старой шкале: после ×3 флот
+// перевесил экономику, бот бросил покупать рыбаков и прокачивать аванпосты — тест поймал.
+// Там, где урон СРАВНИВАЕТСЯ с HP (добьём ли, сколько выстрелов до порта), берём сырой.
+const DMG_SCORE_SCALE = Number(process.env.BOT_DMG_SCALE ?? 3);   // BOT_DMG_SCALE — для A/B-стенда
+const fp = dmg => dmg / DMG_SCORE_SCALE;   // огневая мощь в очках оценки
+
 const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
 
 // Вес «бить общую цель флота» (сосредоточенный огонь, см. focusTarget). Подбирается прогоном
@@ -69,9 +79,9 @@ function buildCandidates(game, pIdx, level) {
   const turnPressure = game.turn.number > game.players.length * 25;
   // сила игрока: HP + урон флота (единая метрика для всех сравнений)
   const powerOf = i => game.ships.filter(s => s.owner === i)
-    .reduce((a, x) => a + x.hp + SHIP_TYPES[x.type].dmg, 0);
+    .reduce((a, x) => a + x.hp + fp(SHIP_TYPES[x.type].dmg), 0);
   const myPower = powerOf(pIdx);
-  const foePower = foeShips.reduce((s, x) => s + x.hp + SHIP_TYPES[x.type].dmg, 0);
+  const foePower = foeShips.reduce((s, x) => s + x.hp + fp(SHIP_TYPES[x.type].dmg), 0);
 
   // настоящие боевые корабли (рыбацкие баркасы не в счёт) — для прикрытия рыбалки и «стадности»
   const isFighter = s => SHIP_TYPES[s.type].dmg > 0 && !SHIP_TYPES[s.type].fishing;
@@ -107,11 +117,11 @@ function buildCandidates(game, pIdx, level) {
     const sd = SHIP_TYPES[s2.type];
     if (!sd?.dmg || s2.owner < 0) continue;
     const d = dist(s2.x, s2.y, myBase.x, myBase.y);
-    if (s2.owner === pIdx) { if (d < homeReach) homeGuard += sd.dmg; continue; }
+    if (s2.owner === pIdx) { if (d < homeReach) homeGuard += fp(sd.dmg); continue; }
     if (!game.players[s2.owner]?.alive) continue;
     if (d < homeReach + sd.move) {                    // уже здесь или дойдёт следующим ходом
-      homeThreat += sd.dmg;
-      worstAttacker = Math.max(worstAttacker, sd.dmg);
+      homeThreat += fp(sd.dmg);
+      worstAttacker = Math.max(worstAttacker, sd.dmg);   // сырой: сравнивается с dmg кандидата на покупку
     }
   }
   // Градуированная оборона (покупка защитника по рангу нападающего + массовый отзыв флота) —
@@ -147,7 +157,7 @@ function buildCandidates(game, pIdx, level) {
     if (!reachable(t)) continue;                       // до недосягаемого фокусироваться бессмысленно
     const def = SHIP_TYPES[t.type];
     const hurt = 1 - t.hp / (t.maxHp || def.hp);       // 0 — целёхонек, 1 — при смерти
-    const v = hurt * 55 + def.dmg * 0.35 +
+    const v = hurt * 55 + fp(def.dmg) * 0.35 +
       (dist(t.x, t.y, myBase.x, myBase.y) < threatR ? 30 : 0);
     if (v > focusBest) { focusBest = v; focusTarget = t; }
   }
@@ -229,7 +239,7 @@ function buildCandidates(game, pIdx, level) {
           const aq = Math.max(0, 1 - off / BROADSIDE_HALF_ARC);   // 1 на перпендикуляре → 0 на краю сектора
           const dq = Math.max(0, 1 - d / st.fireRange);           // 1 в упор → 0 на краю радиуса
           const q = aq * dq;                                      // 1 — борт наведён в упор, 0 — мазня
-          score += st.dmg * q * 2.0;
+          score += fp(st.dmg) * q * 2.0;
           // ПОТОПЛЕНИЕ считаем в полную силу: убитый убит, под каким бы углом ни прилетело.
           if (t.hp <= real) score += 30 + (t.owner === -1 ? (t.bounty || 0) * 0.3 : def.price * 0.2);
           // А вот приоритеты (общая цель флота, гость у порога) — ТОЛЬКО в меру наведённости:
@@ -511,8 +521,8 @@ function buildCandidates(game, pIdx, level) {
       // блокада, тем дальше от базы вылупляется пополнение и тем позже доходит до боя.)
       const portDmg = MORTAR_SHIPS.includes(ship.type) || st.cheat ? st.dmg * (st.portBonus || 1) : 0;
       const siegeScore = portDmg
-        ? Math.min(40, 14 + portDmg * 0.35)     // линкор ≈40, фрегат ≈29
-        : Math.min(26, 10 + st.dmg * 0.35);     // бриг ≈20 — блокада, а не размен с портом
+        ? Math.min(40, 14 + fp(portDmg) * 0.35)     // линкор ≈40, фрегат ≈29
+        : Math.min(26, 10 + fp(st.dmg) * 0.35);     // бриг ≈20 — блокада, а не размен с портом
       addMove(ship, b.x, b.y, aggressive ? siegeScore * pack : 6);
     }
   }
@@ -661,7 +671,7 @@ export function boardValue(game, pIdx) {
   let v = 0;
   for (const s2 of game.ships) {
     const st = SHIP_TYPES[s2.type] || PIRATE;
-    const w = s2.hp + st.dmg * 2;                              // живучесть + огневая мощь
+    const w = s2.hp + fp(st.dmg) * 2;                          // живучесть + огневая мощь
     if (s2.owner === pIdx) { v += w; continue; }
     if (s2.owner >= 0) { if (game.players[s2.owner]?.alive) v -= w; continue; }
     // 🏴‍☠️ ПИРАТ. Раньше НПС не попадал в оценку совсем: урон по нему стоил ноль, и
@@ -700,8 +710,8 @@ export function boardValue(game, pIdx) {
       const sd = SHIP_TYPES[s2.type];
       if (!sd?.dmg || s2.owner < 0) continue;
       if (Math.hypot(s2.x - home.x, s2.y - home.y) >= home.radius + 240) continue;
-      if (s2.owner === pIdx) guardv += sd.dmg;
-      else if (game.players[s2.owner]?.alive) threat += sd.dmg;
+      if (s2.owner === pIdx) guardv += fp(sd.dmg);
+      else if (game.players[s2.owner]?.alive) threat += fp(sd.dmg);
     }
     v -= Math.max(0, threat - guardv) * HOME_THREAT_W;
   }
@@ -753,7 +763,7 @@ export function boardValue(game, pIdx) {
                            Math.abs(norm2(ang - norm2(s2.heading + Math.PI / 2))));
       if (off > BROADSIDE_HALF_ARC) continue;
       const q = (1 - off / BROADSIDE_HALF_ARC) * (1 - d / st.fireRange);
-      v += st.dmg * q * BROAD_READY_W;         // цель под бортом в упор — позиция сама по себе ценна
+      v += fp(st.dmg) * q * BROAD_READY_W;     // цель под бортом в упор — позиция сама по себе ценна
     }
   }
 
@@ -889,7 +899,7 @@ function chooseDuelBotAction(game, pIdx, level) {
   const cx = game.map.w / 2, cy = game.map.h / 2, norm = a => Math.atan2(Math.sin(a), Math.cos(a));
   const maxHp = t => t.maxHp || (t.owner === -1 ? PIRATE.hp : SHIP_TYPES[t.type].hp);
   const vuln = t => Math.max(0, maxHp(t) - t.hp);          // насколько ранен (добить выгодно)
-  const worth = t => t.owner >= 0 ? SHIP_TYPES[t.type].dmg * 0.5 : (t.bounty || 0) * 0.04; // ценность цели
+  const worth = t => t.owner >= 0 ? fp(SHIP_TYPES[t.type].dmg) * 0.5 : (t.bounty || 0) * 0.04; // ценность цели
 
   // --- стрельба: мортира + бортовой залп по врагам/пиратам ---
   for (const ship of myShips) {
@@ -932,7 +942,7 @@ function chooseDuelBotAction(game, pIdx, level) {
         const dq = Math.max(0, 1 - bestD / st.fireRange);
         // Цель уже в секторе борта — ДАЁМ ЗАЛП (база +40), а не доводим угол до идеала: иначе боты
         // «танцуют» бортами и не сходятся (стейлмейты). Манёвр — только когда стрелять НЕ по кому.
-        const score = 40 + st.dmg * aq * dq * 2.2 + vuln(tgt) * 0.12;
+        const score = 40 + fp(st.dmg) * aq * dq * 2.2 + vuln(tgt) * 0.12;
         cands.push({ score, action: { type: 'broadside', shipId: ship.id, tx: tgt.x, ty: tgt.y } });
       }
     }
@@ -999,7 +1009,7 @@ function chooseDuelBotAction(game, pIdx, level) {
         // Начинаем манёвр ещё на подходе (в пределах хода до радиуса), чтобы прийти бортом, а не носом.
         // Приоритет ВЫШЕ не-добивающей мортиры (борт выгоднее); тяжёлым важнее встать бортом (линкор ~46).
         const dir = Math.atan2(target.y - ship.y, target.x - ship.x);
-        const turnScore = 24 + st.dmg * 0.1; // выше не-добивающей мортиры, но ниже залпа по цели в секторе
+        const turnScore = 24 + fp(st.dmg) * 0.1; // выше не-добивающей мортиры, но ниже залпа по цели в секторе
         for (const s of [1, -1]) {
           const a = dir + s * (Math.PI / 2) * 0.78;
           addMove(ship, ship.x + Math.cos(a) * st.move * 0.9, ship.y + Math.sin(a) * st.move * 0.9, turnScore);

@@ -15,7 +15,9 @@ const check = (n, c, extra = '') => { c ? (ok++, console.log('✓', n, extra)) :
 const setWind = (g, ang, str) => { g.wind = { ang, str, targetAng: ang, targetStr: str }; };
 
 function newGame({ realtime = false, mode = null } = {}) {
-  const g = createGame('st', { maxPlayers: 2, turnTimer: 0, seed: 7 });
+  // mapScale: 1 — геометрия набора (координаты, дистанции) рассчитана на ПОЛНУЮ карту 1600×1200;
+  // живые партии двоих идут на карте 0.625 (см. MAP_SCALE_BY_PLAYERS)
+  const g = createGame('st', { maxPlayers: 2, turnTimer: 0, seed: 7, mapScale: 1 });
   if (mode) g.config.mode = mode; // до startGame — влияет на карту и стартовое золото
   if (realtime) g.config.realtime = true;
   addPlayer(g, 'p0', 'P0');
@@ -64,7 +66,7 @@ check('реалтайм доступен во ВСЕХ режимах', ['classi
   const st = publicState(g, 'p0');
   check('publicState: wind и windK — во ВСЕХ режимах', !!st.wind && typeof st.wind.ang === 'number' && st.windK === WIND_STRENGTH);
   check('пошаговая партия: rt-блока нет', !st.rt);
-  const g0 = createGame('w0', { maxPlayers: 2, turnTimer: 0, seed: 7 });
+  const g0 = createGame('w0', { maxPlayers: 2, turnTimer: 0, seed: 7, mapScale: 1 });
   check('новая партия: штиль на старте (сила растёт со временем)', g0.wind.str === 0 && typeof g0.wind.ang === 'number');
 }
 
@@ -184,17 +186,20 @@ check('реалтайм доступен во ВСЕХ режимах', ['classi
 // ═══════════════ ⚡ Реалтайм: пираты — кулдаун пушки + непрерывное плавание ═══════════════
 {
   const g = newGame({ realtime: true });
+  // openWater находит воду у базы p0, а стартовый фрегат с уроном ×3 достаёт пирата с 165 —
+  // тот благоразумно не ввязывается (incoming > hp). Проверяем пирата против одиночек — флот убираем.
+  g.ships = g.ships.filter(s => s.owner < 0);
   const c = openWater(g);
   const pir = put(g, -1, 'pirate', c.x, c.y, 80);
   const prey = put(g, 0, 'shkhuna', c.x + 60, c.y); // в радиусе пиратской пушки (130)
   const now = Date.now();
   pirateThink(g, pir, now);
-  check('пират выстрелил и взвёл перезарядку', prey.hp === 60 - 12 && pir.gunAt > now, `(hp ${prey.hp})`);
+  check('пират выстрелил и взвёл перезарядку', prey.hp === 60 - PIRATE.dmg && pir.gunAt > now, `(hp ${prey.hp})`);
   pirateThink(g, pir, now + 1000);
-  check('до конца перезарядки НЕ стреляет (нет пулемёта)', prey.hp === 48, `(hp ${prey.hp})`);
+  check('до конца перезарядки НЕ стреляет (нет пулемёта)', prey.hp === 60 - PIRATE.dmg, `(hp ${prey.hp})`);
   pir.gunAt = 0;
   pirateThink(g, pir, now + 2000);
-  check('после перезарядки — снова выстрел', prey.hp === 36, `(hp ${prey.hp})`);
+  check('после перезарядки — снова выстрел', prey.hp === 60 - 2 * PIRATE.dmg, `(hp ${prey.hp})`);
   // движение: тот же tickMovement, что у кораблей (непрерывное, не телепорт-прыжки)
   pir.dest = { x: pir.x + 100, y: pir.y };
   pir.heading = 0;
@@ -207,15 +212,20 @@ check('реалтайм доступен во ВСЕХ режимах', ['classi
 // ═══════════════ 🏴‍☠️ Пиратский БОРТОВОЙ ЗАЛП: 2 снаряда у малого, 3 у босса ═══════════════
 {
   const g = newGame({ realtime: true });
+  // openWater находит воду у базы p0, а стартовый фрегат с уроном ×3 достаёт пирата с 165 —
+  // тот благоразумно не ввязывается (incoming > hp). Проверяем пирата против одиночек — флот убираем.
+  g.ships = g.ships.filter(s => s.owner < 0);
   const c = openWater(g);
-  const pir = put(g, -1, 'pirate', c.x, c.y, 80);
+  // hp с запасом: шхуна + бриг в радиусе достают на 45 + 84 > 80, и обычный пират отошёл бы,
+  // а проверяем мы механику залпа, не храбрость. Флаг boss не ставим — снарядов должно быть 2.
+  const pir = put(g, -1, 'pirate', c.x, c.y, 500);
   const prey1 = put(g, 0, 'shkhuna', c.x + 60, c.y);        // основная цель на востоке
   const prey2 = put(g, 0, 'brig', c.x + 70, c.y + 15);      // рядом, в том же секторе борта
   g.events = [];
   pirateThink(g, pir, Date.now());
   const ev = (g.events || []).find(e => e.type === 'volley' && e.shipType === 'pirate');
   check('обычный пират бьёт ЗАЛПОМ из 2 снарядов (событие volley)', !!ev && ev.cannons === 2, `(cannons ${ev?.cannons})`);
-  check('залп накрывает ВСЕХ игроков в секторе борта', prey1.hp === 60 - 12 && prey2.hp === 110 - 12, `(hp ${prey1.hp}/${prey2.hp})`);
+  check('залп накрывает ВСЕХ игроков в секторе борта', prey1.hp === 60 - PIRATE.dmg && prey2.hp === 110 - PIRATE.dmg, `(hp ${prey1.hp}/${prey2.hp})`);
   check('пират развернулся бортом (цель на траверзе)', Math.abs(Math.abs(pir.heading - Math.atan2(prey1.y - c.y, prey1.x - c.x)) - Math.PI / 2) < 0.3);
 
   const boss = put(g, -1, 'pirate', c.x, c.y - 40, 220);
@@ -232,8 +242,9 @@ check('реалтайм доступен во ВСЕХ режимах', ['classi
   const c = freeCorridor(g);
   const me = put(g, 0, 'brig', c.x + 100, c.y);
   me.heading = 0; // курс на восток → борта смотрят на север/юг
-  const north = put(g, 1, 'shkhuna', c.x + 100, c.y - 80);
-  const south = put(g, 1, 'shkhuna', c.x + 100, c.y + 80);
+  // мишени живучие: с уроном ×3 два залпа борта топят шхуну, и мортире ниже не по кому стрелять
+  const north = put(g, 1, 'shkhuna', c.x + 100, c.y - 80, 9999);
+  const south = put(g, 1, 'shkhuna', c.x + 100, c.y + 80, 9999);
   const r1 = applyAction(g, 'p0', { type: 'broadside', shipId: me.id, tx: north.x, ty: north.y });
   check('залп борт №1 — ок', r1.ok, r1.error || '');
   const r2 = applyAction(g, 'p0', { type: 'broadside', shipId: me.id, tx: north.x, ty: north.y });

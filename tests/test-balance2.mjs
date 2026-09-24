@@ -56,7 +56,8 @@ function freshGame() {
   check('collect только за рыбу — отклонён (рыбалка пассивна)', r.ok === false, `(${r.error || 'ok'})`);
 }
 
-// === 4. Урон линкора по порту = round(65*1.5)=98, и база НЕ падает с 3-4 тычков ===
+// === 4. Урон линкора по порту = round(dmg×1.5), и порт НЕ падает с пары тычков ===
+// (порт 840 против мортиры линкора 195×1.5=292 — три залпа, фрегата 126 — семь)
 {
   const g = freshGame();
   const base = g.map.bases[1];
@@ -80,7 +81,7 @@ function freshGame() {
     if (g2.players[1].alive) applyAction(g2, 'B', { type: 'skip' }); // вернуть ход Алисе
   }
   const need = Math.ceil(PORT_HP / expected);
-  check('линкор валит порт за ' + shots + ' залпов (не 3-4)', shots >= 5 && shots === need,
+  check('линкор валит порт за ' + shots + ' залпа (три, не два)', shots === 3 && shots === need,
     `(нужно ${shots}, расчёт ${need}, было бы при ×2: ${Math.ceil(PORT_HP / (SHIP_TYPES.linkor.dmg*2))})`);
 }
 

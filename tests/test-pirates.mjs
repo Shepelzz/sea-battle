@@ -7,7 +7,9 @@ const check = (n, c, extra = '') => { c ? (ok++, console.log('✓', n, extra)) :
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 
 function game2(nPlayers = 2) {
-  const g = createGame('t', { maxPlayers: nPlayers, turnTimer: 0, seed: 7 });
+  // mapScale: 1 — геометрия набора (координаты, дистанции) рассчитана на ПОЛНУЮ карту 1600×1200;
+  // живые партии двоих идут на карте 0.625 (см. MAP_SCALE_BY_PLAYERS)
+  const g = createGame('t', { maxPlayers: nPlayers, turnTimer: 0, seed: 7, mapScale: 1 });
   for (let i = 0; i < nPlayers; i++) addPlayer(g, 'p' + i, 'P' + i);
   startGame(g, 'p0');
   return g;
@@ -45,6 +47,9 @@ const myShip = (g, type, x, y, hp) => {
   const g = game2(); clearPirates(g);
   const pir = addPirate(g, 400, 400);
   const victim = myShip(g, 'shkhuna', 400, 470, 50);            // 50 hp, не одним выстрелом
+  // стартовый флот у базы убираем: с уроном ×3 фрегат достаёт пирата с 165, и тот благоразумно
+  // отходит (incoming > hp) — а проверяем мы инициативу против ОДИНОКОЙ шхуны
+  g.ships = g.ships.filter(s => s.owner !== 0 || s.id === victim.id);
   const before = victim.hp;
   applyAction(g, 'p0', { type: 'skip' });
   const after = g.ships.find(s => s.id === victim.id)?.hp;

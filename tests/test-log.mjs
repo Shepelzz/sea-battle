@@ -13,7 +13,9 @@ const check = (n, c, extra = '') => { c ? (ok++, console.log('✓', n, extra)) :
 const eq = (n, got, want) => check(n, JSON.stringify(got) === JSON.stringify(want), `got ${JSON.stringify(got)}`);
 
 function newGame({ fog = false, multiMove = true } = {}) {
-  const g = createGame('log', { maxPlayers: 2, turnTimer: 0, seed: 3 });
+  // mapScale: 1 — геометрия набора (координаты, дистанции) рассчитана на ПОЛНУЮ карту 1600×1200;
+  // живые партии двоих идут на карте 0.625 (см. MAP_SCALE_BY_PLAYERS)
+  const g = createGame('log', { maxPlayers: 2, turnTimer: 0, seed: 3, mapScale: 1 });
   g.config.fog = fog;
   g.config.multiMove = multiMove;
   addPlayer(g, 'p0', 'P0');

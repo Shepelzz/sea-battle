@@ -61,7 +61,10 @@ export function createGame(id, config) {
       turnTimer: [0, 60, 120, 300].includes(config.turnTimer) ? config.turnTimer : 0,
       // переданный seed уважаем (тесты годами слали seed:7, а получали СЛУЧАЙНУЮ карту — флаки);
       // реальные партии seed не шлют → случайный, как и было
-      seed: Number.isInteger(config.seed) ? config.seed : (Math.random() * 2 ** 31) | 0
+      seed: Number.isInteger(config.seed) ? config.seed : (Math.random() * 2 ** 31) | 0,
+      // масштаб карты задаётся явно только тестами (геометрия под полную карту → 1);
+      // живые партии его не шлют — размер берётся по числу игроков (mapScaleFor)
+      mapScale: (typeof config.mapScale === 'number' && config.mapScale > 0) ? config.mapScale : undefined
     },
     map: null,
     players: [], // {id, nick, color, gold, portHp, alive, placement, stats, votedSkip}
@@ -175,7 +178,7 @@ export function startGame(game, playerId) {
   }
 
   // в «Развитии» — у каждой базы своя большая рыбозона и все зоны на 5 слотов (опции режима)
-  game.map = generateMap(game.config.seed, game.players.length, { baseFishZone: !!md.baseFishZone, allFishZonesBig: !!md.allFishZonesBig });
+  game.map = generateMap(game.config.seed, game.players.length, { baseFishZone: !!md.baseFishZone, allFishZonesBig: !!md.allFishZonesBig, mapScale: game.config.mapScale });
   game.players.forEach((p, idx) => {
     const base = game.map.bases[idx];
     const pts = spawnPoints(game.map, base, START_FLEET.length);
@@ -202,7 +205,7 @@ function randomWaterSpot(game) {
   for (let i = 0; i < 60; i++) {
     const x = Math.round(m.w * PIRATE_WATER_MARGIN + Math.random() * m.w * PIRATE_WATER_SPAN);
     const y = Math.round(m.h * PIRATE_WATER_MARGIN + Math.random() * m.h * PIRATE_WATER_SPAN);
-    if (m.bases.some(b => dist(x, y, b.x, b.y) < b.radius + PIRATE_WATER_BASE_GAP)) continue;
+    if (m.bases.some(b => dist(x, y, b.x, b.y) < b.radius + PIRATE_WATER_BASE_GAP * (m.scale || 1))) continue;
     if (shipPlacementBlocked(game, x, y, null)) continue;
     return { x, y };
   }
@@ -466,12 +469,12 @@ export function driftFishZones(game, step) {
 function pickFishTarget(game, z) {
   const m = game.map;
   for (let i = 0; i < 24; i++) {
-    const a = Math.random() * Math.PI * 2, r = Math.random() * FISH_HOME_RADIUS;
+    const a = Math.random() * Math.PI * 2, r = Math.random() * FISH_HOME_RADIUS * (m.scale || 1);
     const tx = z.homeX + Math.cos(a) * r, ty = z.homeY + Math.sin(a) * r;
     if (tx < 80 || ty < 80 || tx > m.w - 80 || ty > m.h - 80) continue;                          // не к краю
     if (m.bases.some(b => dist(tx, ty, b.x, b.y) < b.radius + FISH_BASE_GAP)) continue;          // не к базам
     if (m.lootIslands.some(i2 => dist(tx, ty, i2.x, i2.y) < i2.radius + 40)) continue;           // не центром на остров
-    if (m.fishZones.some(o => o !== z && dist(tx, ty, o.tx ?? o.x, o.ty ?? o.y) < FISH_MIN_GAP)) continue; // не в кучу
+    if (m.fishZones.some(o => o !== z && dist(tx, ty, o.tx ?? o.x, o.ty ?? o.y) < FISH_MIN_GAP * (m.scale || 1))) continue; // не в кучу
     z.tx = tx; z.ty = ty;
     return;
   }

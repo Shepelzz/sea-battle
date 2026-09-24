@@ -23,7 +23,8 @@ const majority = (build, want, tries = 7) => {
 };
 
 function setup() {
-  const g = createGame('t', { maxPlayers: 2, turnTimer: 0, seed: 4242 });
+  // mapScale: 1 — геометрия набора рассчитана на ПОЛНУЮ карту 1600×1200 (живая карта двоих — 0.625)
+  const g = createGame('t', { maxPlayers: 2, turnTimer: 0, seed: 4242, mapScale: 1 });
   addPlayer(g, 'p0', 'Я');
   addPlayer(g, 'p1', 'Враг');
   startGame(g, 'p0');
@@ -108,7 +109,7 @@ const put = (g, owner, type, x, y, hp) =>
   // 0.7 аванпоста на партию, в коротких партиях 0. Сторожим сам факт, что механика жива.
   let built = 0;
   for (let seed = 1; seed <= 6; seed++) {
-    const g = createGame('op' + seed, { maxPlayers: 2, turnTimer: 0, seed });
+    const g = createGame('op' + seed, { maxPlayers: 2, turnTimer: 0, seed, mapScale: 1 });
     g.config.multiMove = true; g.config.botGame = true; g.config.fog = true;
     addPlayer(g, 'p0', 'A'); addPlayer(g, 'p1', 'B');
     g.players.forEach(p => { p.isBot = true; p.botLevel = 'hard'; });
@@ -190,7 +191,7 @@ const put = (g, owner, type, x, y, hp) =>
 {
   let admiral = 0, played = 0;
   for (let n = 0; n < 36; n++) {
-    const g = createGame('lad' + n, { maxPlayers: 2, turnTimer: 0, seed: 1 + (n >> 1) });
+    const g = createGame('lad' + n, { maxPlayers: 2, turnTimer: 0, seed: 1 + (n >> 1), mapScale: 1 });
     g.config.multiMove = true; g.config.botGame = true; g.config.fog = true;
     const hardIdx = n % 2;
     addPlayer(g, 'p0', 'A'); addPlayer(g, 'p1', 'B');
