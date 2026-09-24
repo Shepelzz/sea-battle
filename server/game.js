@@ -24,7 +24,7 @@ import {
 } from './config.js';
 
 // Палитра цветов игроков (выбираются при старте; сервер гарантирует уникальность в партии).
-export const PALETTE = ['#c0392b', '#2980b9', '#27ae60', '#8e44ad', '#e67e22', '#16a085', '#d4ac0d', '#cb3e8f'];
+export const PALETTE = ['#c0392b', '#2980b9', '#27ae60', '#8e44ad', '#e67e22', '#1fa9d8', '#d4ac0d', '#cb3e8f'];
 
 // выбрать цвет: вернуть запрошенный, если он из палитры и не занят другим игроком; иначе — первый свободный
 function pickColor(game, color, exceptId = null) {
@@ -71,7 +71,10 @@ export function createGame(id, config) {
       seed: Number.isInteger(config.seed) ? config.seed : (Math.random() * 2 ** 31) | 0,
       // масштаб карты задаётся явно только тестами (геометрия под полную карту → 1);
       // живые партии его не шлют — размер берётся по числу игроков (mapScaleFor)
-      mapScale: (typeof config.mapScale === 'number' && config.mapScale > 0) ? config.mapScale : undefined
+      mapScale: (typeof config.mapScale === 'number' && config.mapScale > 0) ? config.mapScale : undefined,
+      // тестовая ручка: углы игрокам по порядку (idx 0 — левый верхний), без тасовки и зеркала.
+      // Живые партии не шлют → случайная раздача углов
+      fixedCorners: config.fixedCorners === true
     },
     map: null,
     players: [], // {id, nick, color, gold, portHp, alive, placement, stats, votedSkip}
@@ -185,7 +188,7 @@ export function startGame(game, playerId) {
   }
 
   // в «Развитии» — у каждой базы своя большая рыбозона и все зоны на 5 слотов (опции режима)
-  game.map = generateMap(game.config.seed, game.players.length, { baseFishZone: !!md.baseFishZone, allFishZonesBig: !!md.allFishZonesBig, mapScale: game.config.mapScale });
+  game.map = generateMap(game.config.seed, game.players.length, { baseFishZone: !!md.baseFishZone, allFishZonesBig: !!md.allFishZonesBig, mapScale: game.config.mapScale, fixedCorners: game.config.fixedCorners });
   game.players.forEach((p, idx) => {
     const base = game.map.bases[idx];
     const pts = spawnPoints(game.map, base, START_FLEET.length);

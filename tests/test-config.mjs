@@ -106,12 +106,31 @@ eq('лут в [100,300]', loots.every(l => l >= 100 && l <= 300), true);
 // детерминизм по сиду
 eq('детерминизм карты', JSON.stringify(generateMap(7, 3)), JSON.stringify(generateMap(7, 3)));
 // ЭТАЛОН координат (seed 7, 2и) — ловит сдвиг ЛЮБОЙ map-gen-константы при выносе в config
-const frozen = { bases: [[185,187,105],[1401,994,105]],
+// углы раздаются игрокам случайно (тасовка + зеркало ПОСЛЕ генерации): для сида 7 хост в правом нижнем
+const frozen = { bases: [[1401,994,105],[185,187,105]],
   loot: [[540,497,31,120],[669,271,41,300],[1055,244,40,100],[973,956,41,270],[844,584,33,180]],
   fish: [[1038,489,105],[454,762,110],[877,772,105]] };
 eq('эталон баз', m2.bases.map(b => [b.x, b.y, b.radius]), frozen.bases);
 eq('эталон лута', m2.lootIslands.map(i => [i.x, i.y, i.radius, i.loot]), frozen.loot);
 eq('эталон рыбных зон', m2.fishZones.map(z => [z.x, z.y, z.radius]), frozen.fish);
+// раздача углов: хост (idx 0) бывает в каждом из четырёх углов, у двоих базы всегда по диагонали,
+// playerIdx после тасовки совпадает с индексом в массиве
+const cornerOf = (m, b) => (b.x < m.w / 2 ? 'L' : 'R') + (b.y < m.h / 2 ? 'T' : 'B');
+const hostCorners = new Set(), hostCorners4 = new Set();
+let diag = 0, idxOk = true;
+for (let seed = 1; seed <= 120; seed++) {
+  const a = generateMap(seed, 2, { mapScale: 1 }), b4 = generateMap(seed, 4, { mapScale: 1 });
+  hostCorners.add(cornerOf(a, a.bases[0])); hostCorners4.add(cornerOf(b4, b4.bases[0]));
+  const [p, q] = a.bases;
+  if ((p.x < a.w / 2) !== (q.x < a.w / 2) && (p.y < a.h / 2) !== (q.y < a.h / 2)) diag++;
+  if (!b4.bases.every((b, i) => b.playerIdx === i)) idxOk = false;
+}
+eq('хост у двоих бывает во всех 4 углах', hostCorners.size, 4);
+eq('хост у четверых бывает во всех 4 углах', hostCorners4.size, 4);
+eq('у двоих базы всегда по диагонали', diag, 120);
+eq('playerIdx = индекс после тасовки', idxOk, true);
+const fixed = generateMap(7, 2, { mapScale: 1, fixedCorners: true });
+eq('fixedCorners: p0 слева сверху, p1 справа снизу (как раньше)', fixed.bases.map(b => [b.x, b.y]), [[185, 187], [1401, 994]]);
 
 console.log(`\nИтого config-снапшот: ${ok} ок, ${fail} провал(ов)`);
 process.exit(fail ? 1 : 0);

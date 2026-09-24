@@ -9,7 +9,7 @@ const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 function game2(nPlayers = 2) {
   // mapScale: 1 — геометрия набора (координаты, дистанции) рассчитана на ПОЛНУЮ карту 1600×1200;
   // живые партии двоих идут на карте 0.625 (см. MAP_SCALE_BY_PLAYERS)
-  const g = createGame('t', { maxPlayers: nPlayers, turnTimer: 0, seed: 7, mapScale: 1 });
+  const g = createGame('t', { maxPlayers: nPlayers, turnTimer: 0, seed: 7, mapScale: 1, fixedCorners: true });
   for (let i = 0; i < nPlayers; i++) addPlayer(g, 'p' + i, 'P' + i);
   startGame(g, 'p0');
   return g;

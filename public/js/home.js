@@ -447,7 +447,7 @@ $('#loginOverlay').addEventListener('click', e => { if (e.target.id === 'loginOv
     const cfg = await (await fetch('/api/config')).json();
     // палитра — рисуем пикеры цвета во всех редакторах
     PALETTE = Array.isArray(cfg.palette) && cfg.palette.length ? cfg.palette
-      : ['#c0392b', '#2980b9', '#27ae60', '#8e44ad'];
+      : ['#c0392b', '#2980b9', '#27ae60', '#8e44ad', '#e67e22', '#1fa9d8', '#d4ac0d', '#cb3e8f'];
     onlineColor = PALETTE[0];
     botColor = PALETTE[0];
     renderOnlineColor();

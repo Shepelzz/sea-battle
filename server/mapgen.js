@@ -105,6 +105,24 @@ export function generateMap(seed, playerCount, opts = {}) {
     }
   }
 
+  // Раздача углов игрокам — СЛУЧАЙНАЯ (иначе хост, idx 0, всегда сидел в левом верхнем углу):
+  // тасуем базы (Фишер–Йейтс) и с шансом 1/2 зеркалим карту по горизонтали, чтобы у двоих
+  // диагональ тоже менялась. Всё — ПОСЛЕ генерации, лишними rnd() в хвосте: набор позиций
+  // островов/рыбы от сида не меняется, меняется только «кому какой угол».
+  // opts.fixedCorners (тесты с геометрией «p0 слева сверху, p1 справа снизу») — раздача по порядку.
+  if (!opts.fixedCorners) {
+    for (let i = bases.length - 1; i > 0; i--) {
+      const j = Math.floor(rnd() * (i + 1));
+      [bases[i], bases[j]] = [bases[j], bases[i]];
+    }
+    bases.forEach((b, i) => { b.playerIdx = i; });
+  }
+  const mirrored = !opts.fixedCorners && rnd() < 0.5;
+  if (mirrored) {
+    const flip = o => { o.x = W - o.x; if (o.shape) o.shape.forEach(pt => { pt[0] = -pt[0]; }); };
+    bases.forEach(flip); lootIslands.forEach(flip); fishZones.forEach(flip);
+  }
+
   return { w: W, h: H, scale: k, bases, lootIslands, fishZones };
 }
 
