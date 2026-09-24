@@ -52,8 +52,8 @@ eq('fishZoneCap(102)=5 (порог включительно)', fishZoneCap(102),
 eq('fishZoneCap(120)=5', fishZoneCap(120), 5);
 eq('START_FLEET', START_FLEET, ['shkhuna', 'shkhuna', 'fregat']);
 eq('START_GOLD', START_GOLD, 350);
-eq('PORT_HP', PORT_HP, 840);
-eq('PORT_RETURN_DMG', PORT_RETURN_DMG, 20);
+eq('PORT_HP', PORT_HP, 1680);
+eq('PORT_RETURN_DMG', PORT_RETURN_DMG, 60);
 eq('PORT_INCOME', PORT_INCOME, 6);
 eq('PORT_DMG_TO_SHIPS', PORT_DMG_TO_SHIPS, 0);
 eq('SHIP_COLLISION_DIST', SHIP_COLLISION_DIST, 26);

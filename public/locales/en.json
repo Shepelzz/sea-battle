@@ -104,7 +104,7 @@
       "title": "📖 Rules (as taught in class)",
       "li1": "Everyone gets an island base with a port and a starting fleet: 2 schooners and a frigate. The port earns a little gold every turn and 🏰 shoots back at whoever attacks it — you can't take a base with a single ship.",
       "li2": "One turn — <b>one</b> action: buy ships, collect loot, move one ship \"along the ruler\" or fire. With the <b>\"Three ships per turn\"</b> option (set when creating the game) you get up to <b>three</b> actions per turn with different ships — faster and livelier.",
-      "li3": "⛵ With \"Three ships per turn\" neighbouring ships can sail in <b>convoy</b>: mark a flagship and a couple of neighbours, and the whole formation moves in one gesture, for <b>one</b> manoeuvre (at the speed of the slowest, led by the most senior ship). A convoy can't be formed in contact with the enemy — no running away as a squadron.",
+      "li3": "⛵ With \"Three ships per turn\" neighbouring ships can sail in <b>convoy</b>: mark a flagship and a couple of neighbours, and the whole formation moves in one gesture, for <b>one</b> manoeuvre (at the speed of the slowest plus a quarter of its range, led by the most senior ship). A convoy can't be formed in contact with the enemy — no running away as a squadron.",
       "li4": "A longboat sitting in a fishing spot earns gold every turn by itself — it costs no action. A treasure island can be looted by any ship that reaches it (the \"Collect\" button).",
       "li5": "Sink a ship — loot the gold from its wreck. Destroy a port — that rival is out, and you take half of their treasury.",
       "li6": "Neutral pirates 🏴‍☠️ roam the sea — they drift slowly between turns, may vanish into the fog and reappear. Sink a pirate for the bounty, and the fat 👑 boss pays a fortune!",
@@ -287,7 +287,7 @@
     "acted": "⚓ Already moved",
     "movesLeft_one": "⚓ {{count}} action left — keep going or \"End turn\"",
     "movesLeft_other": "⚓ {{count}} actions left — keep going or \"End turn\"",
-    "convoyOutOfRange": "🚫 A convoy moves at the slowest ship's pace — that point is outside the circle",
+    "convoyOutOfRange": "🚫 A convoy moves at the slowest ship's pace (+25% to its range) — that point is outside the circle",
     "outOfRange": "🚫 Too far — the point is outside the movement circle",
     "cooldown": "⏳ Reloading: {{sec}}s",
     "cdSec": "{{sec}}s",
@@ -390,7 +390,7 @@
         "liMove": "🧭 <b>move</b> a ship;",
         "liShop": "🛒 visit the <b>shipyard</b>.",
         "budget": "Each of these spends one of the three actions. Finished early (1–2 ships is no reason to drag it out) — hit <b>\"✅ End turn\"</b>.",
-        "convoy": "⛵ <b>Convoy</b> — bring up reinforcements as a group instead of one by one. Tap a ship, pick <b>⛵</b> in the ring, mark the neighbouring ships (up to three including the flagship) and drag from the flagship — the whole formation sails, keeping its shape. The entire convoy costs <b>one manoeuvre</b>, so a squadron can cross half the map in a turn instead of three. The price for that speed: it moves at the pace of the <b>slowest ship</b> (a battleship in the convoy cuts everyone's range), and <b>a convoy cannot be formed in battle</b> — if an enemy ship or a pirate is within firing range, you can't escape as a squadron, move the ships one at a time. <b>The flagship must be the senior ship</b>: a longboat won't tow a frigate — lead with the bigger vessel. Bots use convoys just like you do."
+        "convoy": "⛵ <b>Convoy</b> — bring up reinforcements as a group instead of one by one. Tap a ship, pick <b>⛵</b> in the ring, mark the neighbouring ships (up to three including the flagship) and drag from the flagship — the whole formation sails, keeping its shape. The entire convoy costs <b>one manoeuvre</b>, so a squadron can cross half the map in a turn instead of three. It moves at the pace of the <b>slowest ship</b>, yet <b>a quarter farther</b> than that ship would alone — the wake pulls: three schooners in convoy cover 212 instead of 170, a battleship with frigates 112 instead of 90. But <b>a convoy cannot be formed in battle</b> — if an enemy ship or a pirate is within firing range, you can't escape as a squadron, move the ships one at a time. <b>The flagship must be the senior ship</b>: a longboat won't tow a frigate — lead with the bigger vessel. Bots use convoys just like you do."
       }
     },
     "wind": {
@@ -438,7 +438,7 @@
     },
     "port": {
       "h": "🏰 Port",
-      "p": "Your base with its port. The port is very tough (840 HP) and <b>shoots back</b> at whoever attacks it (dealing return damage, and the wreck is yours). A single light ship won't take a base; even a <b>battleship</b> (the main siege vessel, whose <b>mortar</b> hits a port 1.5× harder) needs several shots rather than a couple of pokes — and takes return fire all that time (the port hits a battleship <b>20% harder</b>). It is more effective to press a base with several ships. Lose your port and you are out."
+      "p": "Your base with its port. The port is very tough (1680 HP) and <b>shoots back</b> at whoever attacks it (dealing return damage, and the wreck is yours). A single light ship won't take a base; even a <b>battleship</b> (the main siege vessel, whose <b>mortar</b> hits a port 1.5× harder) needs several shots rather than a couple of pokes — and takes return fire all that time (the port hits a battleship <b>20% harder</b>). It is more effective to press a base with several ships. Lose your port and you are out."
     },
     "fleet": {
       "h": "⛵ Fleet",
@@ -460,7 +460,7 @@
     "turnSingle": "You take turns. One turn — only <b>one</b> action: sail, fire, collect loot or visit the shipyard.",
     "move": "Tap your ship → <b>\"Sail\"</b> (within the outline; 🌬 downwind it stretches — you get further!) or <b>\"💥 Broadside\"</b>. The main attack is the <b>broadside</b>: it only hits <b>to the side</b> (turn side-on to the enemy!) and you aim it like a move. The closer the target is to the side, the more it hurts.",
     "broadside": "Each side fires once per turn, but you can fire <b>both port and starboard</b> (that is one action). And the <b>frigate and battleship</b> also have a <b>🎯 Mortar</b> — an aimed shot at a single target, including a <b>port</b> (a siege).",
-    "convoy": "⛵ <b>Convoy</b>: neighbouring ships can sail <b>together for a single manoeuvre</b> — so you don't herd reinforcements one by one. Tap a ship, press <b>⛵</b> in the ring, mark the neighbours (up to three) and drag from the flagship. The convoy moves at the pace of the <b>slowest ship</b>, must be led by the <b>senior one</b>, and cannot be formed in battle.",
+    "convoy": "⛵ <b>Convoy</b>: neighbouring ships can sail <b>together for a single manoeuvre</b> — so you don't herd reinforcements one by one. Tap a ship, press <b>⛵</b> in the ring, mark the neighbours (up to three) and drag from the flagship. The convoy moves at the pace of the <b>slowest ship</b>, yet <b>a quarter farther</b> than it would alone — the wake pulls; it must be led by the <b>senior one</b>, and cannot be formed in battle.",
     "shop": "At the <b>Shipyard</b> you buy ships for gold 💰: quick schooners and brigs, powerful frigates, fishing longboats — and the <b>battleship</b>, which hits ports harder than anything 🏰.",
     "gold": "This is your <b>balance</b> — <b>gold</b> 💰. Earn it by fishing, treasure and sinking enemies, and spend it at the <b>Shipyard</b> on new ships.",
     "fish": "Put a <b>longboat</b> in this <b>🐟 fishing zone</b> — it will earn gold every turn by itself, and it costs no action.",
@@ -619,7 +619,7 @@
     "peaceNoAttack": "🕊 Peace time: you may not attack players",
     "peaceNoBases": "🕊 Peace time: bases are off limits",
     "mortarCd": "🎯 The mortar is reloading",
-    "convoySlow": "⛵ A convoy moves at the slowest ship's pace — that is too far",
+    "convoySlow": "⛵ A convoy moves at the slowest ship's pace (+25% to its range) — that is too far",
     "convoyInRt": "⛈ No convoys in a storm — the ships sail by themselves",
     "rtNoHotseat": "⚡ Real time does not work on one device — there is only one mouse. Pick \"Against the computer\" or online.",
     "convoyContact": "⚔️ An enemy is nearby — a convoy won't escape the fight",

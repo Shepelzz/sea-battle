@@ -6,7 +6,7 @@ import {
   SHIP_COLLISION_DIST, LOOT_REACH, WRECK_LOOT_FRAC, tributeFor,
   BROADSIDE_CANNONS, BROADSIDE_HALF_ARC, BROADSIDE_FALLOFF_MIN, BROADSIDE_SIDE_MIN, BROADSIDE_PORT_MULT, MORTAR_SHIPS, MORTAR_SHIP_MULT,
   FISH_ZONE_CAP, movesBudget, SHIP_ACTIONS, CHEATS_ENABLED, DEBUG, REPAIR_CHARGES, REPAIR_DOCK_REACH,
-  CONVOY_MAX, CONVOY_PICK_MULT, convoyCost, convoyCosts, shipRank,
+  CONVOY_MAX, CONVOY_PICK_MULT, CONVOY_RANGE_MULT, convoyMoveRange, convoyCost, convoyCosts, shipRank,
   modeStartGold, modeOf, isPeace, modePeaceRounds, isDuel, isRealtime, RT, cheapestShipPrice, GAME_MODES, DEFAULT_MODE,
   WIND_STRENGTH, WIND_TURN_STEP, WIND_STR_STEP, windMoveMult, REALTIME_TAG,
   OUTPOST_LEVELS, OUTPOST_RADIUS, OUTPOST_BUILD_REACH,
@@ -52,10 +52,17 @@ function newStats() {
            npcDamage: 0, npcSunk: 0, npcGold: 0 };
 }
 
+// Максимум порта этой партии; партии, сохранённые до появления поля, получают текущую константу.
+export const portMaxOf = game => game?.portMax ?? PORT_HP;
+
 export function createGame(id, config) {
   return {
     id,
     status: 'lobby',
+    // Максимум прочности порта — свойство ПАРТИИ, а не константа: баланс меняется, а начатые
+    // партии живут неделями. Иначе после смены PORT_HP клиент делил старый portHp на новый
+    // максимум и рисовал полный порт на половине шкалы; так же плыли ремонт порта и оценка бота.
+    portMax: PORT_HP,
     config: {
       maxPlayers: Math.min(4, Math.max(2, config.maxPlayers || 2)),
       turnTimer: [0, 60, 120, 300].includes(config.turnTimer) ? config.turnTimer : 0,
@@ -150,7 +157,7 @@ export function addPlayer(game, playerId, nick, color = null) {
   game.players.push({
     id: playerId, nick,
     color: pickColor(game, color),
-    gold: modeStartGold(game), coins: 0, perks: {}, portHp: PORT_HP, // дезматч даёт больше золота на старте (режим)
+    gold: modeStartGold(game), coins: 0, perks: {}, portHp: portMaxOf(game), // дезматч даёт больше золота на старте (режим)
     alive: true, placement: null,
     stats: newStats()
   });
@@ -786,7 +793,7 @@ const crushedOnQuit = game => {
   const sunk = humanSunk(game);
   return humans(game).filter(p => p.resigned).every(p =>
     (p.gold || 0) < SHIP_TYPES[RANKED_BROKE_SHIP].price
-    && (sunk >= RANKED_MIN_SUNK_ON_QUIT || (p.portHp || 0) < PORT_HP * RANKED_PORT_WRECK));
+    && (sunk >= RANKED_MIN_SUNK_ON_QUIT || (p.portHp || 0) < portMaxOf(game) * RANKED_PORT_WRECK));
 };
 
 // Почему партия вне рейтинга — ключом, а не фразой: причину показываем игрокам
@@ -1073,7 +1080,7 @@ export function applyAction(game, playerId, action) {
       // расходник можно брать снова, постоянный перк — только раз
       if (!isInstantPerk(key) && hasPerk(game, pIdx, key)) return { ok: false, error: 'err.perkOwned' };
       // 🔧 ремонт порта бессмысленен на целом порту — не даём слить золото впустую
-      if (key === 'portRepair' && player.portHp >= PORT_HP) return { ok: false, error: 'err.portFull' };
+      if (key === 'portRepair' && player.portHp >= portMaxOf(game)) return { ok: false, error: 'err.portFull' };
       if (player.gold < def.gold) return { ok: false, error: 'err.noGoldFor', params: { price: def.gold } };
       if ((player.coins || 0) < def.coins) return { ok: false, error: 'err.noCoinsFor', params: { price: def.coins } };
       player.gold -= def.gold;
@@ -1081,7 +1088,7 @@ export function applyAction(game, playerId, action) {
       if (isInstantPerk(key)) {
         // 🔧 расходник: срабатывает сразу и НЕ записывается в perks — иначе второй раз не купить
         if (key === 'portRepair') {
-          const healed = Math.min(Math.round(PORT_HP * PORT_REPAIR_FRAC), PORT_HP - player.portHp);
+          const healed = Math.min(Math.round(portMaxOf(game) * PORT_REPAIR_FRAC), portMaxOf(game) - player.portHp);
           player.portHp += healed;
           const base = game.map?.bases?.[pIdx];
           if (base) pushEvent(game, { type: 'repair', fx: base.x, fy: base.y, tx: base.x, ty: base.y, heal: healed });
@@ -1201,8 +1208,8 @@ export function applyAction(game, playerId, action) {
       const cx = Math.round(action.x), cy = Math.round(action.y);
       const ddx = cx - lead.x, ddy = cy - lead.y;
       const cang = Math.atan2(ddy, ddx);
-      // строй идёт по САМОМУ МЕДЛЕННОМУ — линкор в конвое режет дальность всем
-      const slow = Math.min(...crew.map(s => SHIP_TYPES[s.type].move));
+      // строй идёт по САМОМУ МЕДЛЕННОМУ, но на CONVOY_RANGE_MULT дальше его одиночного хода
+      const slow = convoyMoveRange(crew.map(s => s.type));
       if (Math.hypot(ddx, ddy) > slow * windMoveMultFor(game, pIdx, cang) + 0.5)
         return { ok: false, error: 'err.convoySlow' };
       const dests = crew.map(s => ({ s, x: Math.round(s.x + ddx), y: Math.round(s.y + ddy) }));
@@ -1681,10 +1688,10 @@ export function publicState(game, viewerPid) {
       .map(k => [k, shipPrice(game, viewerIdx, k)])),
     repairChargesMax: REPAIR_CHARGES,
     repairDockReach: REPAIR_DOCK_REACH,
-    portMax: PORT_HP,
+    portMax: portMaxOf(game),
     movesPerTurn: movesBudget(game.config), // 3 в режиме «ход тремя судами», иначе 1
     // ⛵ конвой: размер строя и радиус набора соседей (клиент считает те же правила у себя)
-    convoy: { max: CONVOY_MAX, pickMult: CONVOY_PICK_MULT, costs: convoyCosts(), on: !!game.config.multiMove && !isRealtime(game) },
+    convoy: { max: CONVOY_MAX, pickMult: CONVOY_PICK_MULT, rangeMult: CONVOY_RANGE_MULT, costs: convoyCosts(), on: !!game.config.multiMove && !isRealtime(game) },
     palette: PALETTE,
     // режим партии — КЛЮЧОМ: имя и описание клиент берёт из словаря (mode.<ключ>.name)
     mode: GAME_MODES[game.config?.mode] ? game.config.mode : DEFAULT_MODE,

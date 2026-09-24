@@ -4,7 +4,7 @@
 // сброс счётчиков на новом ходу, выдачу movesPerTurn клиенту и учёт сходивших ботом.
 import { createGame, addPlayer, startGame, applyAction, publicState } from '../server/game.js';
 import { chooseBotAction } from '../server/bot.js';
-import { SHIP_TYPES, movesBudget, MOVES_PER_TURN, SHIP_ACTIONS, CONVOY_MAX, convoyCost, shipRank } from '../server/config.js';
+import { SHIP_TYPES, movesBudget, MOVES_PER_TURN, SHIP_ACTIONS, CONVOY_MAX, CONVOY_RANGE_MULT, convoyMoveRange, convoyCost, shipRank } from '../server/config.js';
 
 let ok = 0, fail = 0;
 const check = (n, c, extra = '') => { c ? (ok++) : (fail++, console.error('✗', n, extra)); };
@@ -250,6 +250,33 @@ const convoy = (g, lead, mates, x, y) =>
   eq('конвой: ход НЕ закрылся — осталось чем действовать', g.turn.idx, 0);
   check('конвой: все трое помечены сходившими',
     [a, b, c].every(s => g.turn.actedShips.includes(s.id)), JSON.stringify(g.turn.actedShips));
+}
+
+// === дальность строя: по самому медленному, но на четверть ДАЛЬШЕ его одиночного хода ===
+// Кильватер тянет: награда за флот, который ведут вместе. Линкор (90) с фрегатом (110) идёт 112.
+{
+  const g = calm(setup(true));
+  const lk = put(g, 0, 'linkor', 700, 600);
+  const fr = put(g, 0, 'fregat', 740, 600);
+  put(g, 0, 'brig', 300, 300);                       // запасной — иначе ход закроется «нечем ходить»
+  const range = convoyMoveRange(['linkor', 'fregat']);
+  eq('дальность строя = мин. ход × 1.25', range, SHIP_TYPES.linkor.move * CONVOY_RANGE_MULT);
+  check('строй быстрее линкора-одиночки', range > SHIP_TYPES.linkor.move);
+  const tooFar = convoy(g, lk, [fr], 700 + Math.ceil(range) + 3, 600);
+  eq('за границей строя — отказ', tooFar.error, 'err.convoySlow');
+  const solo = applyAction(g, 'A', { type: 'move', shipId: lk.id, x: 700 + Math.floor(range) - 1, y: 600 });
+  eq('одиночке бонус не положен: линкору так далеко нельзя', solo.error, 'err.tooFar');
+  const ok = convoy(g, lk, [fr], 700 + Math.floor(range) - 1, 600);
+  check('строем — доходит', ok.ok, ok.error);
+  eq('линкор ушёл дальше своего одиночного хода', lk.x - 700 > SHIP_TYPES.linkor.move, true);
+}
+{ // однородный строй тоже получает бонус — это главный случай
+  const g = calm(setup(true));
+  const a = put(g, 0, 'shkhuna', 700, 600), b = put(g, 0, 'shkhuna', 740, 600);
+  put(g, 0, 'brig', 300, 300);
+  const range = convoyMoveRange(['shkhuna', 'shkhuna']);
+  eq('три шхуны строем: 170 × 1.25', range, 212.5);
+  check('шхуны строем уходят за свои 170', convoy(g, a, [b], 700 + 205, 600).ok);
 }
 
 // === цена строя — одна на всех: перебросил эскадру и ещё стреляешь ===

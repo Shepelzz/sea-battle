@@ -1,9 +1,9 @@
 // Бот: на своём ходу собирает все осмысленные действия, оценивает и берёт лучшее.
 // Уровни: easy (Юнга) — шумные оценки и случайные ходы, mid (Боцман) — лучший ход,
 // hard (Адмирал) — лучший ход + фокус раненых, удушение экономики, ранняя агрессия.
-import { movesBudget, convoyCost, CONVOY_MAX, CONVOY_PICK_MULT, shipRank, tributeFor, FISH_INCOME, FISH_ZONE_CAP, SHIP_TYPES, PIRATE, LOOT_REACH, PORT_RETURN_DMG, BROADSIDE_CANNONS, BROADSIDE_HALF_ARC, BROADSIDE_FALLOFF_MIN, BROADSIDE_SIDE_MIN, MORTAR_SHIPS, MORTAR_SHIP_MULT, OUTPOST_LEVELS, OUTPOST_BUILD_REACH, modeOf, isPeace, isDuel, cheapestShipPrice, windMoveMult,
+import { movesBudget, convoyCost, convoyMoveRange, CONVOY_MAX, CONVOY_PICK_MULT, shipRank, tributeFor, FISH_INCOME, FISH_ZONE_CAP, SHIP_TYPES, PIRATE, LOOT_REACH, PORT_RETURN_DMG, BROADSIDE_CANNONS, BROADSIDE_HALF_ARC, BROADSIDE_FALLOFF_MIN, BROADSIDE_SIDE_MIN, MORTAR_SHIPS, MORTAR_SHIP_MULT, OUTPOST_LEVELS, OUTPOST_BUILD_REACH, modeOf, isPeace, isDuel, cheapestShipPrice, windMoveMult,
   PERKS, perksEnabled, hasPerk, isPerkHidden, PORT_HP, DRYDOCK_RADIUS } from './config.js';
-import { shipPlacementBlocked, shipInContact, applyAction } from './game.js';
+import { shipPlacementBlocked, shipInContact, applyAction, portMaxOf } from './game.js';
 
 // ─── Шкала урона в ОЦЕНКАХ ───────────────────────────────────────────────────
 // Урон флота утроили ради темпа партии (config.js, «Темп партии»), а веса эвристик ниже —
@@ -297,7 +297,7 @@ function buildCandidates(game, pIdx, level) {
     };
     // 🔧 ПОРТУ ПЛОХО — чиним, и это перебивает почти любую другую покупку. Чем ближе к гибели,
     // тем выше приоритет: терять базу нельзя ни при каком раскладе.
-    const hurt = 1 - me.portHp / PORT_HP;
+    const hurt = 1 - me.portHp / portMaxOf(game);
     if (hurt > 0.4 && me.gold >= PERKS.portRepair.gold && (me.coins || 0) >= PERKS.portRepair.coins)
       cands.push({ score: 30 + hurt * 45, action: { type: 'buyPerk', key: 'portRepair' } });
 
@@ -569,7 +569,7 @@ function buildCandidates(game, pIdx, level) {
         const crew = [lead, ...mates.slice(0, n)];
         if (convoyCost(crew.length) > left) continue;
         if (crew.some(s2 => shipInContact(game, s2))) continue;
-        const slow = Math.min(...crew.map(s2 => SHIP_TYPES[s2.type].move));
+        const slow = convoyMoveRange(crew.map(s2 => s2.type));   // по самому медленному +25%, как на сервере
         const want = dist(lead.x, lead.y, leadBest.action.x, leadBest.action.y);
         const ids = new Set(crew.map(s2 => s2.id));
         let step = null;

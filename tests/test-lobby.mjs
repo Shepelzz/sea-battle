@@ -138,5 +138,24 @@ function activeGame({ online = false, hotseat = false, bot = false } = {}) {
   yes('лобби (не active) → null', myGameSummary(g, 'p0') === null);
 }
 
+// === Максимум порта — свойство партии, не константа ===
+// Баланс меняется, партии живут неделями: начатая при старом PORT_HP должна и дальше считать
+// шкалу, ремонт порта и «порт в руинах» от своего максимума, а не от нового числа.
+{
+  const { createGame: mk, addPlayer: add, startGame: start, publicState: pub, portMaxOf } = await import('../server/game.js');
+  const { PORT_HP } = await import('../server/config.js');
+  const g = mk('pm', { maxPlayers: 2, turnTimer: 0, seed: 7 });
+  add(g, 'a', 'A'); add(g, 'b', 'B'); start(g, 'a');
+  yes('новая партия запоминает максимум порта', g.portMax === PORT_HP && g.players[0].portHp === PORT_HP);
+  yes('клиенту уходит максимум партии', pub(g, 'a').portMax === PORT_HP);
+  const old = mk('pm2', { maxPlayers: 2, turnTimer: 0, seed: 7 });
+  old.portMax = 840;                        // партия, начатая при прежнем балансе
+  add(old, 'a', 'A'); add(old, 'b', 'B'); start(old, 'a');
+  yes('старая партия: порты по своему максимуму', old.players.every(p => p.portHp === 840));
+  yes('старая партия: шкала клиенту — 840, а не константа', pub(old, 'a').portMax === 840);
+  delete old.portMax;                       // сохранение, где поля ещё не было
+  yes('без поля — текущая константа', portMaxOf(old) === PORT_HP);
+}
+
 console.log(fail ? `\n❌ test-lobby: провалено ${fail}, прошло ${ok}` : `\n✅ test-lobby: все ${ok} проверок прошли`);
 process.exit(fail ? 1 : 0);

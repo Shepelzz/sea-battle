@@ -811,9 +811,9 @@ const shipActed = id => !state?.rt && (state?.turn?.actedShips || []).includes(i
 
 // ── ⛵ конвой (ход строем) ──
 // Правила ОДИН В ОДИН серверные (server/config.js + applyAction case 'convoy'): строй идёт по
-// самому медленному, набирается только из соседей флагмана, не собирается в боевом контакте
+// самому медленному (+25% к его ходу), набирается только из соседей флагмана, не собирается в боевом контакте
 // и съедает манёвр за каждое судно. Клиент повторяет их, чтобы не гонять заведомый отказ на сервер.
-const convoyCfg = () => state?.convoy || { max: 3, pickMult: 1, costs: [0, 0, 1, 1], on: false };
+const convoyCfg = () => state?.convoy || { max: 3, pickMult: 1, rangeMult: 1, costs: [0, 0, 1, 1], on: false };
 const convoyOn = () => !!convoyCfg().on && multiMoveOn();
 const shipById = id => state?.ships.find(s => s.id === id);
 // цена строя из n судов в манёврах хода — считает СЕРВЕР (config.convoyCost), клиент лишь читает
@@ -838,9 +838,10 @@ const convoyMates = lead => (state?.ships || []).filter(s =>
   dist(lead.x, lead.y, s.x, s.y) <= ST(lead.type).move * convoyCfg().pickMult &&
   shipRank(s.type) <= shipRank(lead.type) &&   // баркас не уводит фрегатов: флагман — старший
   !shipInContact(s));
-// дальность хода: строй идёт по САМОМУ МЕДЛЕННОМУ (линкор в конвое режет дальность всем)
+// дальность хода: строй идёт по САМОМУ МЕДЛЕННОМУ, но на rangeMult дальше его одиночного хода
+// (множитель шлёт сервер — CONVOY_RANGE_MULT; здесь только рисуем контур)
 const moveRangeOf = sel => (convoy && convoy.lead === sel.id && convoyShips().length > 1)
-  ? Math.min(...convoyShips().map(s => ST(s.type).move))
+  ? Math.min(...convoyShips().map(s => ST(s.type).move)) * (convoyCfg().rangeMult || 1)
   : ST(sel.type).move;
 function cancelConvoy() { convoy = null; mode = 'idle'; render(); }
 
@@ -1538,7 +1539,7 @@ function render(canvasOnly) {
   }
 
   // базы (под туманом вражеские рисуем ПОСЛЕ оверлея — см. ниже)
-  const portMax = state.portMax || 840;
+  const portMax = state.portMax || 1680;   // максимум порта ЭТОЙ партии — шлёт сервер (game.portMax)
   m.bases.forEach((b, i) => {
     const p = state.players[i];
     if (!p) return;

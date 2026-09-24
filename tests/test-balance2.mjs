@@ -57,7 +57,7 @@ function freshGame() {
 }
 
 // === 4. Урон линкора по порту = round(dmg×1.5), и порт НЕ падает с пары тычков ===
-// (порт 840 против мортиры линкора 195×1.5=292 — три залпа, фрегата 126 — семь)
+// (порт 1680 против мортиры линкора 195×1.5=292 — шесть залпов, фрегата 126 — четырнадцать)
 {
   const g = freshGame();
   const base = g.map.bases[1];
@@ -81,7 +81,7 @@ function freshGame() {
     if (g2.players[1].alive) applyAction(g2, 'B', { type: 'skip' }); // вернуть ход Алисе
   }
   const need = Math.ceil(PORT_HP / expected);
-  check('линкор валит порт за ' + shots + ' залпа (три, не два)', shots === 3 && shots === need,
+  check('линкор валит порт за ' + shots + ' залпов (шесть, не два-три)', shots === 6 && shots === need,
     `(нужно ${shots}, расчёт ${need}, было бы при ×2: ${Math.ceil(PORT_HP / (SHIP_TYPES.linkor.dmg*2))})`);
 }
 
