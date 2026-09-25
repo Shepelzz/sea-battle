@@ -253,6 +253,7 @@ async function loadMe() {
     $('#nick').value = me.nick;
     $('#botNick').value = me.nick;
   }
+  if (me.loggedIn) localStorage.setItem('sb_skin', me.skin || 'paper'); // оформление карты — из профиля
   renderBadge();
 }
 
@@ -369,6 +370,12 @@ function renderProfile() {
       <span>${t('profile.mail')}</span>
     </label>
     <p class="muted pf-note" style="margin:0">${t('profile.mailHint')}</p>
+    <div class="pf-row" style="margin-top:8px"><span>${t('profile.skin')}</span>
+      <select id="pfSkin" class="small">
+        <option value="paper"${(d.skin || 'paper') === 'paper' ? ' selected' : ''}>${t('profile.skinPaper')}</option>
+        <option value="sprites"${d.skin === 'sprites' ? ' selected' : ''}>${t('profile.skinSprites')}</option>
+      </select></div>
+    <p class="muted pf-note" style="margin:0">${t('profile.skinHint')}</p>
     <h3 class="pf-h">${t('profile.stats')}</h3>
     ${stats}
     <p class="muted pf-note">${t('profile.rankedNote')}</p>
@@ -389,6 +396,21 @@ function renderProfile() {
       profileData.mailNudge = on;
     } catch {
       e.target.checked = !on;
+      const msg = $('#pfMsg'); msg.className = 'pf-msg error'; msg.textContent = t('home.errNet');
+    }
+  });
+  // Оформление карты: сохраняем сразу и дублируем в localStorage — игра читает оттуда (см. skin.js)
+  $('#pfSkin').addEventListener('change', async e => {
+    const skin = e.target.value, prev = profileData.skin || 'paper';
+    try {
+      const r = await fetch('/api/profile/skin', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ skin })
+      });
+      if (!r.ok) throw new Error('save');
+      profileData.skin = me.skin = skin;
+      localStorage.setItem('sb_skin', skin);
+    } catch {
+      e.target.value = prev;
       const msg = $('#pfMsg'); msg.className = 'pf-msg error'; msg.textContent = t('home.errNet');
     }
   });

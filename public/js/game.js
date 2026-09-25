@@ -131,6 +131,7 @@ async function onGoogleCredential(resp) {
     if (!r.ok) { $('#nickError').textContent = errText(data) || t('home.errLogin'); return; }
     me = { loggedIn: true, nick: data.nick, email: data.email, avatar: data.avatar };
     localStorage.setItem('sb_nick', data.nick);
+    if (data.skin) SBSkin.set(data.skin);
     // Сокет подключался ДО входа (рукопожатие без cookie). Переподключаемся, чтобы сервер увидел
     // сессию; обработчик 'connect' сам сделает join — уже с cookie.
     authRetried = false;
@@ -152,6 +153,7 @@ async function onGoogleCredential(resp) {
       initGoogle();
       try { me = await (await fetch('/api/auth/me')).json(); } catch { /* не вошёл */ }
       if (me.loggedIn && me.nick) localStorage.setItem('sb_nick', me.nick); // аккаунт — источник правды
+      if (me.loggedIn && me.skin) SBSkin.set(me.skin);                        // оформление карты — из профиля
     }
   } catch { /* без Google тоже работаем */ }
   bootDone = true;
@@ -192,6 +194,7 @@ socket.on('state', s => {
   updatePeaceBanner(prev, s); // баннер мирного времени (режим «Развитие»)
   updatePauseUI(s); // ⏸ пауза реалтайма: кнопка + оверлей
   if (anyBurning()) ensureAnimLoop(); // низкое HP базы → запустить анимацию огня/дыма
+  if (ambientWanted()) ensureAnimLoop(); // живая карта: качка, ряби, рыба
   // Звук — украшение, и ронять им весь разбор состояния нельзя: однажды исключение отсюда
   // унесло с собой и заголовок вкладки, и туториал, и авто-пропуск ходов (всё, что ниже).
   try { Sound.onState(prev, s, myIdx()); } catch (e) { console.warn('звук:', e.message); }
@@ -272,7 +275,9 @@ function bezAng(e, t) {
 function animTick(now) {
   // 120Гц-дисплеи (ProMotion/новые телефоны): rAF стучит чаще, чем нужно — держим ~60 кадров/с.
   // Полкадра CPU/GC в подарок, а глазу разницы нет: движение и так сглаживание 4Гц-снапшотов.
-  if (now - lastFrameT < 15) { requestAnimationFrame(animTick); return; }
+  // «живая» анимация без событий (качка, ряби, рыба) — 30 кадров/с хватает, бережём батарею
+  const busy = effects.length || anyBurning() || fogFade.length || (state?.rt && state.status === 'active');
+  if (now - lastFrameT < (busy ? 15 : 32)) { requestAnimationFrame(animTick); return; }
   const dt = Math.min(0.05, (now - lastFrameT) / 1000); lastFrameT = now;
   // ⚡ реалтайм: корабли скользят к серверным позициям и ПЛАВНО доворачивают нос
   // (стейт ~4 Гц → экспоненциальное сглаживание координат и угла)
@@ -310,10 +315,18 @@ function animTick(now) {
   if (fogFade.length) fogFade = fogFade.filter(f => now - f.born < f.hold + f.fade); // отсев догоревших затуханий тумана
   updateBaseFires(dt);
   render(true); // каждый кадр — только канвас (DOM не трогаем, иначе магазин пересобирается 60 раз/сек)
-  // ⛈️ шторм: пока партия активна, цикл живёт всегда — корабли движутся непрерывно
-  if (effects.length || anyBurning() || fogFade.length || (state?.rt && state.status === 'active')) requestAnimationFrame(animTick);
+  // ⛈️ шторм: пока партия активна, цикл живёт всегда — корабли движутся непрерывно.
+  // ambient: живая карта тоже держит цикл (30 к/с), но событийные анимации по завершении
+  // всё равно делают один полный рендер (DOM) — как и раньше
+  const stillBusy = effects.length || anyBurning() || fogFade.length || (state?.rt && state.status === 'active');
+  if (busy && !stillBusy) { animPos.clear(); render(); }
+  if (stillBusy || ambientWanted()) requestAnimationFrame(animTick);
   else { rafOn = false; animPos.clear(); render(); } // анимация кончилась — финальный полный рендер (DOM тоже)
 }
+// нужна ли «живая» анимация карты сейчас: стиль включён, вкладка на виду, партия идёт и карта есть
+const ambientWanted = () => SBArt.ambientOn() && state?.status === 'active' && !!state.map;
+SBSkin.onReady = () => { if (state?.map) render(true); }; // спрайт догрузился — перерисовать карту
+document.addEventListener('visibilitychange', () => { if (ambientWanted()) ensureAnimLoop(); });
 
 // геометрия залпа в анимации: разнос стволов вдоль борта и вынос наружу к фальшборту (мировые ед.)
 const BS_SPACING = 12, BS_BEAM = 9;
@@ -1092,6 +1105,20 @@ function drawPolygon(cx, cy, shape, fill, stroke) {
   ctx.stroke();
 }
 
+// Остров в маркерном стиле: мелководье, тень, заливка фломастером, штриховка, двойной контур.
+// Контур переводим в экранные точки здесь — art.js о карте и камере не знает.
+function drawIsland(cx, cy, shape, radius, sand, edge) {
+  if (SBSkin.isSprites()) { SBSkin.island(ctx, sx(cx), sy(cy), radius * view.scale, ((cx * 7 + cy * 13) | 0) >>> 0, view.scale); return; }
+  const pts = shape.map(([dx, dy]) => [sx(cx + dx), sy(cy + dy)]);
+  SBArt.island(ctx, pts, { cx: sx(cx), cy: sy(cy), r: radius * view.scale, sand, edge,
+    seed: ((cx * 13 + cy * 7) | 0), k: view.scale });
+}
+
+// Подпись на карте: на тетради — как задано (тёмные чернила), на «живой карте» — белым с обводкой
+function mapText(str, x, y) {
+  if (SBSkin.isSprites()) SBSkin.text(ctx, String(str), x, y); else ctx.fillText(str, x, y);
+}
+
 function dashedCircle(cx, cy, r, color, width = 1.5) {
   ctx.beginPath();
   ctx.setLineDash([7, 6]);
@@ -1103,13 +1130,7 @@ function dashedCircle(cx, cy, r, color, width = 1.5) {
 }
 
 function hpBar(px, py, w, frac, color) {
-  ctx.fillStyle = 'rgba(255,255,255,.75)';
-  ctx.fillRect(px - w / 2, py, w, 5);
-  ctx.fillStyle = frac > 0.4 ? color : '#c0392b';
-  ctx.fillRect(px - w / 2, py, w * Math.max(0, frac), 5);
-  ctx.strokeStyle = '#2b3a55';
-  ctx.lineWidth = 0.8;
-  ctx.strokeRect(px - w / 2, py, w, 5);
+  SBArt.bar(ctx, px, py, w, Math.max(0, frac), frac > 0.4 ? color : '#c0392b'); // скруглённая, фломастером
 }
 // жёлтая шкала запаса ремонта — как HP-полоска, только жёлтая (заполнение = остаток зарядов / макс)
 function chargeBar(px, py, w, n, max) {
@@ -1175,7 +1196,10 @@ function drawFort(X, Y, R, accent, pal, withFlag) {
     const fh = R * 0.42;
     ctx.strokeStyle = '#2b3a55'; ctx.lineWidth = Math.max(1.4, R * 0.03); ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(X, Y + R * 0.04); ctx.lineTo(X, Y - fh); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(X, Y - fh); ctx.lineTo(X + R * 0.26, Y - fh + R * 0.09); ctx.lineTo(X, Y - fh + R * 0.18); ctx.closePath();
+    const fl = SBArt.flutter(X * 0.01); // флаг трепещет: кончик ходит вверх-вниз и чуть укорачивается
+    ctx.beginPath(); ctx.moveTo(X, Y - fh);
+    ctx.lineTo(X + R * (0.26 - 0.03 * Math.abs(fl)), Y - fh + R * (0.09 + 0.04 * fl));
+    ctx.lineTo(X, Y - fh + R * 0.18); ctx.closePath();
     ctx.fillStyle = accent; ctx.fill(); ctx.strokeStyle = '#2b3a55'; ctx.lineWidth = Math.max(0.6, R * 0.012); ctx.stroke();
     ctx.lineCap = 'butt';
   }
@@ -1186,12 +1210,19 @@ function drawBase(b, i, { alive, hpFrac, dim }) {
   const p = state.players[i];
   ctx.globalAlpha = dim ? 0.4 : 1;
   // ОСТРОВ-основание (бледнее камня форта, чтобы форт читался поверх) — форт ПОМЕНЬШЕ, остров виден по краям
-  drawPolygon(b.x, b.y, b.shape, alive ? '#eee6cd' : '#e0dbcb', '#9a8a55');
-  // форт МЕНЬШЕ острова: остриё бастиона = R*1.18 ≈ 0.64·b.radius, а остров в самом узком месте ~0.69·b.radius → не вылезает
-  drawFort(sx(b.x), sy(b.y), b.radius * view.scale * 0.54, p.color, alive ? FORT_STONE : FORT_DEAD, alive);
+  if (SBSkin.isSprites()) {
+    // спрайт острова с фортом (без флага) + флаг цвета игрока сверху
+    SBSkin.base(ctx, sx(b.x), sy(b.y), b.radius * view.scale, i, alive, view.scale);
+    if (alive) SBSkin.flag(ctx, sx(b.x), sy(b.y) - b.radius * view.scale * 0.1, b.radius * view.scale * 0.6, p.color, SBArt.flutter(b.x * 0.01));
+  } else {
+    drawIsland(b.x, b.y, b.shape, b.radius, alive ? '#eee6cd' : '#e0dbcb', '#9a8a55');
+    // форт МЕНЬШЕ острова: остриё бастиона = R*1.18 ≈ 0.64·b.radius, а остров в самом узком месте ~0.69·b.radius → не вылезает
+    drawFort(sx(b.x), sy(b.y), b.radius * view.scale * 0.54, p.color, alive ? FORT_STONE : FORT_DEAD, alive);
+  }
   ctx.font = `bold ${Math.max(12, 15 * view.scale)}px Neucha, cursive`;
   ctx.fillStyle = '#2b3a55'; ctx.textAlign = 'center';
-  SBIcons.text(ctx, nickOf(p), sx(b.x), sy(b.y + b.radius) + 16);
+  if (SBSkin.isSprites()) SBSkin.text(ctx, nickOf(p), sx(b.x), sy(b.y + b.radius) + 16);
+  else SBIcons.text(ctx, nickOf(p), sx(b.x), sy(b.y + b.radius) + 16);
   ctx.globalAlpha = 1;
   if (alive && hpFrac != null) hpBar(sx(b.x), sy(b.y + b.radius) + 22, 56, hpFrac, '#27ae60');
   else if (!alive) { ctx.font = `${20 * view.scale + 8}px serif`; SBIcons.text(ctx, '💀', sx(b.x), sy(b.y) + 6); }
@@ -1288,7 +1319,7 @@ function drawFogOverlay(circles) {
   const f = fogLayerCtx;
   f.setTransform(dpr, 0, 0, dpr, 0, 0);
   f.clearRect(0, 0, cw, ch);
-  f.fillStyle = 'rgba(150,160,178,0.46)';                       // единый ЛЁГКИЙ туман по всей карте
+  f.fillStyle = SBSkin.isSprites() ? 'rgba(8,18,40,0.6)' : 'rgba(150,160,178,0.46)'; // единый ЛЁГКИЙ туман по всей карте (на тёмной воде — тёмный)
   f.fillRect(sx(0), sy(0), m.w * view.scale, m.h * view.scale);
   f.globalCompositeOperation = 'destination-out';
   for (const c of circles) {                                    // текущая видимость — чисто, с мягким краем
@@ -1450,6 +1481,7 @@ function render(canvasOnly) {
     return;
   }
   computeView();
+  SBArt.tick(performance.now()); // фаза «живой» анимации — одна на кадр
   const m = state.map;
   const cw = canvas.clientWidth, ch = canvas.clientHeight;
   ctx.clearRect(0, 0, cw, ch);
@@ -1460,30 +1492,27 @@ function render(canvasOnly) {
   if (fog) fogUpdate(vis);                     // разведанное копится ТОЛЬКО от настоящего обзора
   if (fog && tutReveal) vis = [...vis, tutReveal]; // туториал: локально открыть зону у цели — КОПИЕЙ (visionCircles мемоизирован, кэш не трогаем)
 
-  // лист: фон и клетка до краёв экрана — сетка продолжается за границами карты
-  ctx.fillStyle = '#fdfbf3';
-  ctx.fillRect(0, 0, cw, ch);
-  ctx.strokeStyle = 'rgba(116,160,199,.35)';
-  ctx.lineWidth = 1;
-  const gridX0 = Math.floor(toMap(0, 0).x / 40) * 40;
-  const gridX1 = Math.ceil(toMap(cw, ch).x / 40) * 40;
-  const gridY0 = Math.floor(toMap(0, 0).y / 40) * 40;
-  const gridY1 = Math.ceil(toMap(cw, ch).y / 40) * 40;
-  ctx.beginPath(); // вся клетка ОДНИМ путём и одним stroke — не десятки отдельных
-  for (let x = gridX0; x <= gridX1; x += 40) { ctx.moveTo(sx(x), 0); ctx.lineTo(sx(x), ch); }
-  for (let y = gridY0; y <= gridY1; y += 40) { ctx.moveTo(0, sy(y)); ctx.lineTo(cw, sy(y)); }
-  ctx.stroke();
-  // (граница игрового поля убрана — сетка просто продолжается за краями карты)
+  // лист: бумага (зерно, виньетка) и клетка до краёв экрана — сетка продолжается за границами карты
+  // (граница игрового поля убрана). см. art.js: каждая пятая линия жирнее, как в тетради
+  const sprites = SBSkin.isSprites(); // скин из профиля: «живая карта» картинками или тетрадь
+  if (sprites) {
+    SBSkin.water(ctx, cw, ch, sx, sy, view.scale);
+    SBSkin.grid(ctx, cw, ch, sx, sy, toMap, 40);
+  } else {
+    SBArt.paper(ctx, cw, ch);
+    SBArt.grid(ctx, cw, ch, sx, sy, toMap, 40);
+    // ряби на воде — под всем остальным
+    SBArt.drawWaves(ctx, m, sx, sy, view.scale, cw, ch);
+  }
 
   // рыбные места
   for (const z of m.fishZones) {
     if (fog && !fogExploredAt(z.x, z.y) && !fogVisible(z.x, z.y, vis)) continue; // под туманом — пока не разведано (или подсвечено туториалом)
     const cap = z.cap || 4; // лимит судов зависит от размера зоны (см. fishZoneCap на сервере)
-    ctx.beginPath();
-    ctx.arc(sx(z.x), sy(z.y), z.radius * view.scale, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(120,170,210,.16)';
-    ctx.fill();
-    dashedCircle(z.x, z.y, z.radius, 'rgba(80,130,180,.6)');
+    // штриховка + дрожащее кольцо + рыбки; без маркерного стиля — плоский круг и пунктир как раньше
+    if (sprites) SBSkin.fishZone(ctx, sx(z.x), sy(z.y), z.radius * view.scale, view.scale);
+    else if (!SBArt.fishZone(ctx, sx(z.x), sy(z.y), z.radius * view.scale, (z.x * 31 + z.y) | 0, view.scale))
+      dashedCircle(z.x, z.y, z.radius, 'rgba(80,130,180,.6)');
     ctx.font = `${Math.max(14, 22 * view.scale)}px serif`;
     ctx.textAlign = 'center';
     SBIcons.text(ctx, '🐟', sx(z.x), sy(z.y) + 6);
@@ -1492,7 +1521,7 @@ function render(canvasOnly) {
       Math.hypot(s.x - z.x, s.y - z.y) <= z.radius).length;
     ctx.font = `${Math.max(10, 12 * view.scale)}px Neucha, cursive`;
     ctx.fillStyle = 'rgba(80,130,180,.85)';
-    ctx.fillText(`${Math.min(taken, cap)}/${cap}`, sx(z.x), sy(z.y) + 20);
+    mapText(`${Math.min(taken, cap)}/${cap}`, sx(z.x), sy(z.y) + 20);
   }
 
   // лут-острова (⛺ с аванпостом — постройка, флаг владельца, радиус перков, HP если побит)
@@ -1500,7 +1529,7 @@ function render(canvasOnly) {
     if (fog && !fogExploredAt(isl.x, isl.y) && !fogVisible(isl.x, isl.y, vis)) continue; // под туманом — пока не разведано (или подсвечено туториалом)
     const op = isl.outpost;
     ctx.globalAlpha = isl.looted && !op ? 0.45 : 1;
-    drawPolygon(isl.x, isl.y, isl.shape, '#e8d9a8', '#8a7a45');
+    drawIsland(isl.x, isl.y, isl.shape, isl.radius, '#e8d9a8', '#8a7a45');
     ctx.font = `${Math.max(12, 18 * view.scale)}px serif`;
     ctx.textAlign = 'center';
     if (op) {
@@ -1511,7 +1540,8 @@ function render(canvasOnly) {
       // Постройку рисуем в полтора раза крупнее клада: по ней читают уровень острова и чей он,
       // а значок клада рядом мельче — иначе они спорят за внимание.
       // draw() кладёт значок ровно по центру, поэтому сдвиг под базовую линию тут не нужен.
-      SBIcons.draw(ctx, def.icon, sx(isl.x), sy(isl.y), Math.max(18, 27 * view.scale));
+      if (sprites) SBSkin.marker(ctx, sx(isl.x), sy(isl.y), Math.max(22, 40 * view.scale), `outpost-${op.level}`, outpostName(op.level - 1), '#8e6e3a', view.scale);
+      else SBIcons.draw(ctx, def.icon, sx(isl.x), sy(isl.y), Math.max(18, 27 * view.scale));
       // флажок владельца над постройкой
       const fx0 = sx(isl.x) + 10 * view.scale, fy0 = sy(isl.y) - 16 * view.scale;
       ctx.strokeStyle = '#2b3a55'; ctx.lineWidth = 1.4;
@@ -1527,13 +1557,15 @@ function render(canvasOnly) {
         ctx.fillStyle = 'rgba(43,58,85,.25)'; ctx.fillRect(x0, y0, w, 4);
         ctx.fillStyle = '#c0392b'; ctx.fillRect(x0, y0, w * Math.max(0, op.hp / def.hp), 4);
       }
+    } else if (sprites && !isl.looted) {
+      SBSkin.marker(ctx, sx(isl.x), sy(isl.y), Math.max(18, 30 * view.scale), 'chest', '💰', '#d4ac0d', view.scale);
     } else {
       SBIcons.text(ctx, isl.looted ? '✖' : '💰', sx(isl.x), sy(isl.y) + 5);
     }
     if (!isl.looted) {
       ctx.font = `bold ${Math.max(11, 14 * view.scale)}px Neucha, cursive`;
       ctx.fillStyle = '#2b3a55';
-      ctx.fillText(isl.loot, sx(isl.x), sy(isl.y + isl.radius) + 14);
+      mapText(isl.loot, sx(isl.x), sy(isl.y + isl.radius) + 14);
     }
     ctx.globalAlpha = 1;
   }
@@ -1732,6 +1764,7 @@ function render(canvasOnly) {
   if (moveDemo && sel && mode === 'idle' && !aim) drawMoveDemo(sel); // демо жеста — в покое у штурвала
 
   drawEffects();
+  SBArt.drawGulls(ctx, m, sx, sy, view.scale, cw, ch); // чайки — небо, поверх тумана
   drawCommandWheel(); // 🎛 штурвал выбранного корабля — поверх всего
   if (state.wind && state.status === 'active') drawWindCompass(); // 🌬 компас ветра — во всех режимах
   updateMoveHint();
@@ -2128,34 +2161,25 @@ function drawShip(s, selected) {
     ctx.setLineDash([]);
   }
 
+  // стоящее судно: от борта время от времени расходится рябь (в движении — след, рябь не нужна)
+  if (!animPos.has(s.id) && !state.rt && !s._headingOverride && !SBSkin.isSprites()) SBArt.ripple(ctx, px, py, L, k, s.id);
   ctx.save();
-  ctx.translate(px, py);
-  ctx.rotate(pos.ang !== undefined ? pos.ang : currentHeading(s));
+  // качка на месте: своя фаза у каждого судна; в анимации хода/реалтайме позицию даёт animPos
+  const bob = animPos.has(s.id) ? { dy: 0, rot: 0 } : SBArt.bob(s.id, k);
+  ctx.translate(px, py + bob.dy);
+  ctx.rotate((pos.ang !== undefined ? pos.ang : currentHeading(s)) + bob.rot);
 
-  // корпус: остроносый, нос — по направлению движения
-  ctx.beginPath();
-  ctx.moveTo(-L / 2, 0);
-  ctx.quadraticCurveTo(-L / 2 + L * 0.12, -W / 2, 0, -W / 2);
-  ctx.quadraticCurveTo(L / 2 - L * 0.06, -W / 2 + 2 * k, L / 2 + L * 0.11, 0);
-  ctx.quadraticCurveTo(L / 2 - L * 0.06, W / 2 - 2 * k, 0, W / 2);
-  ctx.quadraticCurveTo(-L / 2 + L * 0.12, W / 2, -L / 2, 0);
-  ctx.closePath();
-  ctx.fillStyle = hull;
-  ctx.fill();
+  if (SBSkin.isSprites()) {
+    // спрайт судна (паруса перекрашены в цвет игрока) или заглушка-квадрат с названием типа
+    SBSkin.ship(ctx, s.type, L, W, k, hull, isPirate, s.boss, null); // подпись типа — горизонтально, ниже
+    ctx.restore();
+    shipLabels(s, isPirate, px, py, L, k, st);
+    return;
+  }
+  // корпус: остроносый, нос — по направлению движения; тень, заливка фломастером, блик, контур, палуба
+  SBArt.hull(ctx, L, W, k, hull);
   ctx.strokeStyle = '#2b3a55';
-  ctx.lineWidth = Math.max(0.8, 1.6 * k);
-  ctx.stroke();
-
-  // палуба
-  ctx.beginPath();
-  ctx.moveTo(-L / 2 + L * 0.09, 0);
-  ctx.quadraticCurveTo(0, -W / 2 + W * 0.3, L / 2 - L * 0.03, 0);
-  ctx.quadraticCurveTo(0, W / 2 - W * 0.3, -L / 2 + L * 0.09, 0);
-  ctx.closePath();
-  ctx.fillStyle = '#e8d9a8';
-  ctx.fill();
   ctx.lineWidth = Math.max(0.6, 1 * k);
-  ctx.stroke();
 
   const masts = SHIP_MASTS[s.type] ?? 1;
   if (!masts) {
@@ -2243,16 +2267,23 @@ function drawShip(s, selected) {
   ctx.fill();
 
   ctx.restore();
-
+  shipLabels(s, isPirate, px, py, L, k, st);
+}
+// Подписи у судна (флаг и награда пирата, полоска HP) — общие для обоих скинов
+function shipLabels(s, isPirate, px, py, L, k, st) {
+  if (SBSkin.isSprites() && !SBSkin.hasShip(s.type, isPirate, s.boss)) { // заглушка без спрайта: что это за судно
+    ctx.font = `bold ${Math.max(9, 11 * k)}px Neucha, cursive`; ctx.textAlign = 'center';
+    SBSkin.text(ctx, shipName(s.type), px, py + 4 * k);
+  }
   if (isPirate) {
     ctx.font = `${Math.max(9, 16 * k)}px serif`;
     ctx.textAlign = 'center';
     SBIcons.text(ctx, s.boss ? '👑🏴‍☠️' : '🏴‍☠️', px, py - L * 0.5);
     ctx.font = `bold ${Math.max(9, 14 * k)}px Neucha, cursive`;
     ctx.fillStyle = s.boss ? '#a87900' : '#2b3a55';
-    SBIcons.text(ctx, `💰${s.bounty}`, px, py + L * 0.62 + 16 * k);
+    if (SBSkin.isSprites()) SBSkin.text(ctx, `💰${s.bounty}`, px, py + L * 0.62 + 16 * k);
+    else SBIcons.text(ctx, `💰${s.bounty}`, px, py + L * 0.62 + 16 * k);
   }
-
   hpBar(px, py + L * 0.42 + 4, Math.max(16, L * 0.9), s.hp / (s.maxHp || st.hp), '#27ae60');
 }
 

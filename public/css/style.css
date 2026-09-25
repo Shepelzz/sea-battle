@@ -158,6 +158,15 @@ tr:first-child td { font-weight: bold; }
 .actions-bar #infoBtn { margin-left: auto; flex: none; }
 #panelBody { display: flex; flex-direction: column; gap: 12px; }
 
+/* заголовки панели подчёркнуты жёлтым маркером-выделителем (косой, неровный мазок) */
+aside.panel h3 { position: relative; display: inline-block; z-index: 0; }
+aside.panel h3::after {
+  content: ''; position: absolute; left: -4px; right: -8px; bottom: .12em; height: .42em; z-index: -1;
+  background: rgba(250, 222, 90, .5);
+  border-radius: 2px 8px 3px 6px / 6px 3px 7px 2px;
+  transform: rotate(-1.2deg) skewX(-10deg);
+}
+
 aside.panel {
   width: 340px;
   min-width: 340px;

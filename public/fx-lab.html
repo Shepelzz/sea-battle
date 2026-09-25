@@ -49,6 +49,9 @@
       <div class="sliders" data-group="boom"></div>
       <h3>💰 Всплывающие надписи (−урон, +лечение, +золото, +монеты)</h3>
       <div class="sliders" data-group="gold"></div>
+      <h3>Маркерный стиль карты</h3>
+      <p class="muted" style="margin:0 0 6px">Стиль и «живая» анимация в игре (public/js/art.js). 1 — вкл, 0 — выкл. Смотреть — в самой игре: сцена лаборатории рисует старым способом.</p>
+      <div class="sliders" data-group="art"></div>
       <div class="btn-row" style="margin-top:16px">
         <button class="primary" id="saveBtn">💾 Применить в игре</button>
         <button class="small" id="resetBtn">↩️ Сбросить на дефолт</button>
@@ -423,6 +426,12 @@ const SLIDER_DEFS = {
     ['rise', 'Высота всплытия', 10, 150, 5],
     ['grow', 'Рост размера', 0, 1.5, 0.05],
     ['font', 'Размер шрифта', 10, 32, 1]
+  ],
+  art: [
+    ['enabled', 'Маркерный стиль (0/1)', 0, 1, 1],
+    ['motion', 'Живая анимация: качка, ряби, рыба, чайки (0/1)', 0, 1, 1],
+    ['grain', 'Зерно бумаги', 0, 1, 0.1],
+    ['waves', 'Плотность рябей', 0, 2, 0.1]
   ]
 };
 

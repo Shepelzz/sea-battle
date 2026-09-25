@@ -32,7 +32,11 @@
     "since": "Sailing since",
     "empty": "No finished games yet. Play one and your service record shows up here.",
     "rankedNote": "Only online games against people score points: bot matches, hotseat and Full Speed Ahead are counted but bring no points.",
-    "loading": "Fetching the ship's papers…"
+    "loading": "Fetching the ship's papers…",
+    "skin": "Map style",
+    "skinPaper": "Squared notebook",
+    "skinSprites": "Living map (beta)",
+    "skinHint": "how the battlefield is drawn: pencil on paper or artwork. Applies on this device right away, elsewhere after you sign in"
   },
   "home": {
     "title": "Sea Battle on squared paper",
@@ -724,7 +728,8 @@
     "noCoinsFor": "Not enough coins (need {{price}} 🪙)",
     "portFull": "Your port is already intact",
     "needLogin": "You need to sign in",
-    "tooManyGames": "Too many unfinished games (max {{max}}). Finish or close one first."
+    "tooManyGames": "Too many unfinished games (max {{max}}). Finish or close one first.",
+    "badSkin": "Unknown map style"
   },
   "log": {
     "joined": "{{nick}} joined the battle ({{n}}/{{max}})",

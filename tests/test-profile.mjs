@@ -95,6 +95,12 @@ await db.init();   // повторный старт (рестарт сервер
   eq('отказ сохраняется', (await db.getPlayer('M')).mailNudge, false);
   await db.setPlayerMailNudge('M', true);
   eq('и возвращается обратно', (await db.getPlayer('M')).mailNudge, true);
+  // оформление карты (skin): у старых и новых записей пусто (клиент трактует как «тетрадь»), сохраняется
+  eq('skin у старой записи не задан', vet.skin ?? null, null);
+  await db.setPlayerSkin('M', 'sprites');
+  eq('skin сохраняется', (await db.getPlayer('M')).skin, 'sprites');
+  await db.setPlayerSkin('M', 'paper');
+  eq('skin меняется обратно', (await db.getPlayer('M')).skin, 'paper');
 }
 
 // === 3. Профиль считает все партии, лидерборд — только рейтинговые ===

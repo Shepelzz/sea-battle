@@ -615,7 +615,7 @@ app.get('/api/auth/me', async (req, res) => {
   const pid = accountPidFromReq(req);
   if (!pid) return res.json({ loggedIn: false });
   const prof = await db.getPlayer(pid);
-  res.json({ loggedIn: true, nick: prof?.nick || '', email: prof?.email || '', avatar: prof?.avatar || '', lang: normLang(prof?.lang) });
+  res.json({ loggedIn: true, nick: prof?.nick || '', email: prof?.email || '', avatar: prof?.avatar || '', lang: normLang(prof?.lang), skin: normSkin(prof?.skin) });
 });
 
 // ─── Профиль игрока ───────────────────────────────────────────────────────────
@@ -630,7 +630,7 @@ app.get('/api/profile', async (req, res) => {
   res.json({
     nick: prof?.nick || '', email: prof?.email || '', avatar: prof?.avatar || '',
     provider: prof?.provider || '', lang: normLang(prof?.lang),
-    createdAt: prof?.createdAt || null, mailNudge: prof?.mailNudge !== false, stats
+    createdAt: prof?.createdAt || null, mailNudge: prof?.mailNudge !== false, skin: normSkin(prof?.skin), stats
   });
 });
 
@@ -652,6 +652,19 @@ app.post('/api/profile/mail', async (req, res) => {
   const on = !!req.body?.mailNudge;
   await db.setPlayerMailNudge(pid, on);
   res.json({ ok: true, mailNudge: on });
+});
+
+// Оформление карты: 'paper' — тетрадь в клетку (вектор), 'sprites' — растровые картинки (public/sprites/).
+// Живёт в профиле, чтобы ехало за игроком между устройствами; клиент дублирует в localStorage('sb_skin').
+const SKINS = ['paper', 'sprites'];
+const normSkin = v => (SKINS.includes(v) ? v : 'paper');
+app.post('/api/profile/skin', async (req, res) => {
+  const pid = accountPidFromReq(req);
+  if (!pid) return res.status(401).json({ error: 'err.needLogin' });
+  const skin = req.body?.skin;
+  if (!SKINS.includes(skin)) return res.status(400).json({ error: 'err.badSkin' });
+  await db.setPlayerSkin(pid, skin);
+  res.json({ ok: true, skin });
 });
 
 // Смена языка. Гостю — кука, вошедшему — ещё и профиль (тогда язык едет за ним на любое устройство).
