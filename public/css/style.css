@@ -22,7 +22,7 @@
 
 /* верхний безопасный отступ: в обычном браузере — вырез/статус-бар телефона (env), в Telegram Mini App
    во весь экран — статус-бар + кнопки Телеграма (их SDK отдаёт --tg-*-inset-*, см. body.tg-fullscreen) */
-:root { --safe-top: env(safe-area-inset-top, 0px); }
+:root { --safe-top: env(safe-area-inset-top, 0px); --safe-bottom: env(safe-area-inset-bottom, 0px); }
 
 * { box-sizing: border-box; }
 
@@ -771,7 +771,7 @@ aside.panel {
     position: fixed; left: 0; right: 0; bottom: 0; width: 100%; min-width: 0;
     max-height: 72dvh; overflow-y: auto; z-index: 40;
     border-left: none; border-top: 2px solid var(--ink);
-    padding: 8px 12px calc(10px + env(safe-area-inset-bottom));
+    padding: 8px 12px calc(10px + var(--safe-bottom));
     box-shadow: 0 -4px 14px rgba(43, 58, 85, .18);
   }
   aside.panel.collapsed #panelBody { display: none; }
@@ -786,7 +786,7 @@ aside.panel {
   /* действия с кораблём — сверху по умолчанию; .at-bottom = снизу (зависит от того, в какой
      половине поля стоит выбранный корабль, чтобы панель его не перекрывала). Тосты — сверху. */
   .action-bar { bottom: auto; top: calc(12px + var(--safe-top)); padding: 8px 10px; gap: 6px; max-width: 96vw; flex-wrap: wrap; justify-content: center; }
-  .action-bar.at-bottom { top: auto; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
+  .action-bar.at-bottom { top: auto; bottom: calc(12px + var(--safe-bottom)); }
   .toasts { top: calc(var(--safe-top) + 6px); max-width: 92vw; }
 }
 
@@ -898,12 +898,13 @@ body.debug-on { padding-bottom: var(--dbg-h); }
 body.tg-fullscreen {
   --tg-top: calc(var(--tg-safe-area-inset-top, 0px) + var(--tg-content-safe-area-inset-top, 0px));
   --safe-top: var(--tg-top);
+  /* низ: полоска «домой» iPhone. Телеграм иногда отдаёт 0 — держим минимум 24px, чтобы ряд кнопок не резало */
+  --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--tg-safe-area-inset-bottom, 0px), 24px);
 }
 body.tg-fullscreen .wrap { padding-top: calc(32px + var(--tg-top)); }
 body.tg-fullscreen .top-bar { top: calc(6px + var(--tg-top)); }
 body.tg-fullscreen .overlay > .note { margin-top: var(--tg-top); }
 @media (max-width: 900px) {
-  body.tg-fullscreen aside.panel { padding-bottom: var(--tg-safe-area-inset-bottom, 0px); }
   body.tg-fullscreen .game-layout aside.panel:not(.collapsed) { padding-top: var(--tg-top); }
 }
 .pf-links { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 8px; }
