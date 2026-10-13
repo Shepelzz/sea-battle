@@ -3931,3 +3931,18 @@ function drawBotEyes() {
   }
   ctx.restore();
 }
+
+// Имя аккаунта могло смениться без нас (слияние аккаунтов из другого окна): вернувшись на вкладку,
+// перечитываем «кто я», чтобы ник в localStorage и в лобби не остался старым
+document.addEventListener('visibilitychange', async () => {
+  if (document.hidden || !me.loggedIn) return;
+  try {
+    const fresh = await (await fetch('/api/auth/me')).json();
+    if (fresh.loggedIn && fresh.nick && fresh.nick !== me.nick) {
+      me = { ...me, ...fresh };
+      localStorage.setItem('sb_nick', fresh.nick);
+      if (state) render();
+    }
+  } catch { /* сеть — оставим как есть */ }
+});
+

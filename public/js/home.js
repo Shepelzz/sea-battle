@@ -210,6 +210,7 @@ $('#hotseatBtn').addEventListener('click', async () => {
 // Личность хранится в httpOnly-cookie (ставит сервер) — в JS её нет; состояние знаем из /api/auth/me.
 let GOOGLE_ID = null, googleReady = false, me = { loggedIn: false }, pendingAction = null;
 let linkMode = false;   // кнопка Google в профиле = ПРИВЯЗКА к текущему аккаунту, а не вход
+let TG_CFG = null;      // /api/config.telegram: { bot, googleRedirect }
 
 function renderBadge() {
   const box = $('#authBadge');
@@ -342,10 +343,21 @@ async function openProfile() {
     const r = await fetch('/api/profile');
     profileData = r.ok ? await r.json() : null;
   } catch { profileData = null; }
+  // профиль — источник правды об имени: если оно сменилось (слияние аккаунтов), применить везде
+  if (profileData?.nick && profileData.nick !== me.nick) {
+    me.nick = profileData.nick;
+    localStorage.setItem('sb_nick', me.nick);
+    $('#nick').value = me.nick; $('#botNick').value = me.nick;
+    renderBadge();
+  }
   if (!profileData) { $('#profileBody').innerHTML = `<p class="error">${t('home.errNet')}</p>`; return; }
   renderProfile();
 }
 function closeProfile() { $('#profileOverlay').classList.add('hidden'); linkMode = false; }
+// Имя аккаунта могло измениться без нас: слили аккаунты из другого окна/браузера (из Телеграма
+// привязка Google идёт через внешний браузер). Возвращаясь на вкладку — перечитываем «кто я».
+document.addEventListener('visibilitychange', () => { if (!document.hidden && me.loggedIn) loadMe(); });
+window.addEventListener('focus', () => { if (me.loggedIn) loadMe(); });
 
 // ====== Привязка аккаунтов (профиль) ======
 // Два способа слить второго капитана в этот: кнопка Google прямо здесь и код «введи на другом
@@ -376,7 +388,10 @@ async function startTelegramLink() {
     const r = await fetch('/api/profile/link/code', { method: 'POST' });
     const data = await r.json();
     if (!r.ok) { msg.className = 'pf-msg error'; msg.textContent = errText(data) || t('home.errNet'); return; }
-    const url = `${location.origin}${location.pathname}?link=${encodeURIComponent(data.code)}`;
+    // с секретом Google на сервере — сразу на форму Google и обратно в Телеграм; без него — через сайт
+    const url = TG_CFG?.googleRedirect
+      ? `${location.origin}/link/google?code=${encodeURIComponent(data.code)}`
+      : `${location.origin}${location.pathname}?link=${encodeURIComponent(data.code)}`;
     await SBTelegram.openLink(url);
     msg.className = 'pf-msg ok'; msg.textContent = t('profile.linkOpened');
   } catch { msg.className = 'pf-msg error'; msg.textContent = t('home.errNet'); }
@@ -601,11 +616,17 @@ $('#loginOverlay').addEventListener('click', e => { if (e.target.id === 'loginOv
     });
     // авторизация
     GOOGLE_ID = cfg.googleClientId || null;
+    TG_CFG = cfg.telegram || null;
     if (cfg.telegram && SBTelegram.inTelegram) {   // открыли из Телеграма — входим сразу
       telegramAutoLogin().then(async () => {
-        // пришли по приглашению t.me/<бот>?startapp=<id партии> — сразу в её лобби
         const gid = await SBTelegram.takeStartParam();
-        if (gid) location.href = '/game/' + gid;
+        if (gid === 'linked' || gid === 'linkfail') {   // вернулись из Google после привязки
+          await loadMe();
+          await openProfile();
+          const msg = $('#pfLinkMsg');
+          if (msg) { msg.className = gid === 'linked' ? 'pf-msg ok' : 'pf-msg error'; msg.textContent = t(gid === 'linked' ? 'profile.linkDone' : 'profile.linkFailed'); }
+          socket.disconnect(); socket.connect();
+        } else if (gid) location.href = '/game/' + gid;   // приглашение t.me/<бот>?startapp=<id партии> — в лобби
       });
     }
     if (GOOGLE_ID) initGoogle();

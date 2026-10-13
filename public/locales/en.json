@@ -40,7 +40,8 @@
     "linkAlready": "This sign-in method is already linked.",
     "linkGoogleTg": "Link a Google account",
     "linkOpened": "Opened the browser: sign in with Google there and the accounts merge. Then come back here.",
-    "linkBack": "You can go back to Telegram."
+    "linkBack": "You can go back to Telegram.",
+    "linkFailed": "Linking failed: Google did not confirm the sign-in or the link expired. Try again."
   },
   "home": {
     "title": "Sea Battle on squared paper",

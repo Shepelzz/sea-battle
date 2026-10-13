@@ -3,6 +3,9 @@
 // Необязательные переменные окружения:
 //   DATABASE_URL (или DB_HOST/DB_USER/DB_PASSWORD/DB_NAME) — подключение к MySQL (см. db.js)
 //   GOOGLE_CLIENT_ID — включает «Войти через Google»
+//   GOOGLE_CLIENT_SECRET — с ним привязка Google из Telegram идёт редиректом: браузер → форма Google →
+//                          наш /api/auth/google/callback → обратно в Телеграм (в консоли Google нужно
+//                          разрешить redirect URI <BASE_URL>/api/auth/google/callback)
 //   TELEGRAM_BOT_TOKEN — включает Telegram Mini App: вход по initData, напоминания «твой ход» от бота,
 //                        ответ бота на /start (long polling; TELEGRAM_POLLING=0 — выключить опрос);
 //   TELEGRAM_BOT_NAME — имя бота (без @) для ссылок-приглашений t.me/<бот>?startapp=<id партии>
@@ -21,7 +24,7 @@ import {
   timeoutTurn, publicState, setColor, randomFreeColor, forceFinish, lobbyExpired, gameStale, myGameSummary, lobbyTags, PALETTE, spawnPirateAt, spawnShipAt
 } from './game.js';
 import {
-  SESSION_COOKIE, pidOf, googlePid, telegramPid, verifyTelegramInitData, telegramName, cleanNick, resolveAccountNick, parseCookies, sessionTokenOf,
+  SESSION_COOKIE, pidOf, googlePid, telegramPid, verifyTelegramInitData, telegramName, cleanNick, resolveAccountNick, parseCookies, sessionTokenOf, pickNick,
   buildSetCookie, buildClearCookie, createSessionStore, newSessionToken, createLinkCodes
 } from './auth.js';
 import { chooseBotAction, BOT_NAMES, duelFleetPlan } from './bot.js';
@@ -289,10 +292,18 @@ app.use(express.static(PUBLIC, {
 // --- Google Sign-In (опционально) ---
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || null;
 let googleClient = null;
+// OAuth-клиент с секретом и адресом возврата — для привязки Google редиректом (из Телеграма)
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || null;
+const GOOGLE_CALLBACK = `${(process.env.BASE_URL || '').replace(/\/+$/, '')}/api/auth/google/callback`;
+let googleOAuth = null;
 if (GOOGLE_CLIENT_ID) {
   const { OAuth2Client } = await import('google-auth-library');
   googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
   console.log('🔑 Google Sign-In включён');
+  if (GOOGLE_CLIENT_SECRET && process.env.BASE_URL) {
+    googleOAuth = new OAuth2Client({ clientId: GOOGLE_CLIENT_ID, clientSecret: GOOGLE_CLIENT_SECRET, redirectUri: GOOGLE_CALLBACK });
+    console.log('🔗 Привязка Google редиректом включена:', GOOGLE_CALLBACK);
+  }
 }
 
 // --- Почта (опционально) ---
@@ -384,6 +395,8 @@ const accountPidFromReq = req => accountPidFromSession(sessionTokenOf(req.header
 const canonicalPid = async pid => (await db.resolvePid(pid)) || pid;
 // Коды привязки «введи на другом аккаунте» — в памяти, 10 минут (см. auth.js)
 const linkCodes = createLinkCodes();
+// ник для партии: у аккаунта — из профиля (присланный не затирает), у гостя — присланный (см. pickNick)
+const nickFor = async (pid, sent, isAccount) => pickNick(isAccount ? (await db.getPlayer(pid))?.nick : null, sent, isAccount);
 
 // Слияние двух капитанов в одного: from растворяется в into. База (результаты, сессии, профиль,
 // алиасы) — db.mergePlayers; живые сессии в памяти — remap; партии в памяти — переписать pid
@@ -391,10 +404,11 @@ const linkCodes = createLinkCodes();
 async function mergeAccounts(from, into, provider, label) {
   await db.mergePlayers(from, into, provider, label);
   sessions.remap(from, into);
+  const nick = cleanNick((await db.getPlayer(into))?.nick);   // имя объединённого капитана — и в живых партиях
   let touched = 0;
   for (const g of games.values()) {
     let changed = false;
-    for (const p of g.players) if (p.id === from) { p.id = into; changed = true; }
+    for (const p of g.players) if (p.id === from) { p.id = into; changed = true; if (nick && g.status !== 'finished') p.nick = nick; }
     if (g.hostPid === from) { g.hostPid = into; changed = true; }
     if (g.hotseatOwner === from) { g.hotseatOwner = into; changed = true; }
     for (const l of g.log || []) if (l.to === from) { l.to = into; changed = true; }
@@ -618,7 +632,7 @@ function maybeAutoFinish(game) {
 
 app.get('/api/config', (_req, res) => res.json({
   googleClientId: GOOGLE_CLIENT_ID, palette: PALETTE, cheats: CHEATS_ENABLED,
-  telegram: TELEGRAM_BOT_TOKEN ? { bot: TELEGRAM_BOT_NAME } : null,   // вход из Telegram Mini App включён
+  telegram: TELEGRAM_BOT_TOKEN ? { bot: TELEGRAM_BOT_NAME, googleRedirect: !!googleOAuth } : null,   // вход из Telegram Mini App включён; googleRedirect — привязка Google «туда и обратно»
   debug: DEBUG,   // 🐞 SB_DEBUG=1: консоль решений бота под картой + инструменты над ней
   version: VERSION,           // 🏷 номер сборки, коммит и его дата — для подвала главной
   // доступные игровые режимы (для селектора при создании игры)
@@ -751,6 +765,49 @@ app.post('/api/profile/link/code', async (req, res) => {
   if (!pid) return res.status(401).json({ error: 'err.needLogin' });
   res.json({ ok: true, code: linkCodes.issue(pid), ttlMin: 10 });
 });
+// Привязка Google РЕДИРЕКТОМ (из Телеграма): мини-апп открывает во внешнем браузере
+// /link/google?code=<код> → мы сразу шлём на форму Google (state = код) → Google возвращает на
+// /api/auth/google/callback → меняем code на id_token, сливаем Telegram-капитана в Google-капитана
+// (или привязываем Google, если им ещё не играли) → 302 обратно в Телеграм: t.me/<бот>?startapp=linked.
+// Человек видит только форму Google и снова мини-апп — сайт между ними не появляется.
+const backToTelegram = (ok) => (TELEGRAM_BOT_NAME ? `https://t.me/${TELEGRAM_BOT_NAME}?startapp=${ok ? 'linked' : 'linkfail'}` : null);
+function linkResultPage(res, ok, lang = SOURCE_LANG) {
+  const back = backToTelegram(ok);
+  if (back) return res.redirect(302, back);
+  res.status(ok ? 200 : 400).type('html').send(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><body style="font-family:sans-serif;padding:24px"><p>${ok ? 'OK' : 'Error'}</p></body>`);
+}
+app.get('/link/google', (req, res) => {
+  const code = String(req.query.code || '');
+  if (!googleOAuth) return res.redirect(302, `/?link=${encodeURIComponent(code)}`);   // без секрета — старый путь через сайт
+  if (!linkCodes.has(code)) return linkResultPage(res, false);
+  res.redirect(302, googleOAuth.generateAuthUrl({ scope: ['openid', 'email', 'profile'], state: code, prompt: 'select_account' }));
+});
+app.get('/api/auth/google/callback', async (req, res) => {
+  if (!googleOAuth) return res.status(404).end();
+  const state = String(req.query.state || ''), gcode = String(req.query.code || '');
+  if (!gcode || !linkCodes.has(state)) return linkResultPage(res, false);
+  let payload;
+  try {
+    const { tokens } = await googleOAuth.getToken(gcode);
+    payload = (await googleClient.verifyIdToken({ idToken: tokens.id_token, audience: GOOGLE_CLIENT_ID })).getPayload();
+  } catch (e) { console.error('Google callback:', e.message); return linkResultPage(res, false); }
+  const from = linkCodes.claim(state);                     // Telegram-капитан, нажавший «привязать»
+  if (!from) return linkResultPage(res, false);
+  const gpid = await canonicalPid(googlePid(payload.sub));  // Google-капитан (или куда он уже привязан)
+  try {
+    if (gpid === from) { /* уже один и тот же */ }
+    else if (await db.getPlayer(gpid)) {
+      await mergeAccounts(from, gpid, 'telegram', (await db.getPlayer(from))?.nick || null);   // старый Google-аккаунт — главный: имя и статы его
+    } else {
+      // Google-ом ещё не играли: он становится просто ещё одним входом в Telegram-капитана
+      const me = await db.getPlayer(from);
+      await db.addLink(googlePid(payload.sub), from, 'google', payload.email || null);
+      if (me && !me.email) db.upsertPlayer(from, me.nick, payload.email || null, null, me.avatar || payload.picture || null);
+    }
+  } catch (e) { console.error('Привязка Google:', e.message); return linkResultPage(res, false); }
+  linkResultPage(res, true);
+});
+
 app.post('/api/profile/link/claim', async (req, res) => {
   const pid = accountPidFromReq(req);
   if (!pid) return res.status(401).json({ error: 'err.needLogin' });
@@ -802,7 +859,7 @@ app.post('/api/auth/logout', (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/api/games', (req, res) => {
+app.post('/api/games', async (req, res) => {
   const { token, nick, maxPlayers, turnTimer, mode, nicks, color, colors } = req.body || {};
   const accountPid = accountPidFromReq(req);                 // вошёл через Google? (по cookie)
   const pid = accountPid || (token ? pidOf(token) : null);   // иначе — гостевой токен (одиночка/хотсит)
@@ -840,7 +897,7 @@ app.post('/api/games', (req, res) => {
     const gmode = pickMode(req.body.gameMode);
     const duel = !!GAME_MODES[gmode]?.duel;
     const botCount = duel ? 1 : Math.min(3, Math.max(1, +req.body.bots || 1)); // дуэль — ровно 1 бот (1на1)
-    const nm = cleanNick(nick);
+    const nm = await nickFor(pid, nick, !!accountPid);
     if (!nm) return res.status(400).json({ error: 'err.needNick' });
     // ⚡ «Полный вперёд» (реалтайм, бета) — тумблер, доступен в любом режиме
     if (req.body.realtime && !realtimeAllowed(gmode))
@@ -885,7 +942,7 @@ app.post('/api/games', (req, res) => {
       });
     closeLobby(openLobby);   // пересоздаём: старое закрываем, кто в нём сидел — на главную
   }
-  const nm = cleanNick(nick);
+  const nm = await nickFor(pid, nick, !!accountPid);
   if (!nm) return res.status(400).json({ error: 'err.needNickToken' });
   const gmode = pickMode(req.body.gameMode);
   // ⚡ «Полный вперёд» (реалтайм, бета): онлайн МОЖНО в любом режиме, но вне рейтинга (isRanked учитывает)
@@ -936,7 +993,7 @@ io.on('connection', socket => {
   });
   socket.on('lobbies:unsubscribe', () => socket.leave('lobbies'));
 
-  socket.on('join', ({ gameId, token, nick, color }, ack) => {
+  socket.on('join', async ({ gameId, token, nick, color } = {}, ack) => {
     const game = getGame(gameId);
     if (!game) return ack?.({ ok: false, error: 'err.gameNotFound' });
     const accountPid = socket.data.accountPid;
@@ -944,7 +1001,7 @@ io.on('connection', socket => {
     if (game.config?.listed && googleClient && game.status === 'lobby' && !accountPid)
       return ack?.({ ok: false, error: 'err.needGoogle', needAuth: true });
     const pid = accountPid || (token ? pidOf(token) : null);
-    const nm = cleanNick(nick);
+    const nm = pid ? await nickFor(pid, nick, !!accountPid) : '';   // у аккаунта ник из профиля, не из localStorage клиента
     if (!pid || !nm) return ack?.({ ok: false, error: 'err.needNick' });
     // хотсит: владелец устройства управляет всеми игроками
     const isHotseatOwner = !!(game.config?.hotseat && game.hotseatOwner === pid);

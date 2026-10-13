@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 // Покрывают: стабильность pid аккаунта (кросс-девайс), гость≠аккаунт, нормализацию ника,
 // парсинг/сборку cookie (включая Secure только на проде), TTL хранилища сессий, isRanked.
 import {
-  pidOf, googlePid, telegramPid, verifyTelegramInitData, telegramName, cleanNick, resolveAccountNick, parseCookies, sessionTokenOf, createLinkCodes,
+  pidOf, googlePid, telegramPid, verifyTelegramInitData, telegramName, cleanNick, resolveAccountNick, parseCookies, sessionTokenOf, createLinkCodes, pickNick,
   buildSetCookie, buildClearCookie, createSessionStore, newSessionToken,
   SESSION_COOKIE, SESSION_TTL_MS
 } from '../server/auth.js';
@@ -201,8 +201,21 @@ no('Telegram ≠ Google для одного числа', telegramPid(5) === goog
   const c5 = codes.issue('gBBB'); t = 2000;
   eq('протухший код не принимается', codes.claim(c5), null);
   eq('чужой/несуществующий — null', codes.claim('ZZZZZZ'), null);
+  const c6 = codes.issue('tCCC');
+  yes('has видит живой код и не сжигает его', codes.has(c6.toLowerCase()) && codes.has(c6));
+  yes('has не знает чужой', !codes.has('ZZZZZZ'));
+  eq('после has код всё ещё можно забрать', codes.claim(c6), 'tCCC');
   eq('size чистит протухшие', codes.size(), 0);
 }
+
+
+// === Ник для партии: у аккаунта — из профиля, присланный клиентом не затирает ===
+eq('аккаунт: профиль главнее присланного', pickNick('Капитан', 'Старое имя из localStorage', true), 'Капитан');
+eq('аккаунт без ника в профиле — присланный', pickNick('', 'Новичок', true), 'Новичок');
+eq('аккаунт: профиль null — присланный', pickNick(null, 'Новичок', true), 'Новичок');
+eq('гость: всегда присланный', pickNick('Чужой', 'Гость', false), 'Гость');
+eq('гость без ника — пусто (вызывающий отвергнет)', pickNick('Чужой', '   ', false), '');
+eq('режем по длине 20', pickNick('x'.repeat(30), '', true).length, 20);
 
 console.log(fail ? `❌ test-auth: провалено ${fail}, прошло ${ok}` : `✅ test-auth: все ${ok} проверок прошли`);
 process.exit(fail ? 1 : 0);

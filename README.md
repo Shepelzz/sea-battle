@@ -134,6 +134,7 @@ HP порта — 840.
 | Переменная | Что включает |
 |---|---|
 | `GOOGLE_CLIENT_ID` | Кнопку «Войти через Google» (ник остаётся свой, почта — для уведомлений) |
+| `GOOGLE_CLIENT_SECRET` | Привязку Google из Telegram Mini App редиректом «форма Google → обратно в Телеграм» (нужен `BASE_URL` и redirect URI `<BASE_URL>/api/auth/google/callback` в консоли Google) |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | Письма «твой ход, 10 минут» при нажатии «Поторопить» |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_NAME` | Telegram Mini App: вход из Телеграма, приглашения `t.me/<бот>?startapp=…`, «поторопить» сообщением от бота, ответ на `/start` (см. `TELEGRAM.md`; `TELEGRAM_POLLING=0` выключает опрос) |
 | `BASE_URL` | Адрес сайта для ссылок в письмах (например `https://game.example.ua`) |

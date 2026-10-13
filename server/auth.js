@@ -65,6 +65,13 @@ export const resolveAccountNick = (existingNick, requested, providerName, email)
   cleanNick(existingNick) || cleanNick(requested) || cleanNick(providerName)
   || cleanNick(email ? String(email).split('@')[0] : '');
 
+// Ник при создании партии / входе в лобби. У АККАУНТА источник правды — профиль в БД: клиент
+// шлёт то, что у него осталось в localStorage, и после слияния аккаунтов это чужое (старое) имя;
+// оно не должно затирать имя объединённого капитана. Сменить ник аккаунта можно только явно
+// (профиль, «переименовать» в лобби → renameEverywhere). Гость профиля не имеет — берём присланное.
+export const pickNick = (storedNick, sentNick, isAccount) =>
+  (isAccount && cleanNick(storedNick)) || cleanNick(sentNick);
+
 // --- откуда брать токен сессии ---
 // Обычный браузер: httpOnly-cookie. Telegram Mini App (WebView, особенно iOS) куки может не сохранить —
 // там клиент держит токен сам и шлёт его заголовком Authorization: Bearer <токен> (HTTP) или в
@@ -151,6 +158,8 @@ export function createLinkCodes({ ttlMs = LINK_CODE_TTL_MS, now = () => Date.now
       codes.set(code, { pid, createdAt: now() });
       return code;
     },
+    // жив ли код (не сжигая): перед редиректом на Google, чтобы не гонять человека зря
+    has(code) { sweep(); return codes.has(String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '')); },
     // забрать код: pid владельца или null (нет/протух); код сгорает при первом же использовании
     claim(code) {
       sweep();
