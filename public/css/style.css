@@ -20,6 +20,10 @@
   --font-title: 'Caveat', 'Neucha', cursive;
 }
 
+/* верхний безопасный отступ: в обычном браузере — вырез/статус-бар телефона (env), в Telegram Mini App
+   во весь экран — статус-бар + кнопки Телеграма (их SDK отдаёт --tg-*-inset-*, см. body.tg-fullscreen) */
+:root { --safe-top: env(safe-area-inset-top, 0px); }
+
 * { box-sizing: border-box; }
 
 html, body { height: 100%; }
@@ -322,7 +326,7 @@ aside.panel {
    пока те не растворятся (у каждого свой таймер). Красные — ошибки, бумажные — инфо. */
 .toasts {
   position: absolute;
-  top: calc(env(safe-area-inset-top, 0px) + 8px); left: 50%;
+  top: calc(var(--safe-top) + 8px); left: 50%;
   transform: translateX(-50%);
   display: flex; flex-direction: column; align-items: center; gap: 8px;
   z-index: 30; pointer-events: none; max-width: 92vw;
@@ -369,7 +373,7 @@ aside.panel {
 /* Строка ввода/чат (открывается «/» на десктопе) — тёмная панель сверху по центру. */
 .chat-bar {
   position: absolute;
-  top: calc(env(safe-area-inset-top, 0px) + 10px); left: 50%;
+  top: calc(var(--safe-top) + 10px); left: 50%;
   transform: translate(-50%, -16px);
   display: flex; align-items: center; gap: 8px;
   background: var(--ink); color: var(--paper);
@@ -617,7 +621,7 @@ aside.panel {
 .mode-dd-opt.sel { background: var(--ink); color: var(--paper); }
 /* баннер мирного времени (режим «Развитие») — сверху карты, ненавязчиво */
 .peace-banner {
-  position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+  position: absolute; top: calc(10px + var(--safe-top)); left: 50%; transform: translateX(-50%);
   z-index: 22; pointer-events: none;
   font-family: var(--font-title); font-size: 19px; color: #2e7d5b;
   background: rgba(253, 251, 243, 0.82); border: 1.5px solid rgba(46, 125, 91, .5);
@@ -781,9 +785,9 @@ aside.panel {
   .panel-head .turn-banner { font-size: 1.1rem; padding: 5px 8px; }
   /* действия с кораблём — сверху по умолчанию; .at-bottom = снизу (зависит от того, в какой
      половине поля стоит выбранный корабль, чтобы панель его не перекрывала). Тосты — сверху. */
-  .action-bar { bottom: auto; top: 12px; padding: 8px 10px; gap: 6px; max-width: 96vw; flex-wrap: wrap; justify-content: center; }
+  .action-bar { bottom: auto; top: calc(12px + var(--safe-top)); padding: 8px 10px; gap: 6px; max-width: 96vw; flex-wrap: wrap; justify-content: center; }
   .action-bar.at-bottom { top: auto; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
-  .toasts { top: calc(env(safe-area-inset-top, 0px) + 6px); max-width: 92vw; }
+  .toasts { top: calc(var(--safe-top) + 6px); max-width: 92vw; }
 }
 
 /* крупные элементы под палец */
@@ -805,7 +809,7 @@ aside.panel {
 
 /* ─── 🐞 Отладка (включается флагом SB_DEBUG на сервере) ─────────────────────── */
 .debug-bar {
-  position: absolute; left: 10px; top: 10px; z-index: 6;
+  position: absolute; left: 10px; top: calc(10px + var(--safe-top)); z-index: 6;
   display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
   padding: 6px 8px; border-radius: 10px;
   background: rgba(253, 251, 243, .92); border: 2px solid var(--ink);
@@ -891,10 +895,12 @@ body.debug-on { padding-bottom: var(--dbg-h); }
 /* Telegram Mini App во весь экран: статус-бар и кнопки Телеграма ложатся поверх страницы, SDK отдаёт
    их высоту переменными --tg-safe-area-inset-* и --tg-content-safe-area-inset-*. Снаружи Телеграма
    класса нет, и переменные пустые — ничего не сдвигается. */
-body.tg-fullscreen { --tg-top: calc(var(--tg-safe-area-inset-top, 0px) + var(--tg-content-safe-area-inset-top, 0px)); }
+body.tg-fullscreen {
+  --tg-top: calc(var(--tg-safe-area-inset-top, 0px) + var(--tg-content-safe-area-inset-top, 0px));
+  --safe-top: var(--tg-top);
+}
 body.tg-fullscreen .wrap { padding-top: calc(32px + var(--tg-top)); }
 body.tg-fullscreen .top-bar { top: calc(6px + var(--tg-top)); }
-body.tg-fullscreen .debug-bar { top: calc(8px + var(--tg-top)); }
 body.tg-fullscreen .overlay > .note { margin-top: var(--tg-top); }
 @media (max-width: 900px) {
   body.tg-fullscreen aside.panel { padding-bottom: var(--tg-safe-area-inset-bottom, 0px); }
