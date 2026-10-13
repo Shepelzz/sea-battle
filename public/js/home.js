@@ -540,6 +540,9 @@ async function doLogout() {
   try { if (googleReady) google.accounts.id.disableAutoSelect(); } catch { /* GSI не загружен */ }
   localStorage.removeItem('sb_nick');   // чтобы следующий вход не унаследовал ник прошлого аккаунта
   me = { loggedIn: false };
+  // Внутри Телеграма «выйти» = закрыть мини-апп: перезагрузка тут же вошла бы снова по initData.
+  // Следующее открытие входит заново — уже с тем, что в базе (например, после отвязки аккаунта).
+  if (SBTelegram.inTelegram) { try { sessionStorage.clear(); } catch { /* ок */ } SBTelegram.close(); return; }
   location.reload();
 }
 

@@ -148,6 +148,12 @@ window.SBTelegram = (() => {
     if (wa?.openLink) wa.openLink(url, { try_instant_view: false }); else window.open(url, '_blank');
   }
 
+  // Закрыть мини-апп (после «выйти»: перезагрузка внутри Телеграма просто залогинила бы снова)
+  async function close() {
+    const wa = await init();
+    try { wa?.close(); } catch { /* старый клиент */ }
+  }
+
   return { inTelegram, init, login, takeStartParam, session, socketAuth, logout: () => setSession(null),
-    backButton, closingConfirm, miniAppLink, share, askWriteAccess, topInset, openLink };
+    backButton, closingConfirm, miniAppLink, share, askWriteAccess, topInset, openLink, close };
 })();
