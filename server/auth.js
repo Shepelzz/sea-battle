@@ -115,6 +115,8 @@ export function createSessionStore({ ttlMs = SESSION_TTL_MS, now = () => Date.no
       return rec.pid;
     },
     delete(token) { return map.delete(token); },
+    // слияние аккаунтов: все сессии старого pid теперь ведут на новый (другие устройства не разлогиниваются)
+    remap(from, to) { let n = 0; for (const rec of map.values()) if (rec.pid === from) { rec.pid = to; n++; } return n; },
     // загрузка из БД на старте: пропускаем уже протухшие (их вернём для удаления через onExpire)
     load(rows, onExpire) {
       for (const r of rows) {
@@ -129,3 +131,36 @@ export function createSessionStore({ ttlMs = SESSION_TTL_MS, now = () => Date.no
 
 // Генерация нового секретного токена сессии (base64url, 24 байта энтропии)
 export const newSessionToken = () => crypto.randomBytes(24).toString('base64url');
+
+// --- Коды привязки аккаунтов ---
+// Один человек — два капитана (вошёл в Телеграме и в браузере через Google). Чтобы слить их в одного:
+// в профиле первого берёт код, в профиле второго вводит. Код одноразовый, живёт 10 минут, в памяти
+// (сервер один). Алфавит без похожих символов (0/O, 1/I), чтобы продиктовать можно было вслух.
+export const LINK_CODE_TTL_MS = 10 * 60 * 1000;
+const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+export function createLinkCodes({ ttlMs = LINK_CODE_TTL_MS, now = () => Date.now(), random = crypto.randomInt } = {}) {
+  const codes = new Map();            // code → { pid, createdAt }
+  const sweep = () => { for (const [c, r] of codes) if (now() - r.createdAt > ttlMs) codes.delete(c); };
+  return {
+    // выдать код аккаунту; старые коды этого же аккаунта отзываем — действует только последний
+    issue(pid) {
+      sweep();
+      for (const [c, r] of codes) if (r.pid === pid) codes.delete(c);
+      let code;
+      do { code = Array.from({ length: 6 }, () => CODE_ALPHABET[random(CODE_ALPHABET.length)]).join(''); } while (codes.has(code));
+      codes.set(code, { pid, createdAt: now() });
+      return code;
+    },
+    // забрать код: pid владельца или null (нет/протух); код сгорает при первом же использовании
+    claim(code) {
+      sweep();
+      const key = String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+      const rec = codes.get(key);
+      if (!rec) return null;
+      codes.delete(key);
+      return rec.pid;
+    },
+    size() { sweep(); return codes.size; }
+  };
+}
+

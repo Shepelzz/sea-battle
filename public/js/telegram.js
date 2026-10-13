@@ -47,7 +47,22 @@ window.SBTelegram = (() => {
     readyP = new Promise(resolve => {
       const done = () => {
         const wa = window.Telegram?.WebApp || null;
-        if (wa) { try { wa.ready(); wa.expand(); } catch { /* старый клиент */ } }
+        if (wa) {
+          try { wa.ready(); wa.expand(); } catch { /* старый клиент */ }
+          try { document.body.classList.add('tg-app'); } catch { /* до body */ }
+          // На телефоне — во весь экран (Bot API 8.0+): без шапки Телеграма. Отступы под статус-бар и
+          // кнопки Телеграма SDK отдаёт CSS-переменными --tg-safe-area-inset-* / --tg-content-safe-area-inset-*,
+          // стили их читают через класс tg-fullscreen. Вертикальные свайпы гасим: иначе тяга карты
+          // вниз сворачивала бы мини-апп.
+          try { if (wa.disableVerticalSwipes) wa.disableVerticalSwipes(); } catch { /* старый клиент */ }
+          const syncFs = () => document.body.classList.toggle('tg-fullscreen', !!wa.isFullscreen);
+          try { wa.onEvent && wa.onEvent('fullscreenChanged', syncFs); } catch { /* старый клиент */ }
+          try {
+            if (wa.requestFullscreen && /^(ios|android)$/.test(wa.platform || '') && (!wa.isVersionAtLeast || wa.isVersionAtLeast('8.0')))
+              wa.requestFullscreen();
+          } catch { /* старый клиент */ }
+          syncFs();
+        }
         resolve(wa);
       };
       if (window.Telegram?.WebApp) return done();
@@ -119,6 +134,20 @@ window.SBTelegram = (() => {
     if (wa?.openTelegramLink) wa.openTelegramLink(url); else window.open(url, '_blank');
   }
 
+  // Верхний отступ в полноэкранном режиме (статус-бар + кнопки Телеграма), px — для рисунков на канве
+  function topInset() {
+    const wa = window.Telegram?.WebApp;
+    if (!wa?.isFullscreen) return 0;
+    return (wa.safeAreaInset?.top || 0) + (wa.contentSafeAreaInset?.top || 0);
+  }
+
+  // Открыть адрес во ВНЕШНЕМ браузере телефона (не в WebView): так работает вход Google, который
+  // Google запрещает внутри встроенных браузеров
+  async function openLink(url) {
+    const wa = await init();
+    if (wa?.openLink) wa.openLink(url, { try_instant_view: false }); else window.open(url, '_blank');
+  }
+
   return { inTelegram, init, login, takeStartParam, session, socketAuth, logout: () => setSession(null),
-    backButton, closingConfirm, miniAppLink, share, askWriteAccess };
+    backButton, closingConfirm, miniAppLink, share, askWriteAccess, topInset, openLink };
 })();

@@ -1834,7 +1834,7 @@ function drawMoveContour(sel, move) {
 // длина стрелки = сила. По ветру плывёшь дальше/быстрее, против — меньше/медленнее.
 function drawWindCompass() {
   const w = state.wind;
-  const cx = canvas.clientWidth - 52, cy = 52, R = 26;
+  const cx = canvas.clientWidth - 52, cy = 52 + SBTelegram.topInset(), R = 26;   // в полноэкранном мини-аппе — ниже кнопок Телеграма
   ctx.save();
   ctx.globalAlpha = 0.92;
   ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2);

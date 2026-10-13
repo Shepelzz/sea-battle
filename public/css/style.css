@@ -887,3 +887,19 @@ body.debug-on { padding-bottom: var(--dbg-h); }
   .top-bar { top: 6px; right: 6px; gap: 6px; }
   .lang-dd .mode-dd-btn { font-size: 21px; padding: 5px 7px; }   /* и на узком экране тоже вровень */
 }
+
+/* Telegram Mini App во весь экран: статус-бар и кнопки Телеграма ложатся поверх страницы, SDK отдаёт
+   их высоту переменными --tg-safe-area-inset-* и --tg-content-safe-area-inset-*. Снаружи Телеграма
+   класса нет, и переменные пустые — ничего не сдвигается. */
+body.tg-fullscreen { --tg-top: calc(var(--tg-safe-area-inset-top, 0px) + var(--tg-content-safe-area-inset-top, 0px)); }
+body.tg-fullscreen .wrap { padding-top: calc(32px + var(--tg-top)); }
+body.tg-fullscreen .top-bar { top: calc(6px + var(--tg-top)); }
+body.tg-fullscreen .debug-bar { top: calc(8px + var(--tg-top)); }
+body.tg-fullscreen .overlay > .note { margin-top: var(--tg-top); }
+@media (max-width: 900px) {
+  body.tg-fullscreen aside.panel { padding-bottom: var(--tg-safe-area-inset-bottom, 0px); }
+  body.tg-fullscreen .game-layout aside.panel:not(.collapsed) { padding-top: var(--tg-top); }
+}
+.pf-links { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 8px; }
+.pf-links .pf-link { display: flex; gap: 8px; align-items: center; font-size: 15px; }
+

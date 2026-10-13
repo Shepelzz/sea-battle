@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 // Покрывают: стабильность pid аккаунта (кросс-девайс), гость≠аккаунт, нормализацию ника,
 // парсинг/сборку cookie (включая Secure только на проде), TTL хранилища сессий, isRanked.
 import {
-  pidOf, googlePid, telegramPid, verifyTelegramInitData, telegramName, cleanNick, resolveAccountNick, parseCookies, sessionTokenOf,
+  pidOf, googlePid, telegramPid, verifyTelegramInitData, telegramName, cleanNick, resolveAccountNick, parseCookies, sessionTokenOf, createLinkCodes,
   buildSetCookie, buildClearCookie, createSessionStore, newSessionToken,
   SESSION_COOKIE, SESSION_TTL_MS
 } from '../server/auth.js';
@@ -176,6 +176,32 @@ no('Telegram ≠ Google для одного числа', telegramPid(5) === goog
   eq('auth не объект — null', sessionTokenOf(undefined, undefined, 'x'), null);
   eq('auth.session не строка — null', sessionTokenOf(undefined, undefined, { session: 42 }), null);
   eq('ничего нет — null', sessionTokenOf(undefined, undefined, undefined), null);
+}
+
+
+// === Слияние аккаунтов: remap сессий и коды привязки ===
+{
+  const st = createSessionStore({ now: () => 1000 });
+  st.add('s1', 'gAAA'); st.add('s2', 'gAAA'); st.add('s3', 'tBBB');
+  eq('remap переводит все сессии старого pid', st.remap('gAAA', 'tBBB'), 2);
+  eq('…и они ведут на новый', [st.pid('s1'), st.pid('s2'), st.pid('s3')], ['tBBB', 'tBBB', 'tBBB']);
+  eq('remap без совпадений — 0', st.remap('nope', 'x'), 0);
+}
+{
+  let t = 0; const codes = createLinkCodes({ ttlMs: 1000, now: () => t });
+  const c = codes.issue('tAAA');
+  yes('код из 6 символов безопасного алфавита', /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/.test(c));
+  eq('claim отдаёт владельца', codes.claim(c), 'tAAA');
+  eq('код одноразовый', codes.claim(c), null);
+  const c2 = codes.issue('tAAA');
+  eq('регистр и мусор во вводе не мешают', codes.claim(' ' + c2.toLowerCase() + '-'), 'tAAA');
+  const c3 = codes.issue('tAAA'); const c4 = codes.issue('tAAA');
+  eq('новый код отзывает предыдущий того же аккаунта', codes.claim(c3), null);
+  eq('…а последний работает', codes.claim(c4), 'tAAA');
+  const c5 = codes.issue('gBBB'); t = 2000;
+  eq('протухший код не принимается', codes.claim(c5), null);
+  eq('чужой/несуществующий — null', codes.claim('ZZZZZZ'), null);
+  eq('size чистит протухшие', codes.size(), 0);
 }
 
 console.log(fail ? `❌ test-auth: провалено ${fail}, прошло ${ok}` : `✅ test-auth: все ${ok} проверок прошли`);

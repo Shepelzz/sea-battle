@@ -32,7 +32,15 @@
     "since": "Sailing since",
     "empty": "No finished games yet. Play one and your service record shows up here.",
     "rankedNote": "Only online games against people score points: bot matches, hotseat and Full Speed Ahead are counted but bring no points.",
-    "loading": "Fetching the ship's papers…"
+    "loading": "Fetching the ship's papers…",
+    "links": "Sign-in methods",
+    "linkMain": "(main)",
+    "linkGoogle": "Link a Google account so the browser and Telegram sign in as the same captain:",
+    "linkDone": "Done: the accounts are merged, games and points are now in one place.",
+    "linkAlready": "This sign-in method is already linked.",
+    "linkGoogleTg": "Link a Google account",
+    "linkOpened": "Opened the browser: sign in with Google there and the accounts merge. Then come back here.",
+    "linkBack": "You can go back to Telegram."
   },
   "home": {
     "title": "Sea Battle on squared paper",
@@ -729,7 +737,10 @@
     "needLogin": "You need to sign in",
     "tooManyGames": "Too many unfinished games (max {{max}}). Finish or close one first.",
     "telegramOff": "Telegram sign-in is not configured",
-    "telegramFailed": "Could not verify the Telegram sign-in"
+    "telegramFailed": "Could not verify the Telegram sign-in",
+    "linkTaken": "That account is already linked to another captain",
+    "linkSelf": "That is this account's own code",
+    "badCode": "Code not found or expired"
   },
   "log": {
     "joined": "{{nick}} joined the battle ({{n}}/{{max}})",

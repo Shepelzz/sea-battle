@@ -209,6 +209,7 @@ $('#hotseatBtn').addEventListener('click', async () => {
 // ====== Авторизация: бейдж входа + модал. Онлайн/лобби требуют аккаунт ======
 // Личность хранится в httpOnly-cookie (ставит сервер) — в JS её нет; состояние знаем из /api/auth/me.
 let GOOGLE_ID = null, googleReady = false, me = { loggedIn: false }, pendingAction = null;
+let linkMode = false;   // кнопка Google в профиле = ПРИВЯЗКА к текущему аккаунту, а не вход
 
 function renderBadge() {
   const box = $('#authBadge');
@@ -264,6 +265,7 @@ function initGoogle() {
     googleReady = true;
     google.accounts.id.initialize({ client_id: GOOGLE_ID, callback: onGoogleCredential });
     if (!$('#loginOverlay').classList.contains('hidden')) renderLoginBtn();
+    if (linkMode) renderProfileGoogleBtn();
   };
   document.head.appendChild(s);
 }
@@ -283,6 +285,7 @@ function openLogin(action) {
 function closeLogin() { $('#loginOverlay').classList.add('hidden'); pendingAction = null; }
 
 async function onGoogleCredential(resp) {
+  if (linkMode) return linkGoogle(resp.credential);   // из профиля — привязать Google к текущему аккаунту
   // Шлём только ЯВНО введённый ник (не из localStorage — там мог остаться ник прошлого аккаунта).
   const nick = ($('#nick').value || '').trim();
   try {
@@ -342,7 +345,66 @@ async function openProfile() {
   if (!profileData) { $('#profileBody').innerHTML = `<p class="error">${t('home.errNet')}</p>`; return; }
   renderProfile();
 }
-function closeProfile() { $('#profileOverlay').classList.add('hidden'); }
+function closeProfile() { $('#profileOverlay').classList.add('hidden'); linkMode = false; }
+
+// ====== Привязка аккаунтов (профиль) ======
+// Два способа слить второго капитана в этот: кнопка Google прямо здесь и код «введи на другом
+// аккаунте» (единственный надёжный путь из WebView Телеграма, где вход Google не работает).
+function renderProfileGoogleBtn() {
+  const box = $('#pfLinkGoogle'); if (!box) return;
+  if (!googleReady) { initGoogle(); return; }
+  box.innerHTML = '';
+  google.accounts.id.renderButton(box, { theme: 'outline', size: 'medium', text: 'continue_with' });
+}
+async function linkGoogle(credential) {
+  const msg = $('#pfLinkMsg'); if (msg) msg.className = 'pf-msg';
+  try {
+    const r = await fetch('/api/profile/link/google', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ credential })
+    });
+    const data = await r.json();
+    if (!r.ok) { msg.className = 'pf-msg error'; msg.textContent = errText(data) || t('home.errNet'); return; }
+    await afterLink(data);
+  } catch { if (msg) { msg.className = 'pf-msg error'; msg.textContent = t('home.errNet'); } }
+}
+// Из Телеграма: вход Google внутри WebView Google запрещает, поэтому «Привязать Google» берёт
+// одноразовый код и открывает сайт во внешнем браузере с ?link=<код>. Там человек входит через
+// Google — и его Telegram-капитан сливается в Google-капитана. Один тап, код руками не вводится.
+async function startTelegramLink() {
+  const msg = $('#pfLinkMsg'); msg.className = 'pf-msg';
+  try {
+    const r = await fetch('/api/profile/link/code', { method: 'POST' });
+    const data = await r.json();
+    if (!r.ok) { msg.className = 'pf-msg error'; msg.textContent = errText(data) || t('home.errNet'); return; }
+    const url = `${location.origin}${location.pathname}?link=${encodeURIComponent(data.code)}`;
+    await SBTelegram.openLink(url);
+    msg.className = 'pf-msg ok'; msg.textContent = t('profile.linkOpened');
+  } catch { msg.className = 'pf-msg error'; msg.textContent = t('home.errNet'); }
+}
+// В браузере по ссылке ?link=<код>: войти (Google) и слить выдавший код аккаунт в этот
+async function claimLinkCode(code) {
+  try {
+    const r = await fetch('/api/profile/link/claim', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code })
+    });
+    const data = await r.json();
+    await openProfile();
+    const msg = $('#pfLinkMsg');
+    if (!r.ok) { if (msg) { msg.className = 'pf-msg error'; msg.textContent = errText(data) || t('home.errNet'); } return; }
+    await afterLink(data);
+    const done = $('#pfLinkMsg');   // профиль перерисован — элемент новый
+    if (done) done.textContent = t('profile.linkDone') + ' ' + t('profile.linkBack');
+  } catch { /* сеть — профиль покажет, что есть */ }
+}
+// после слияния: профиль перечитать (статистика и список привязок изменились), лидерборд обновить
+async function afterLink(data) {
+  if (data.nick) { me.nick = data.nick; localStorage.setItem('sb_nick', data.nick); }
+  try { profileData = await (await fetch('/api/profile')).json(); } catch { /* покажем что есть */ }
+  if (profileData) renderProfile();
+  const msg = $('#pfLinkMsg'); if (msg) { msg.className = 'pf-msg ok'; msg.textContent = t(data.already ? 'profile.linkAlready' : 'profile.linkDone'); }
+  renderBadge(); loadLeaderboard();
+  socket.disconnect(); socket.connect();   // «мои игры» пересчитать под слитый аккаунт
+}
 
 function renderProfile() {
   const d = profileData;
@@ -386,6 +448,14 @@ function renderProfile() {
       <span>${t('profile.mail')}</span>
     </label>
     <p class="muted pf-note" style="margin:0">${t('profile.mailHint')}</p>
+    <h3 class="pf-h">${t('profile.links')}</h3>
+    <div class="pf-links">
+      <div class="pf-link">${providerIcon(d.provider)} ${escapeHtml(providerLabel(d.provider, d.email))} <span class="muted">${t('profile.linkMain')}</span></div>
+      ${(d.links || []).map(l => `<div class="pf-link">${providerIcon(l.provider)} ${escapeHtml(providerLabel(l.provider, l.label))}</div>`).join('')}
+    </div>
+    ${GOOGLE_ID && !hasProvider(d, 'google') ? `<p class="muted pf-note" style="margin:0 0 6px">${t('profile.linkGoogle')}</p>`
+      + (SBTelegram.inTelegram ? `<button class="small primary" id="pfLinkTg" type="button">${t('profile.linkGoogleTg')}</button>` : '<div id="pfLinkGoogle"></div>') : ''}
+    <p class="pf-msg" id="pfLinkMsg"></p>
     <h3 class="pf-h">${t('profile.stats')}</h3>
     ${stats}
     <p class="muted pf-note">${t('profile.rankedNote')}</p>
@@ -411,8 +481,16 @@ function renderProfile() {
   });
   $('#pfSave').addEventListener('click', saveNick);
   $('#pfNick').addEventListener('keydown', e => { if (e.key === 'Enter') saveNick(); });
+  $('#pfLinkTg')?.addEventListener('click', startTelegramLink);
+  linkMode = !!$('#pfLinkGoogle');
+  if (linkMode) renderProfileGoogleBtn();
   $('#pfLogout').addEventListener('click', doLogout);
 }
+
+// подписи способов входа в профиле
+const providerIcon = p => (p === 'google' ? 'G' : p === 'telegram' ? 'TG' : '•');
+const providerLabel = (p, label) => (p === 'google' ? 'Google' : p === 'telegram' ? 'Telegram' : (p || '')) + (label ? ` · ${label}` : '');
+const hasProvider = (d, p) => d.provider === p || (d.links || []).some(l => l.provider === p);
 
 async function saveNick() {
   const nick = ($('#pfNick').value || '').trim();
@@ -532,6 +610,12 @@ $('#loginOverlay').addEventListener('click', e => { if (e.target.id === 'loginOv
     }
     if (GOOGLE_ID) initGoogle();
     await loadMe();
+    // пришли из Телеграма по ссылке «привязать Google» (?link=<код>): войти и слить аккаунты
+    const linkCode = new URLSearchParams(location.search).get('link');
+    if (linkCode) {
+      history.replaceState(null, '', location.pathname);   // код одноразовый — из адресной строки убрать
+      requireLogin(() => claimLinkCode(linkCode));
+    }
   } catch { renderBadge(); /* без сервера-конфига всё равно показываем что есть */ }
 })();
 

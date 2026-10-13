@@ -97,6 +97,45 @@ await db.init();   // повторный старт (рестарт сервер
   eq('и возвращается обратно', (await db.getPlayer('M')).mailNudge, true);
 }
 
+// === 2б. Слияние двух капитанов в одного (links) ===
+{
+  await db.upsertPlayer('tTG', 'Тарас', null, 'telegram', null);
+  await db.setPlayerTelegram('tTG', 4242);
+  await db.upsertPlayer('gGO', 'Taras', 't@ex.com', 'google', 'https://ava');
+  await db.setPlayerLang('gGO', 'uk');
+  await db.createSession('sesG', 'gGO'); await db.createSession('sesT', 'tTG');
+  await db.addLink('xOLD', 'gGO', 'google', 'old@ex.com');          // кто-то уже был привязан к Google-капитану
+  const raw = new DatabaseSync(TMP);
+  const ins = raw.prepare('INSERT INTO results (game_id, player_token, placement, win, damage, sunk, lost, gold, ranked, finished_at) VALUES (?,?,?,?,?,?,?,?,?,?)');
+  // ranked 0 — чтобы не влезть в лидерборд, который проверяет блок ниже; профиль считает все партии
+  ins.run('m1', 'gGO', 1, 1, 100, 2, 0, 300, 0, 1); ins.run('m2', 'gGO', 2, 0, 50, 1, 1, 100, 0, 2);
+  ins.run('m3', 'tTG', 1, 1, 80, 1, 0, 200, 0, 3);
+  ins.run('m4', 'gGO', 1, 1, 10, 0, 0, 10, 0, 4); ins.run('m4', 'tTG', 2, 0, 5, 0, 1, 5, 0, 4);   // играли друг с другом
+  raw.close();
+  eq('до слияния resolvePid пуст', await db.resolvePid('gGO'), null);
+  yes('слияние прошло', await db.mergePlayers('gGO', 'tTG', 'google', 't@ex.com'));
+  eq('Google-pid стал алиасом Telegram-капитана', await db.resolvePid('gGO'), 'tTG');
+  eq('старый алиас Google-капитана перевешан на нового', await db.resolvePid('xOLD'), 'tTG');
+  eq('список привязок у канонического', (await db.getLinks('tTG')).map(l => l.alias).sort(), ['gGO', 'xOLD']);
+  eq('запись Google удалена', await db.getPlayer('gGO'), null);
+  const merged = await db.getPlayer('tTG');
+  eq('ник канонического сохранён', merged.nick, 'Тарас');
+  eq('почта и аватар подтянулись из Google', [merged.email, merged.avatar], ['t@ex.com', 'https://ava']);
+  eq('язык подтянулся', merged.lang, 'uk');
+  eq('chat id Телеграма на месте', merged.tgChat, '4242');
+  const st = await db.getPlayerStats('tTG');
+  eq('партии слились: 4 уникальные (общая m4 — одна строка)', st.games, 4);
+  eq('победы сложились (в общей m4 осталась строка канонического — проигрыш)', st.wins, 2);
+  const raw2 = new DatabaseSync(TMP);
+  eq('строка gGO в общей партии удалена, tTG осталась', raw2.prepare("SELECT player_token FROM results WHERE game_id = 'm4'").all().map(r => r.player_token), ['tTG']);
+  eq('сессии переведены на канонический', raw2.prepare("SELECT pid FROM sessions WHERE token IN ('sesG','sesT') ORDER BY token").all().map(r => r.pid), ['tTG', 'tTG']);
+  raw2.close();
+  yes('слияние в несуществующий аккаунт — false', !(await db.mergePlayers('nobody', 'ghost', null, null)));
+  // addLink без своей записи (Google, которым ещё не играли)
+  await db.addLink('gNEW', 'tTG', 'google', 'n@ex.com');
+  eq('привязка без слияния', await db.resolvePid('gNEW'), 'tTG');
+}
+
 // === 3. Профиль считает все партии, лидерборд — только рейтинговые ===
 await db.upsertPlayer('A', 'Алиса');
 await db.upsertPlayer('B', 'Боб');

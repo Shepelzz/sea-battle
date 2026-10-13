@@ -44,6 +44,12 @@ export const setPlayerLang  = (pid, lang) => api.setPlayerLang(pid, lang);
 export const setPlayerMailNudge = (pid, on) => api.setPlayerMailNudge(pid, on);
 // Telegram: chat id аккаунта (= user id) — чтобы бот мог прислать «твой ход» личным сообщением
 export const setPlayerTelegram = (pid, chatId) => api.setPlayerTelegram(pid, chatId);
+// Привязка аккаунтов: links(alias → pid). Вход под alias-pid (Google sub / Telegram id) ведёт в канонический pid.
+export const resolvePid       = (pid) => api.resolvePid(pid);          // канонический pid для alias или null
+export const getLinks         = (pid) => api.getLinks(pid);            // [{ alias, provider, label }] у канонического
+export const addLink          = (alias, pid, provider, label) => api.addLink(alias, pid, provider, label);
+// Слить две записи players в одну: результаты, сессии, чужие алиасы, поля профиля → into; from становится alias
+export const mergePlayers     = (from, into, provider, label) => api.mergePlayers(from, into, provider, label);
 export const getPlayerEmail = (pid) => api.getPlayerEmail(pid);
 export const countGames     = () => api.countGames();
 export const getLeaderboard = () => api.getLeaderboard();
@@ -152,6 +158,8 @@ async function makeSqlite() {
           PRIMARY KEY (game_id, player_token));
         CREATE TABLE IF NOT EXISTS sessions (
           token TEXT PRIMARY KEY, pid TEXT NOT NULL, created_at INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS links (
+          alias TEXT PRIMARY KEY, pid TEXT NOT NULL, provider TEXT, label TEXT, created_at INTEGER NOT NULL);
       `);
       // миграция уже существующих баз: добавляем новые колонки, если их ещё нет
       for (const [col, def] of [['provider', 'TEXT'], ['avatar', 'TEXT'], ['lang', 'TEXT'], ['tg_chat', 'TEXT']])
@@ -204,6 +212,37 @@ async function makeSqlite() {
     },
     async setPlayerMailNudge(pid, on) { run('UPDATE players SET mail_nudge = ? WHERE token = ?', on ? 1 : 0, pid); },
     async setPlayerTelegram(pid, chatId) { run('UPDATE players SET tg_chat = ? WHERE token = ?', String(chatId), pid); },
+    async resolvePid(pid) { return db.prepare('SELECT pid FROM links WHERE alias = ?').get(pid)?.pid ?? null; },
+    async getLinks(pid) {
+      return db.prepare('SELECT alias, provider, label FROM links WHERE pid = ? ORDER BY created_at').all(pid)
+        .map(r => ({ alias: r.alias, provider: r.provider ?? null, label: r.label ?? null }));
+    },
+    async addLink(alias, pid, provider, label) {
+      run('INSERT OR REPLACE INTO links (alias, pid, provider, label, created_at) VALUES (?, ?, ?, ?, ?)', alias, pid, provider ?? null, label ?? null, Date.now());
+    },
+    async mergePlayers(from, into, provider, label) {
+      const a = db.prepare('SELECT * FROM players WHERE token = ?').get(from);
+      const b = db.prepare('SELECT * FROM players WHERE token = ?').get(into);
+      if (!b) return false;
+      db.exec('BEGIN');
+      try {
+        // одна партия у обоих (играли друг против друга до слияния) — оставляем строку канонического
+        run('DELETE FROM results WHERE player_token = ? AND game_id IN (SELECT game_id FROM results WHERE player_token = ?)', from, into);
+        run('UPDATE results SET player_token = ? WHERE player_token = ?', into, from);
+        run('UPDATE sessions SET pid = ? WHERE pid = ?', into, from);
+        run('UPDATE links SET pid = ? WHERE pid = ?', into, from);      // кто был привязан к старому — теперь к новому
+        if (a) {
+          run(`UPDATE players SET email = COALESCE(email, ?), avatar = COALESCE(avatar, ?), lang = COALESCE(lang, ?),
+                 tg_chat = COALESCE(tg_chat, ?), created_at = MIN(created_at, ?) WHERE token = ?`,
+            a.email ?? null, a.avatar ?? null, a.lang ?? null, a.tg_chat ?? null, a.created_at, into);
+          run('DELETE FROM players WHERE token = ?', from);
+        }
+        run('INSERT OR REPLACE INTO links (alias, pid, provider, label, created_at) VALUES (?, ?, ?, ?, ?)',
+          from, into, provider ?? a?.provider ?? null, label ?? a?.email ?? a?.nick ?? null, Date.now());
+        db.exec('COMMIT');
+      } catch (e) { db.exec('ROLLBACK'); throw e; }
+      return true;
+    },
     async getPlayerStats(pid) {
       const r = db.prepare(STATS_SQL).get(pid);
       const better = db.prepare(BETTER_SQL).get(Number(r?.points) || 0)?.n;
@@ -264,7 +303,9 @@ async function makeMysql() {
            gold INT NOT NULL, ranked TINYINT NOT NULL DEFAULT 1, finished_at BIGINT NOT NULL,
            PRIMARY KEY (game_id, player_token)) DEFAULT CHARSET=utf8mb4`,
         `CREATE TABLE IF NOT EXISTS sessions (token VARCHAR(64) PRIMARY KEY, pid VARCHAR(64) NOT NULL,
-           created_at BIGINT NOT NULL) DEFAULT CHARSET=utf8mb4`
+           created_at BIGINT NOT NULL) DEFAULT CHARSET=utf8mb4`,
+        `CREATE TABLE IF NOT EXISTS links (alias VARCHAR(64) PRIMARY KEY, pid VARCHAR(64) NOT NULL,
+           provider VARCHAR(16), label VARCHAR(255), created_at BIGINT NOT NULL) DEFAULT CHARSET=utf8mb4`
       ];
       for (const t of tables) await pool.query(t);
       // миграция уже существующих баз: добавляем новые колонки, если их ещё нет
@@ -317,6 +358,42 @@ async function makeMysql() {
       await q('UPDATE players SET mail_nudge = ? WHERE token = ?', [on ? 1 : 0, pid]);
     },
     async setPlayerTelegram(pid, chatId) { await q('UPDATE players SET tg_chat = ? WHERE token = ?', [String(chatId), pid]); },
+    async resolvePid(pid) {
+      try { const [rows] = await pool.query('SELECT pid FROM links WHERE alias = ?', [pid]); return rows[0]?.pid ?? null; }
+      catch (e) { console.error('db:', e.message); return null; }
+    },
+    async getLinks(pid) {
+      try { const [rows] = await pool.query('SELECT alias, provider, label FROM links WHERE pid = ? ORDER BY created_at', [pid]);
+        return rows.map(r => ({ alias: r.alias, provider: r.provider ?? null, label: r.label ?? null })); }
+      catch (e) { console.error('db:', e.message); return []; }
+    },
+    async addLink(alias, pid, provider, label) {
+      await q('REPLACE INTO links (alias, pid, provider, label, created_at) VALUES (?, ?, ?, ?, ?)', [alias, pid, provider ?? null, label ?? null, Date.now()]);
+    },
+    async mergePlayers(from, into, provider, label) {
+      const conn = await pool.getConnection();
+      try {
+        const [[a]] = await conn.query('SELECT * FROM players WHERE token = ?', [from]);
+        const [[b]] = await conn.query('SELECT * FROM players WHERE token = ?', [into]);
+        if (!b) return false;
+        await conn.beginTransaction();
+        await conn.query('DELETE r FROM results r JOIN results o ON o.game_id = r.game_id AND o.player_token = ? WHERE r.player_token = ?', [into, from]);
+        await conn.query('UPDATE results SET player_token = ? WHERE player_token = ?', [into, from]);
+        await conn.query('UPDATE sessions SET pid = ? WHERE pid = ?', [into, from]);
+        await conn.query('UPDATE links SET pid = ? WHERE pid = ?', [into, from]);
+        if (a) {
+          await conn.query(`UPDATE players SET email = COALESCE(email, ?), avatar = COALESCE(avatar, ?), lang = COALESCE(lang, ?),
+                              tg_chat = COALESCE(tg_chat, ?), created_at = LEAST(created_at, ?) WHERE token = ?`,
+            [a.email ?? null, a.avatar ?? null, a.lang ?? null, a.tg_chat ?? null, a.created_at, into]);
+          await conn.query('DELETE FROM players WHERE token = ?', [from]);
+        }
+        await conn.query('REPLACE INTO links (alias, pid, provider, label, created_at) VALUES (?, ?, ?, ?, ?)',
+          [from, into, provider ?? a?.provider ?? null, label ?? a?.email ?? a?.nick ?? null, Date.now()]);
+        await conn.commit();
+        return true;
+      } catch (e) { try { await conn.rollback(); } catch { /* уже откатилось */ } throw e; }
+      finally { conn.release(); }
+    },
     async getPlayerStats(pid) {
       try {
         const [[r]] = await pool.query(STATS_SQL, [pid]);

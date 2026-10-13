@@ -22,7 +22,7 @@ import {
 } from './game.js';
 import {
   SESSION_COOKIE, pidOf, googlePid, telegramPid, verifyTelegramInitData, telegramName, cleanNick, resolveAccountNick, parseCookies, sessionTokenOf,
-  buildSetCookie, buildClearCookie, createSessionStore, newSessionToken
+  buildSetCookie, buildClearCookie, createSessionStore, newSessionToken, createLinkCodes
 } from './auth.js';
 import { chooseBotAction, BOT_NAMES, duelFleetPlan } from './bot.js';
 import {
@@ -380,6 +380,32 @@ const sessions = createSessionStore();
 const accountPidFromSession = token => sessions.pid(token, t => db.deleteSession(t));
 // токен — из cookie, а без неё (Telegram WebView) из заголовка Authorization: Bearer (см. sessionTokenOf)
 const accountPidFromReq = req => accountPidFromSession(sessionTokenOf(req.headers.cookie, req.headers.authorization));
+// pid провайдера (Google sub / Telegram id) → канонический pid аккаунта, если этот вход привязан к другому
+const canonicalPid = async pid => (await db.resolvePid(pid)) || pid;
+// Коды привязки «введи на другом аккаунте» — в памяти, 10 минут (см. auth.js)
+const linkCodes = createLinkCodes();
+
+// Слияние двух капитанов в одного: from растворяется в into. База (результаты, сессии, профиль,
+// алиасы) — db.mergePlayers; живые сессии в памяти — remap; партии в памяти — переписать pid
+// игрока, хоста и адресатов приватных записей журнала, чтобы человек не выпал из своих же партий.
+async function mergeAccounts(from, into, provider, label) {
+  await db.mergePlayers(from, into, provider, label);
+  sessions.remap(from, into);
+  let touched = 0;
+  for (const g of games.values()) {
+    let changed = false;
+    for (const p of g.players) if (p.id === from) { p.id = into; changed = true; }
+    if (g.hostPid === from) { g.hostPid = into; changed = true; }
+    if (g.hotseatOwner === from) { g.hotseatOwner = into; changed = true; }
+    for (const l of g.log || []) if (l.to === from) { l.to = into; changed = true; }
+    if (!changed) continue;
+    db.saveGame(g);
+    if (g.status !== 'finished') broadcastState(g);
+    touched++;
+  }
+  if (touched) broadcastLobbies();
+  return touched;
+}
 
 // Игры в памяти — источник истины в рантайме (single-instance). Все игры предзагружаются
 // из MySQL на старте, а изменения асинхронно сохраняются обратно (durability на деплой).
@@ -608,11 +634,11 @@ app.post('/api/auth/telegram', async (req, res) => {
   const tg = verifyTelegramInitData(initData, TELEGRAM_BOT_TOKEN);
   if (!tg) return res.status(401).json({ error: 'err.telegramFailed' });
   try {
-    const pid = telegramPid(tg.id);
+    const pid = await canonicalPid(telegramPid(tg.id));   // привязан к другому капитану — входим в него
     const existing = await db.getPlayer(pid);
     const finalNick = resolveAccountNick(existing?.nick, nick, telegramName(tg), '') || ('tg' + String(tg.id).slice(-4));
     const avatar = tg.photoUrl;
-    db.upsertPlayer(pid, finalNick, null, 'telegram', avatar);
+    db.upsertPlayer(pid, finalNick, null, existing ? null : 'telegram', avatar);
     db.setPlayerTelegram(pid, tg.id);   // chat id личной переписки = user id — для напоминаний от бота
     const session = newSessionToken();
     sessions.add(session, pid);
@@ -638,13 +664,15 @@ app.post('/api/auth/google', async (req, res) => {
     const ticket = await googleClient.verifyIdToken({ idToken: credential, audience: GOOGLE_CLIENT_ID });
     const payload = ticket.getPayload();
     // Личность аккаунта — стабильный pid из Google sub (а не из email: email может меняться).
-    const pid = googlePid(payload.sub);
+    // …а если этот Google привязан к другому капитану (слияние аккаунтов) — входим в него
+    const pid = await canonicalPid(googlePid(payload.sub));
     // Ник аккаунта = его сохранённый ник (вспоминаем при возврате). Ник от клиента берём ТОЛЬКО при
     // ПЕРВОМ входе (аккаунта ещё нет) — иначе устаревший/чужой ник из localStorage затёр бы свой.
     const existing = await db.getPlayer(pid);
     const finalNick = resolveAccountNick(existing?.nick, nick, payload.name, payload.email);
     const avatar = payload.picture || null;
-    db.upsertPlayer(pid, finalNick, payload.email, 'google', avatar);
+    // provider — только у новой записи: у слитого аккаунта первый способ входа остаётся как был
+    db.upsertPlayer(pid, finalNick, payload.email, existing ? null : 'google', avatar);
     // Серверная сессия: секрет в httpOnly-cookie (недоступна из JS — защита от XSS-кражи).
     const session = newSessionToken();
     sessions.add(session, pid);
@@ -682,8 +710,58 @@ app.get('/api/profile', async (req, res) => {
   res.json({
     nick: prof?.nick || '', email: prof?.email || '', avatar: prof?.avatar || '',
     provider: prof?.provider || '', lang: normLang(prof?.lang),
-    createdAt: prof?.createdAt || null, mailNudge: prof?.mailNudge !== false, stats
+    createdAt: prof?.createdAt || null, mailNudge: prof?.mailNudge !== false, stats,
+    links: await db.getLinks(pid)   // привязанные входы (Google/Telegram), которые ведут в этот аккаунт
   });
+});
+
+// ─── Привязка аккаунтов ───────────────────────────────────────────────────────
+// Один человек вошёл в Телеграме и в браузере через Google — получилось два капитана. Сливаем в
+// одного: текущий аккаунт (по сессии) — канонический, второй становится его алиасом, а его партии,
+// результаты и сессии переезжают (mergeAccounts). Два пути:
+//   • /link/google — прямо из профиля по Google-токену (где кнопка Google работает);
+//   • /link/code + /link/claim — код из профиля одного аккаунта вводится в профиле другого
+//     (внутри WebView Телеграма вход Google часто не работает — этот путь работает всегда).
+const linksOf = pid => db.getLinks(pid);
+app.post('/api/profile/link/google', async (req, res) => {
+  const pid = accountPidFromReq(req);
+  if (!pid) return res.status(401).json({ error: 'err.needLogin' });
+  if (!googleClient) return res.status(400).json({ error: 'err.googleOff' });
+  let payload;
+  try {
+    const ticket = await googleClient.verifyIdToken({ idToken: req.body?.credential, audience: GOOGLE_CLIENT_ID });
+    payload = ticket.getPayload();
+  } catch (e) { return res.status(401).json({ error: 'err.googleFailed' }); }
+  const gpid = googlePid(payload.sub);
+  if (gpid === pid) return res.json({ ok: true, already: true, links: await linksOf(pid) });
+  const owner = await db.resolvePid(gpid);
+  if (owner === pid) return res.json({ ok: true, already: true, links: await linksOf(pid) });
+  if (owner) return res.status(409).json({ error: 'err.linkTaken' });   // этот Google уже чей-то алиас
+  const me = await db.getPlayer(pid);
+  if (await db.getPlayer(gpid)) {
+    await mergeAccounts(gpid, pid, 'google', payload.email || null);   // у Google уже был свой капитан — сливаем
+  } else {
+    await db.addLink(gpid, pid, 'google', payload.email || null);
+    if (me && !me.email) db.upsertPlayer(pid, me.nick, payload.email || null, null, me.avatar || payload.picture || null);
+  }
+  res.json({ ok: true, links: await linksOf(pid) });
+});
+app.post('/api/profile/link/code', async (req, res) => {
+  const pid = accountPidFromReq(req);
+  if (!pid) return res.status(401).json({ error: 'err.needLogin' });
+  res.json({ ok: true, code: linkCodes.issue(pid), ttlMin: 10 });
+});
+app.post('/api/profile/link/claim', async (req, res) => {
+  const pid = accountPidFromReq(req);
+  if (!pid) return res.status(401).json({ error: 'err.needLogin' });
+  const from = linkCodes.claim(req.body?.code);
+  if (!from) return res.status(400).json({ error: 'err.badCode' });
+  if (from === pid) return res.status(400).json({ error: 'err.linkSelf' });
+  const other = await db.getPlayer(from);
+  if (!other) return res.status(400).json({ error: 'err.badCode' });   // аккаунт исчез между выдачей кода и вводом
+  await mergeAccounts(from, pid, other.provider || null, other.email || other.nick || null);
+  const me = await db.getPlayer(pid);
+  res.json({ ok: true, links: await linksOf(pid), nick: me?.nick || '', email: me?.email || '' });
 });
 
 // Смена ника из профиля — то же самое, что сокетный setNick, но доступно вне партии.
