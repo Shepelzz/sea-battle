@@ -61,7 +61,7 @@ document.querySelectorAll('[data-back]').forEach(b =>
   b.addEventListener('click', () => showMode(null)));
 
 // --- браузер открытых лобби ---
-const socket = io();
+const socket = io({ auth: SBTelegram.socketAuth });   // Telegram: токен сессии в рукопожатии (без куки)
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
@@ -268,6 +268,8 @@ function initGoogle() {
   document.head.appendChild(s);
 }
 function renderLoginBtn() {
+  // в Телеграме Google не предлагаем — вход там свой и автоматический
+  if (SBTelegram.inTelegram) { $('#loginBtnBox').innerHTML = `<p class="muted">${t('home.tgLogin')}</p>`; telegramAutoLogin(); return; }
   if (!googleReady) { initGoogle(); return; }   // скрипт ещё грузится — отрисуем по onload
   const box = $('#loginBtnBox'); box.innerHTML = '';
   google.accounts.id.renderButton(box, { theme: 'outline', size: 'large', text: 'signin_with' });
@@ -290,22 +292,37 @@ async function onGoogleCredential(resp) {
     });
     const data = await r.json();
     if (!r.ok) { $('#loginError').textContent = errText(data) || t('home.errLogin'); return; }
-    me = { loggedIn: true, nick: data.nick, email: data.email, avatar: data.avatar, lang: data.lang };
-    // у аккаунта свой язык — он главнее того, что выбрал гость на этом устройстве.
-    // persist:false: значение и так пришло из профиля, писать его обратно незачем.
-    if (data.lang) SBI18n.set(data.lang, { persist: false });
-    // аккаунт — источник правды: применяем его сохранённый ник везде
-    localStorage.setItem('sb_nick', data.nick);
-    $('#nick').value = data.nick;
-    $('#botNick').value = data.nick;
-    renderBadge();
-    // вошли без перезагрузки: переподключаем сокет, чтобы в рукопожатии была сессионная кука —
-    // сервер увидит аккаунт и пересчитает «мои» лобби/игры (иначе список как у гостя до рефреша).
-    socket.disconnect(); socket.connect();
-    const act = pendingAction;
-    closeLogin();
-    if (act) act();   // продолжить то, ради чего входили (онлайн/лобби)
+    applyLogin(data);
   } catch { $('#loginError').textContent = t('home.errNet'); }
+}
+// Вошли (Google или Telegram) без перезагрузки: применить аккаунт везде и продолжить начатое
+function applyLogin(data) {
+  me = { loggedIn: true, nick: data.nick, email: data.email, avatar: data.avatar, lang: data.lang };
+  // у аккаунта свой язык — он главнее того, что выбрал гость на этом устройстве.
+  // persist:false: значение и так пришло из профиля, писать его обратно незачем.
+  if (data.lang) SBI18n.set(data.lang, { persist: false });
+  // аккаунт — источник правды: применяем его сохранённый ник везде
+  localStorage.setItem('sb_nick', data.nick);
+  $('#nick').value = data.nick;
+  $('#botNick').value = data.nick;
+  renderBadge();
+  // вошли без перезагрузки: переподключаем сокет, чтобы в рукопожатии была сессионная кука —
+  // сервер увидит аккаунт и пересчитает «мои» лобби/игры (иначе список как у гостя до рефреша).
+  socket.disconnect(); socket.connect();
+  const act = pendingAction;
+  closeLogin();
+  if (act) act();   // продолжить то, ради чего входили (онлайн/лобби)
+}
+// Внутри Telegram Mini App входим молча по initData: ни кнопки Google, ни окна входа.
+// Снаружи Телеграма — ничего не делает. Ошибку показываем в окне входа, если оно открыто.
+let tgLoginP = null;
+function telegramAutoLogin() {
+  if (!SBTelegram.inTelegram || me.loggedIn) return Promise.resolve();
+  if (!tgLoginP) tgLoginP = SBTelegram.login('').then(r => {
+    if (r.ok) applyLogin(r.data);
+    else $('#loginError').textContent = errText({ error: r.error }) || t('home.errLogin');
+  });
+  return tgLoginP;
 }
 
 // ====== Профиль капитана ======
@@ -426,6 +443,7 @@ $('#profileOverlay').addEventListener('click', e => { if (e.target.id === 'profi
 
 async function doLogout() {
   try { await fetch('/api/auth/logout', { method: 'POST' }); } catch { /* всё равно сбросим локально */ }
+  SBTelegram.logout();                  // токен сессии Телеграма (если был) — стереть
   try { if (googleReady) google.accounts.id.disableAutoSelect(); } catch { /* GSI не загружен */ }
   localStorage.removeItem('sb_nick');   // чтобы следующий вход не унаследовал ник прошлого аккаунта
   me = { loggedIn: false };
@@ -505,6 +523,13 @@ $('#loginOverlay').addEventListener('click', e => { if (e.target.id === 'loginOv
     });
     // авторизация
     GOOGLE_ID = cfg.googleClientId || null;
+    if (cfg.telegram && SBTelegram.inTelegram) {   // открыли из Телеграма — входим сразу
+      telegramAutoLogin().then(async () => {
+        // пришли по приглашению t.me/<бот>?startapp=<id партии> — сразу в её лобби
+        const gid = await SBTelegram.takeStartParam();
+        if (gid) location.href = '/game/' + gid;
+      });
+    }
     if (GOOGLE_ID) initGoogle();
     await loadMe();
   } catch { renderBadge(); /* без сервера-конфига всё равно показываем что есть */ }

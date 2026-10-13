@@ -141,7 +141,8 @@
       "text": "Your lobby is still open ({{players}} of {{max}}). You can't have two. Go back to it, or recreate it with the new settings — the old one then closes and anyone who joined returns to the home page.",
       "go": "Back to the lobby",
       "again": "Recreate"
-    }
+    },
+    "tgLogin": "Signing in with Telegram…"
   },
   "lobby": {
     "empty": "No open lobbies yet. Create one via \"🌐 Online\" — everyone will see it here!",
@@ -227,7 +228,9 @@
       "allAboard": "Everyone is aboard!",
       "waitHost": "Waiting for the host to start the game…",
       "nickEmpty": "The name cannot be empty",
-      "unranked": "Unranked battle: {{why}}"
+      "unranked": "Unranked battle: {{why}}",
+      "tgShare": "Share on Telegram",
+      "tgShareText": "Join my game of Sea Battle on squared paper!"
     },
     "shop": {
       "title": "🛒 Shipyard",
@@ -724,7 +727,9 @@
     "noCoinsFor": "Not enough coins (need {{price}} 🪙)",
     "portFull": "Your port is already intact",
     "needLogin": "You need to sign in",
-    "tooManyGames": "Too many unfinished games (max {{max}}). Finish or close one first."
+    "tooManyGames": "Too many unfinished games (max {{max}}). Finish or close one first.",
+    "telegramOff": "Telegram sign-in is not configured",
+    "telegramFailed": "Could not verify the Telegram sign-in"
   },
   "log": {
     "joined": "{{nick}} joined the battle ({{n}}/{{max}})",
@@ -811,7 +816,15 @@
     "nudge": {
       "subject": "⚓ Sea Battle: your turn! You have 10 minutes",
       "text": "Hi {{nick}}!\n\nYour rivals are hurrying you: it is your turn and you have 10 minutes — otherwise the turn will be skipped.\n\nPlay: {{url}}\n",
-      "html": "<p>Hi <b>{{nick}}</b>!</p>\n<p>Your rivals are hurrying you: it is your turn and you have <b>10 minutes</b> — otherwise the turn will be skipped.</p>\n<p><a href=\"{{url}}\">⚓ Make your move</a></p>"
+      "html": "<p>Hi <b>{{nick}}</b>!</p>\n<p>Your rivals are hurrying you: it is your turn and you have <b>10 minutes</b> — otherwise the turn will be skipped.</p>\n<p><a href=\"{{url}}\">⚓ Make your move</a></p>",
+      "tg": "{{nick}}, your opponents are hurrying you: it is your turn and you have 10 minutes, otherwise the turn is skipped.\n{{url}}",
+      "tgBtn": "Make a move"
+    },
+    "tg": {
+      "welcome": "Sea Battle on squared paper: islands, fleets and loot, right inside Telegram. Tap the button!",
+      "open": "Open the game",
+      "join": "You are invited to a game. Tap the button to enter the lobby.",
+      "joinBtn": "Join"
     }
   },
   "bot": {

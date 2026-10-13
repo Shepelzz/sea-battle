@@ -1,8 +1,9 @@
+import crypto from 'node:crypto';
 // Тесты авторизации/личности: чистая логика из server/auth.js + правило ranked из game.js.
 // Покрывают: стабильность pid аккаунта (кросс-девайс), гость≠аккаунт, нормализацию ника,
 // парсинг/сборку cookie (включая Secure только на проде), TTL хранилища сессий, isRanked.
 import {
-  pidOf, googlePid, cleanNick, resolveAccountNick, parseCookies,
+  pidOf, googlePid, telegramPid, verifyTelegramInitData, telegramName, cleanNick, resolveAccountNick, parseCookies, sessionTokenOf,
   buildSetCookie, buildClearCookie, createSessionStore, newSessionToken,
   SESSION_COOKIE, SESSION_TTL_MS
 } from '../server/auth.js';
@@ -119,6 +120,63 @@ no('игра с ботами — не ranked', isRanked({ config: { botGame: tru
 no('хотсит — не ranked', isRanked({ config: { hotseat: true } }));
 no('без config — не ranked', isRanked({}));
 no('null — не ranked', isRanked(null));
+
+
+// === Telegram Mini App: pid и проверка подписи initData ===
+eq('telegramPid детерминирован', telegramPid(12345), telegramPid(12345));
+no('telegramPid отличается для разных id', telegramPid(1) === telegramPid(2));
+yes('telegramPid начинается с t', telegramPid(777).startsWith('t'));
+eq('telegramPid длина 16', telegramPid(777).length, 16);
+no('Telegram ≠ Google для одного числа', telegramPid(5) === googlePid(5));
+{
+  const BOT = '123456:ABC-DEF_botsecret';
+  const NOW = 1_800_000_000_000;
+  // собрать initData так, как это делает Телеграм
+  const sign = (fields, token = BOT) => {
+    const p = new URLSearchParams(fields);
+    const check = [...p].filter(([k]) => k !== 'hash').map(([k, v]) => `${k}=${v}`).sort().join('\n');
+    const secret = crypto.createHmac('sha256', 'WebAppData').update(token).digest();
+    p.set('hash', crypto.createHmac('sha256', secret).update(check).digest('hex'));
+    return p.toString();
+  };
+  const user = JSON.stringify({ id: 42, first_name: 'Іван', last_name: 'Сірко', username: 'sirko', language_code: 'uk', photo_url: 'https://t.me/i/userpic/320/x.jpg' });
+  const good = sign({ query_id: 'AAE', user, auth_date: String(NOW / 1000 - 60), start_param: 'ab-CD12' });
+  const opts = { now: () => NOW };
+  const ok = verifyTelegramInitData(good, BOT, opts);
+  yes('честная подпись принимается', !!ok);
+  eq('user.id разобран', ok?.id, 42);
+  eq('имя для ника — «Имя Фамилия»', telegramName(ok), 'Іван Сірко');
+  eq('язык — первые две буквы', ok?.lang, 'uk');
+  eq('start_param доходит', ok?.startParam, 'ab-CD12');
+  eq('аватар — только https', ok?.photoUrl, 'https://t.me/i/userpic/320/x.jpg');
+  yes('подпись другим токеном бота — отказ', verifyTelegramInitData(good, 'other:token', opts) === null);
+  yes('подменённый user — отказ', verifyTelegramInitData(good.replace('%22id%22%3A42', '%22id%22%3A43'), BOT, opts) === null);
+  yes('без hash — отказ', verifyTelegramInitData(good.replace(/&hash=[0-9a-f]+/, ''), BOT, opts) === null);
+  const old = sign({ user, auth_date: String(NOW / 1000 - 2 * 24 * 3600) });
+  yes('старше суток — отказ (initData нельзя переиспользовать вечно)', verifyTelegramInitData(old, BOT, opts) === null);
+  yes('без user — отказ', verifyTelegramInitData(sign({ auth_date: String(NOW / 1000) }), BOT, opts) === null);
+  yes('пустая строка — отказ', verifyTelegramInitData('', BOT, opts) === null);
+  yes('без токена бота — отказ', verifyTelegramInitData(good, null, opts) === null);
+  const noname = verifyTelegramInitData(sign({ user: JSON.stringify({ id: 7, username: 'ghost' }), auth_date: String(NOW / 1000) }), BOT, opts);
+  eq('без имени — @username', telegramName(noname), 'ghost');
+  eq('без аватара — null', noname?.photoUrl, null);
+}
+
+
+// === Сессия без cookie: cookie главнее, иначе Authorization: Bearer, иначе socket.handshake.auth ===
+{
+  const TOK = 'abcDEF123456_-xyz789';
+  eq('из cookie', sessionTokenOf('a=1; sb_session=' + TOK, 'Bearer other0000000000000'), TOK);
+  eq('без cookie — из Bearer', sessionTokenOf('', 'Bearer ' + TOK), TOK);
+  eq('Bearer регистр схемы строгий', sessionTokenOf('', 'bearer ' + TOK), null);
+  eq('не Bearer — null', sessionTokenOf('', 'Basic ' + TOK), null);
+  eq('слишком короткий токен — null', sessionTokenOf('', 'Bearer short'), null);
+  eq('мусор в токене — null', sessionTokenOf('', 'Bearer ' + TOK + ';drop'), null);
+  eq('из handshake.auth.session', sessionTokenOf(undefined, undefined, { session: TOK }), TOK);
+  eq('auth не объект — null', sessionTokenOf(undefined, undefined, 'x'), null);
+  eq('auth.session не строка — null', sessionTokenOf(undefined, undefined, { session: 42 }), null);
+  eq('ничего нет — null', sessionTokenOf(undefined, undefined, undefined), null);
+}
 
 console.log(fail ? `❌ test-auth: провалено ${fail}, прошло ${ok}` : `✅ test-auth: все ${ok} проверок прошли`);
 process.exit(fail ? 1 : 0);

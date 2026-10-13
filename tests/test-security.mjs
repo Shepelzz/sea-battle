@@ -75,7 +75,10 @@ for (const h of ['X-Content-Type-Options', 'Referrer-Policy', 'X-Frame-Options',
   const csp = /const csp = \(nonce\) => \[([\s\S]*?)\]\.join/.exec(idx)?.[1] || '';
   yes('CSP: есть', !!csp);
   yes('CSP: скрипты без unsafe-inline', /script-src/.test(csp) && !/script-src[^"]*unsafe-inline/.test(csp));
-  yes('CSP: нас нельзя вложить во фрейм', /frame-ancestors 'none'/.test(csp));
+  // фрейм запрещён всем, кроме web.telegram.org — и только когда включён Telegram-бот (TG_FRAME)
+  yes('CSP: фрейм только для Телеграма, иначе никому', /frame-ancestors \$\{TG_FRAME\}/.test(csp)
+    && /TG_FRAME = TELEGRAM_BOT_TOKEN \? "'self' https:\/\/web\.telegram\.org[^"]*" : "'none'"/.test(idx));
+  yes('X-Frame-Options: DENY, когда Телеграма нет', /if \(!TELEGRAM_BOT_TOKEN\) res\.setHeader\('X-Frame-Options', 'DENY'\)/.test(idx));
   yes('CSP: object-src запрещён', /object-src 'none'/.test(csp));
   yes('CSP: base-uri зафиксирован', /base-uri 'self'/.test(csp));
 }

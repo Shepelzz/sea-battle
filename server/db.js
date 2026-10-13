@@ -42,6 +42,8 @@ export const getPlayerStats = (pid) => api.getPlayerStats(pid);
 // язык интерфейса аккаунта (для гостя язык живёт в куке — см. server/i18n.js)
 export const setPlayerLang  = (pid, lang) => api.setPlayerLang(pid, lang);
 export const setPlayerMailNudge = (pid, on) => api.setPlayerMailNudge(pid, on);
+// Telegram: chat id аккаунта (= user id) — чтобы бот мог прислать «твой ход» личным сообщением
+export const setPlayerTelegram = (pid, chatId) => api.setPlayerTelegram(pid, chatId);
 export const getPlayerEmail = (pid) => api.getPlayerEmail(pid);
 export const countGames     = () => api.countGames();
 export const getLeaderboard = () => api.getLeaderboard();
@@ -152,7 +154,7 @@ async function makeSqlite() {
           token TEXT PRIMARY KEY, pid TEXT NOT NULL, created_at INTEGER NOT NULL);
       `);
       // миграция уже существующих баз: добавляем новые колонки, если их ещё нет
-      for (const [col, def] of [['provider', 'TEXT'], ['avatar', 'TEXT'], ['lang', 'TEXT']])
+      for (const [col, def] of [['provider', 'TEXT'], ['avatar', 'TEXT'], ['lang', 'TEXT'], ['tg_chat', 'TEXT']])
         try { db.exec(`ALTER TABLE players ADD COLUMN ${col} ${def}`); } catch { /* колонка уже есть */ }
       // results.ranked: до появления профиля писались ТОЛЬКО рейтинговые партии — значит всё
       // накопленное и есть рейтинговое, отсюда DEFAULT 1 (старые строки получают единицу сами).
@@ -196,11 +198,12 @@ async function makeSqlite() {
       }
     },
     async getPlayer(pid) {
-      const r = db.prepare('SELECT nick, email, provider, avatar, lang, created_at, mail_nudge FROM players WHERE token = ?').get(pid);
+      const r = db.prepare('SELECT nick, email, provider, avatar, lang, tg_chat, created_at, mail_nudge FROM players WHERE token = ?').get(pid);
       return r ? { nick: r.nick, email: r.email ?? null, provider: r.provider ?? null, avatar: r.avatar ?? null,
-        lang: r.lang ?? null, createdAt: Number(r.created_at) || null, mailNudge: r.mail_nudge !== 0 } : null;
+        lang: r.lang ?? null, tgChat: r.tg_chat ?? null, createdAt: Number(r.created_at) || null, mailNudge: r.mail_nudge !== 0 } : null;
     },
     async setPlayerMailNudge(pid, on) { run('UPDATE players SET mail_nudge = ? WHERE token = ?', on ? 1 : 0, pid); },
+    async setPlayerTelegram(pid, chatId) { run('UPDATE players SET tg_chat = ? WHERE token = ?', String(chatId), pid); },
     async getPlayerStats(pid) {
       const r = db.prepare(STATS_SQL).get(pid);
       const better = db.prepare(BETTER_SQL).get(Number(r?.points) || 0)?.n;
@@ -265,7 +268,7 @@ async function makeMysql() {
       ];
       for (const t of tables) await pool.query(t);
       // миграция уже существующих баз: добавляем новые колонки, если их ещё нет
-      for (const [col, def] of [['provider', 'VARCHAR(16)'], ['avatar', 'VARCHAR(512)'], ['lang', 'VARCHAR(8)']])
+      for (const [col, def] of [['provider', 'VARCHAR(16)'], ['avatar', 'VARCHAR(512)'], ['lang', 'VARCHAR(8)'], ['tg_chat', 'VARCHAR(32)']])
         try { await pool.query(`ALTER TABLE players ADD COLUMN ${col} ${def}`); } catch { /* колонка уже есть */ }
       // results.ranked — см. комментарий у SQLite-миграции: всё, что накоплено до профиля, рейтинговое
       try { await pool.query('ALTER TABLE results ADD COLUMN ranked TINYINT NOT NULL DEFAULT 1'); } catch { /* колонка уже есть */ }
@@ -304,15 +307,16 @@ async function makeMysql() {
       }
     },
     async getPlayer(pid) {
-      try { const [rows] = await pool.query('SELECT nick, email, provider, avatar, lang, created_at, mail_nudge FROM players WHERE token = ?', [pid]);
+      try { const [rows] = await pool.query('SELECT nick, email, provider, avatar, lang, tg_chat, created_at, mail_nudge FROM players WHERE token = ?', [pid]);
         const r = rows[0];
         return r ? { nick: r.nick, email: r.email ?? null, provider: r.provider ?? null, avatar: r.avatar ?? null,
-          lang: r.lang ?? null, createdAt: Number(r.created_at) || null, mailNudge: r.mail_nudge !== 0 } : null;
+          lang: r.lang ?? null, tgChat: r.tg_chat ?? null, createdAt: Number(r.created_at) || null, mailNudge: r.mail_nudge !== 0 } : null;
       } catch (e) { console.error('db:', e.message); return null; }
     },
     async setPlayerMailNudge(pid, on) {
       await q('UPDATE players SET mail_nudge = ? WHERE token = ?', [on ? 1 : 0, pid]);
     },
+    async setPlayerTelegram(pid, chatId) { await q('UPDATE players SET tg_chat = ? WHERE token = ?', [String(chatId), pid]); },
     async getPlayerStats(pid) {
       try {
         const [[r]] = await pool.query(STATS_SQL, [pid]);

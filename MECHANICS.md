@@ -559,7 +559,9 @@ tickWind → tickMovement → tickEconomy → tickOutposts → driftFishZones �
 | `POST` | `/api/games` | Создать партию (онлайн / бот / хотсит). `replace: true` — пересоздать своё открытое лобби |
 | `GET` | `/api/leaderboard` | Топ-50 |
 | `POST` | `/api/auth/google` | Вход по Google-токену, ставит сессионную cookie |
+| `POST` | `/api/auth/telegram` | Вход из Telegram Mini App: `{ initData, nick }` → проверка подписи токеном бота (`verifyTelegramInitData`, окно 24 ч), pid `t…` (`telegramPid`), та же сессионная cookie. Отдаёт `{ nick, avatar, lang, startParam, session }` — токен и в теле: WebView Телеграма cookie может не сохранить, тогда клиент (`public/js/telegram.js`) шлёт его сам: `Authorization: Bearer` на `/api/…` (обёртка над `fetch`) и `auth.session` в рукопожатии сокета. Сервер берёт токен через `sessionTokenOf`: cookie → Bearer → handshake.auth. Google остаётся только на httpOnly-cookie |
 | `GET` | `/api/auth/me` | Кто я |
+| `GET` | `/api/config` | … + `telegram: { bot }`, когда задан `TELEGRAM_BOT_TOKEN` (клиент тогда внутри Телеграма входит сам и строит ссылки-приглашения) |
 | `POST` | `/api/auth/logout` | Выход |
 | `POST` | `/api/lang` | Сменить язык (кука + профиль аккаунта) |
 | `GET` | `/api/profile` | Свой профиль: ник, почта, аватар, язык, «на флоте с», статистика и место в рейтинге |
@@ -1033,3 +1035,16 @@ OpenMoji, Google, Facebook) тянутся с CDN и нужны только д�
 9. **Читы живут только на сервере.**
 10. **Лидерборд считает только бой против людей** (раздел 22).
 11. **В превью ссылки — только неизменяемое и никаких ников** (раздел 17).
+
+## Telegram Mini App
+
+Та же игра, открытая внутри Телеграма: бэк и клиент общие, форка нет. Включается переменной `TELEGRAM_BOT_TOKEN` (плюс `TELEGRAM_BOT_NAME` для ссылок). Пошаговая настройка бота — `TELEGRAM.md`.
+
+- **Вход.** Телеграм кладёт в hash страницы подписанный `initData`; `public/js/telegram.js` (снаружи Телеграма молчит) грузит их SDK, разворачивает окно и шлёт `initData` в `POST /api/auth/telegram`. Сервер проверяет HMAC токеном бота (`verifyTelegramInitData`, окно 24 ч), личность — `telegramPid(user.id)` с префиксом `t` (тот же человек из Google — другой капитан). Дальше как у Google: `upsertPlayer(provider 'telegram')`, сессионная cookie, язык из профиля → куки гостя → `language_code`.
+- **Сессия без cookie.** WebView может не сохранить cookie, поэтому ответ входа содержит `session`; клиент держит его в `localStorage('sb_tg_session')` и шлёт сам: обёртка над `fetch` ставит `Authorization: Bearer` на `/api/…`, сокет — `auth.session`. Сервер берёт токен через `sessionTokenOf`: cookie → Bearer → handshake.auth. Осознанно слабее httpOnly (токен виден JS) — только для Телеграма.
+- **Фрейм.** Веб-версия Телеграма открывает мини-апп в iframe: с ботом `frame-ancestors 'self' https://web.telegram.org https://*.telegram.org` и без `X-Frame-Options`; без бота — `'none'` + `DENY`, как раньше. `script-src` разрешает `https://telegram.org` (SDK).
+- **Приглашения.** Ссылка `https://t.me/<бот>?startapp=<id партии>` (нужен настроенный Main Mini App) → `start_param` в `initData` → главная после входа уводит в `/game/<id>` (`takeStartParam`, один раз на вкладку). В лобби внутри Телеграма ссылка-приглашение — эта, плюс кнопка «Поделиться в Telegram» (`t.me/share/url`).
+- **«Поторопить».** Если у адресата есть `players.tg_chat` (пишется при входе; chat id = user id), бот шлёт личное сообщение с кнопкой `web_app` в партию (`server/telegram.js: sendNudge`); на http-локалке кнопка обычная `url`. Те же согласие (`mailNudge`) и кулдаун, что у письма; ack `nudge` отдаёт `{ emailSent, tgSent }`. Чтобы бот мог писать первым, клиент один раз просит `requestWriteAccess()` после входа.
+- **/start.** Бот отвечает на `/start [id партии]` приветствием и кнопкой «Открыть игру»/«Присоединиться» (`replyToMessage`). Работает long polling `getUpdates` из процесса сервера (`TELEGRAM_POLLING=0` — выключить, если опрос ведёт кто-то другой: два опроса Телеграм отвергает).
+- **Внутри мини-аппа.** Кнопка «назад» в шапке ведёт на главную; пока идёт своя партия, включено подтверждение закрытия свайпом. Тема Телеграма не применяется — тетрадь остаётся тетрадью.
+

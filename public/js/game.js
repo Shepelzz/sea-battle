@@ -39,6 +39,7 @@ function getToken() {
 }
 
 let GOOGLE_ID = null, googleReady = false, me = { loggedIn: false };
+let TG_BOT = null;   // имя бота (без @) из /api/config — для ссылок-приглашений внутри Телеграма
 let authRetried = false;   // одноразовый ре-коннект сокета после входа (старое рукопожатие было без cookie)
 let bootDone = false, socketUp = false;   // авто-join только когда известны и сокет, и конфиг+аккаунт
 let CHEATS_ON = false;   // тестовый режим (читы); приходит из /api/config — иначе «/» не открывает консоль
@@ -52,7 +53,7 @@ let passTimer = null;    // отложенный пропуск (даём дои
 let botEyes = null;      // последние мысли бота (приходят с botlog)
 let debugPick = null;    // выбранный корабль для переноса
 
-const socket = io();
+const socket = io({ auth: SBTelegram.socketAuth });   // Telegram: токен сессии в рукопожатии (без куки)
 
 function join(nick) {
   socket.emit('join', { gameId, token: getToken(), nick }, res => {
@@ -147,10 +148,23 @@ async function onGoogleCredential(resp) {
     DEBUG_ON = cfg.debug === true;
     if (DEBUG_ON) initDebug();
     GOOGLE_ID = cfg.googleClientId || null;
+    TG_BOT = cfg.telegram?.bot || null;
+    if (SBTelegram.inTelegram) SBTelegram.backButton(() => { location.href = '/'; }); // «назад» в шапке мини-аппа — на главную
     if (state) render();                        // конфиг пришёл асинхронно — обновить (кнопка чата)
-    if (GOOGLE_ID) {
-      initGoogle();
+    if (GOOGLE_ID || cfg.telegram) {
+      if (GOOGLE_ID) initGoogle();
       try { me = await (await fetch('/api/auth/me')).json(); } catch { /* не вошёл */ }
+      // открыли партию из Телеграма без сессии (кука не пережила WebView) — входим по initData
+      if (!me.loggedIn && cfg.telegram && SBTelegram.inTelegram) {
+        const r = await SBTelegram.login('');
+        if (r.ok) {
+          me = { loggedIn: true, nick: r.data.nick, email: r.data.email, avatar: r.data.avatar };
+          // сокет подключился до входа — переподключить, чтобы в рукопожатии был токен (как у Google)
+          authRetried = false;
+          if (socket.connected) socket.disconnect();
+          socket.connect();
+        }
+      }
       if (me.loggedIn && me.nick) localStorage.setItem('sb_nick', me.nick); // аккаунт — источник правды
     }
   } catch { /* без Google тоже работаем */ }
@@ -170,6 +184,8 @@ $('#nickInput').addEventListener('keydown', e => { if (e.key === 'Enter') $('#ni
 socket.on('state', s => {
   const prev = state;
   state = s;
+  // Telegram: пока идёт моя партия — свайп вниз не закрывает мини-апп без подтверждения
+  if (SBTelegram.inTelegram && (prev?.status !== s.status)) SBTelegram.closingConfirm(s.status === 'active' && myIdx() >= 0);
   // ⛈️ шторм: синхронизируем часы с сервером (перезарядки) и держим аним-цикл живым (движение непрерывно)
   if (s.rt) { rtSkew = s.rt.now - Date.now(); if (s.status === 'active') ensureAnimLoop(); }
   // сброс выбора, если корабль исчез или ход не наш
@@ -3340,7 +3356,10 @@ function renderOverlays() {
         c => socket.emit('setColor', { color: c }, r => { if (!r.ok) $('#lobbyError').textContent = errText(r); }),
         taken);
     } else { $('#lobbyColors').innerHTML = ''; }
-    $('#inviteUrl').textContent = shareUrl();
+    // внутри Телеграма приглашение — ссылка на мини-апп (открывается у друга прямо в Телеграме) + «поделиться»
+    const tgInvite = SBTelegram.inTelegram && TG_BOT;
+    $('#inviteUrl').textContent = tgInvite ? SBTelegram.miniAppLink(TG_BOT, state.id) : shareUrl();
+    $('#tgShareBtn').classList.toggle('hidden', !tgInvite);
     const isCreator = (state.hostPid || state.players[0]?.id) === myId;
     $('#lobbySlots').innerHTML = Array.from({ length: cfg.maxPlayers }, (_, i) => {
       const p = state.players[i];
@@ -3417,6 +3436,7 @@ function shareUrl() {
   } catch { return location.href; }
 }
 
+$('#tgShareBtn').addEventListener('click', () => { if (state && TG_BOT) SBTelegram.share(TG_BOT, state.id, t('game.lobby.tgShareText')); });
 $('#copyBtn').addEventListener('click', async () => {
   await navigator.clipboard.writeText(shareUrl());
   $('#copyBtn').textContent = '✔';

@@ -16,6 +16,45 @@ const sha = s => crypto.createHash('sha256').update(String(s)).digest('hex');
 export const pidOf = token => sha(token).slice(0, 16);
 // pid аккаунта по стабильному id провайдера (Google sub). Префикс 'g' — задел под f/d (FB/Discord).
 export const googlePid = sub => 'g' + sha(sub).slice(0, 15);
+// pid аккаунта Telegram по его числовому user id. Префикс 't' — своё пространство: тот же человек из
+// Google и из Телеграма — два разных капитана (связывать аккаунты — отдельная задача).
+export const telegramPid = id => 't' + sha('tg:' + id).slice(0, 15);
+
+// --- Telegram Mini App: проверка initData ---
+// Телеграм открывает мини-апп и даёт строке initData (querystring) подпись: hash = HMAC-SHA256
+// по «ключ=значение» всех полей (кроме hash), отсортированных по ключу и склеенных '\n', где
+// секрет = HMAC-SHA256(ключ 'WebAppData', данные — токен бота). Проверяем подпись и свежесть
+// auth_date (initData можно скопировать и переиспользовать — ограничиваем окно), возвращаем
+// разобранного user + start_param, либо null. Чистая функция — для тестов.
+export const TELEGRAM_INIT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+export function verifyTelegramInitData(initData, botToken, { now = () => Date.now(), maxAgeMs = TELEGRAM_INIT_MAX_AGE_MS } = {}) {
+  if (!initData || !botToken || typeof initData !== 'string' || initData.length > 4096) return null;
+  let params;
+  try { params = new URLSearchParams(initData); } catch { return null; }
+  const hash = params.get('hash');
+  if (!hash || !/^[0-9a-f]{64}$/i.test(hash)) return null;
+  const pairs = [];
+  for (const [k, v] of params) if (k !== 'hash') pairs.push(`${k}=${v}`);
+  pairs.sort();
+  const secret = crypto.createHmac('sha256', 'WebAppData').update(botToken).digest();
+  const expected = crypto.createHmac('sha256', secret).update(pairs.join('\n')).digest('hex');
+  const a = Buffer.from(expected, 'hex'), b = Buffer.from(hash.toLowerCase(), 'hex');
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  const authDate = Number(params.get('auth_date')) * 1000;
+  if (!Number.isFinite(authDate) || authDate <= 0 || now() - authDate > maxAgeMs || authDate - now() > 60 * 1000) return null;
+  let user = null;
+  try { user = JSON.parse(params.get('user') || 'null'); } catch { return null; }
+  if (!user || !Number.isInteger(user.id) || user.id <= 0) return null;
+  return {
+    id: user.id,
+    firstName: String(user.first_name || ''), lastName: String(user.last_name || ''),
+    username: String(user.username || ''), photoUrl: /^https:\/\//.test(user.photo_url || '') ? user.photo_url : null,
+    lang: String(user.language_code || '').slice(0, 2).toLowerCase(),
+    startParam: String(params.get('start_param') || '').slice(0, 64)
+  };
+}
+// Имя для ника из данных Телеграма: «Имя Фамилия», иначе @username
+export const telegramName = u => [u.firstName, u.lastName].filter(Boolean).join(' ').trim() || u.username || '';
 // нормализуем ник: тримим и режем по длине (тот же лимит, что в UI)
 export const cleanNick = (n, max = 20) => String(n || '').trim().slice(0, max);
 
@@ -25,6 +64,19 @@ export const cleanNick = (n, max = 20) => String(n || '').trim().slice(0, max);
 export const resolveAccountNick = (existingNick, requested, providerName, email) =>
   cleanNick(existingNick) || cleanNick(requested) || cleanNick(providerName)
   || cleanNick(email ? String(email).split('@')[0] : '');
+
+// --- откуда брать токен сессии ---
+// Обычный браузер: httpOnly-cookie. Telegram Mini App (WebView, особенно iOS) куки может не сохранить —
+// там клиент держит токен сам и шлёт его заголовком Authorization: Bearer <токен> (HTTP) или в
+// socket.handshake.auth.session (сокет). Cookie главнее: если она есть, заголовок не смотрим.
+export function sessionTokenOf(cookieHeader, authHeader = null, socketAuth = null) {
+  const fromCookie = parseCookies(cookieHeader)[SESSION_COOKIE];
+  if (fromCookie) return fromCookie;
+  const m = /^Bearer\s+([A-Za-z0-9_-]{16,128})$/.exec(String(authHeader || '').trim());
+  if (m) return m[1];
+  const s = socketAuth && typeof socketAuth === 'object' ? socketAuth.session : null;
+  return typeof s === 'string' && /^[A-Za-z0-9_-]{16,128}$/.test(s) ? s : null;
+}
 
 // --- cookie ---
 export function parseCookies(header) {

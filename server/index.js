@@ -3,6 +3,9 @@
 // Необязательные переменные окружения:
 //   DATABASE_URL (или DB_HOST/DB_USER/DB_PASSWORD/DB_NAME) — подключение к MySQL (см. db.js)
 //   GOOGLE_CLIENT_ID — включает «Войти через Google»
+//   TELEGRAM_BOT_TOKEN — включает Telegram Mini App: вход по initData, напоминания «твой ход» от бота,
+//                        ответ бота на /start (long polling; TELEGRAM_POLLING=0 — выключить опрос);
+//   TELEGRAM_BOT_NAME — имя бота (без @) для ссылок-приглашений t.me/<бот>?startapp=<id партии>
 //   SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM — включают письма «поторопить»
 //   BASE_URL — адрес сайта для ссылок в письмах (например https://game.example.ua)
 import express from 'express';
@@ -18,7 +21,7 @@ import {
   timeoutTurn, publicState, setColor, randomFreeColor, forceFinish, lobbyExpired, gameStale, myGameSummary, lobbyTags, PALETTE, spawnPirateAt, spawnShipAt
 } from './game.js';
 import {
-  SESSION_COOKIE, pidOf, googlePid, cleanNick, resolveAccountNick, parseCookies,
+  SESSION_COOKIE, pidOf, googlePid, telegramPid, verifyTelegramInitData, telegramName, cleanNick, resolveAccountNick, parseCookies, sessionTokenOf,
   buildSetCookie, buildClearCookie, createSessionStore, newSessionToken
 } from './auth.js';
 import { chooseBotAction, BOT_NAMES, duelFleetPlan } from './bot.js';
@@ -27,6 +30,7 @@ import {
   langFromPath, withLang, stripLang, langAlternates
 } from './i18n.js';
 import { applyCheat } from './cheats.js';
+import { createTelegramBot } from './telegram.js';
 import {
   ogHead, gameFacts, previewLang, absUrl, canonicalPath, ogImage, canonicalUrl, indexable,
   gameSchema, robotsTxt, sitemapXml, hreflangLinks, OG_IMAGE
@@ -45,12 +49,21 @@ const app = express();
 app.disable('x-powered-by');   // не подсказываем сканерам, на чём мы написаны
 app.set('trust proxy', 1); // за прокси (Render): корректный протокол — нужно для Secure-cookie
 
+// Telegram Mini App: токен бота — для проверки подписи initData и Bot API (наружу не уходит).
+// С ним сайт разрешает вкладывать себя во фрейм web.telegram.org (так мини-апп открывает веб-версия
+// Телеграма); без него фреймы запрещены целиком, как и раньше.
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || null;
+const TELEGRAM_BOT_NAME = (process.env.TELEGRAM_BOT_NAME || '').replace(/^@/, '') || null;
+const TG_FRAME = TELEGRAM_BOT_TOKEN ? "'self' https://web.telegram.org https://*.telegram.org" : "'none'";
+
 // Заголовки безопасности на КАЖДЫЙ ответ. CSP тут нет: она зависит от nonce конкретной
 // страницы и ставится в renderPage (см. ниже) — и только на две боевые страницы, чтобы не
 // ломать лаборатории в public/, у которых свои встроенные скрипты.
 app.use((_req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');          // не угадывать тип по содержимому
-  res.setHeader('X-Frame-Options', 'DENY');                    // старый запрет фреймов (для старых браузеров)
+  // старый запрет фреймов (для старых браузеров); список доменов он не умеет, поэтому с Телеграмом
+  // полагаемся на CSP frame-ancestors (современные браузеры смотрят именно её)
+  if (!TELEGRAM_BOT_TOKEN) res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin'); // не светим полный путь наружу
   res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=(), payment=()');
   next();
@@ -197,9 +210,9 @@ const csp = (nonce) => [
   "default-src 'self'",
   "base-uri 'self'",
   "object-src 'none'",
-  "frame-ancestors 'none'",                                  // нас нельзя вложить в чужой фрейм
+  `frame-ancestors ${TG_FRAME}`,                             // нас нельзя вложить в чужой фрейм (кроме web.telegram.org при включённом боте)
   "form-action 'self'",
-  `script-src 'self' 'nonce-${nonce}' https://accounts.google.com https://apis.google.com`,
+  `script-src 'self' 'nonce-${nonce}' https://accounts.google.com https://apis.google.com https://telegram.org`, // telegram.org — SDK мини-аппа (грузится только внутри Телеграма)
   "frame-src https://accounts.google.com",                   // окно входа Google
   "connect-src 'self' https://accounts.google.com",          // сюда же попадает наш WebSocket
   "img-src 'self' data: https://*.googleusercontent.com https://*.gstatic.com",
@@ -335,6 +348,11 @@ function mayMailNudge(email) {
 // Письмо уходит, только если получатель СОГЛАСЕН (чекбокс в профиле, по умолчанию включён)
 // и ему давно не писали. Согласие — главное: пауза лишь страхует от потока, но молчаливо
 // слать почту тому, кто её не просил, нельзя даже раз в полчаса.
+// Telegram-бот (см. telegram.js): sendNudge — личное сообщение «твой ход», startPolling — ответы на /start
+const telegramBot = TELEGRAM_BOT_TOKEN
+  ? createTelegramBot({ token: TELEGRAM_BOT_TOKEN, baseUrl: process.env.BASE_URL || `http://localhost:${PORT}`, t: mailT })
+  : null;
+
 async function sendNudgeEmail(email, nick, gameUrl, lang = SOURCE_LANG, allowed = true) {
   if (!mailer || !email) return false;
   if (!allowed) return false;               // человек отказался от напоминаний — в игре ход всё равно торопится
@@ -360,7 +378,8 @@ const cookieSecure = () => process.env.NODE_ENV === 'production' || /^https:/i.t
 const sessions = createSessionStore();
 // pid аккаунта по cookie-токену (с проверкой срока) или null; протухшую сессию чистим и в БД.
 const accountPidFromSession = token => sessions.pid(token, t => db.deleteSession(t));
-const accountPidFromReq = req => accountPidFromSession(parseCookies(req.headers.cookie)[SESSION_COOKIE]);
+// токен — из cookie, а без неё (Telegram WebView) из заголовка Authorization: Bearer (см. sessionTokenOf)
+const accountPidFromReq = req => accountPidFromSession(sessionTokenOf(req.headers.cookie, req.headers.authorization));
 
 // Игры в памяти — источник истины в рантайме (single-instance). Все игры предзагружаются
 // из MySQL на старте, а изменения асинхронно сохраняются обратно (durability на деплой).
@@ -573,11 +592,44 @@ function maybeAutoFinish(game) {
 
 app.get('/api/config', (_req, res) => res.json({
   googleClientId: GOOGLE_CLIENT_ID, palette: PALETTE, cheats: CHEATS_ENABLED,
+  telegram: TELEGRAM_BOT_TOKEN ? { bot: TELEGRAM_BOT_NAME } : null,   // вход из Telegram Mini App включён
   debug: DEBUG,   // 🐞 SB_DEBUG=1: консоль решений бота под картой + инструменты над ней
   version: VERSION,           // 🏷 номер сборки, коммит и его дата — для подвала главной
   // доступные игровые режимы (для селектора при создании игры)
   modes: enabledModes()   // только ключи: названия и описания у клиента в словаре (mode.<ключ>.name/.desc)
 }));
+
+// Вход из Telegram Mini App. Клиент шлёт initData как есть; подпись проверяем токеном бота
+// (verifyTelegramInitData), личность — telegramPid(user.id). Дальше всё как у Google: сессия в
+// httpOnly-cookie, ник аккаунта главнее присланного, язык — из профиля, из куки гостя, иначе из Телеграма.
+app.post('/api/auth/telegram', async (req, res) => {
+  if (!TELEGRAM_BOT_TOKEN) return res.status(400).json({ error: 'err.telegramOff' });
+  const { initData, nick } = req.body || {};
+  const tg = verifyTelegramInitData(initData, TELEGRAM_BOT_TOKEN);
+  if (!tg) return res.status(401).json({ error: 'err.telegramFailed' });
+  try {
+    const pid = telegramPid(tg.id);
+    const existing = await db.getPlayer(pid);
+    const finalNick = resolveAccountNick(existing?.nick, nick, telegramName(tg), '') || ('tg' + String(tg.id).slice(-4));
+    const avatar = tg.photoUrl;
+    db.upsertPlayer(pid, finalNick, null, 'telegram', avatar);
+    db.setPlayerTelegram(pid, tg.id);   // chat id личной переписки = user id — для напоминаний от бота
+    const session = newSessionToken();
+    sessions.add(session, pid);
+    db.createSession(session, pid);
+    res.append('Set-Cookie', buildSetCookie(session, { secure: cookieSecure() }));
+    const lang = normLang(existing?.lang) || normLang(parseCookies(req.headers.cookie)[LANG_COOKIE]) || normLang(tg.lang);
+    if (lang && lang !== normLang(existing?.lang)) db.setPlayerLang(pid, lang);
+    if (lang) res.append('Set-Cookie', buildLangCookie(lang, { secure: cookieSecure() }));
+    // Токен сессии отдаём и в теле: в WebView Телеграма cookie может не пережить даже перезагрузку
+    // страницы, тогда клиент шлёт его заголовком/в сокете (sessionTokenOf). Это осознанно слабее
+    // httpOnly-cookie (токен виден JS), но только для входа из Телеграма — Google остаётся на cookie.
+    res.json({ nick: finalNick, email: '', avatar, lang: lang || null, startParam: tg.startParam || null, session });
+  } catch (e) {
+    console.error('Telegram auth:', e.message);
+    res.status(401).json({ error: 'err.telegramFailed' });
+  }
+});
 
 app.post('/api/auth/google', async (req, res) => {
   if (!googleClient) return res.status(400).json({ error: 'err.googleOff' });
@@ -666,7 +718,7 @@ app.post('/api/lang', async (req, res) => {
 
 // Выход: инвалидируем серверную сессию и стираем cookie.
 app.post('/api/auth/logout', (req, res) => {
-  const session = parseCookies(req.headers.cookie)[SESSION_COOKIE];
+  const session = sessionTokenOf(req.headers.cookie, req.headers.authorization);
   if (session) { sessions.delete(session); db.deleteSession(session); }
   res.append('Set-Cookie', buildClearCookie({ secure: cookieSecure() }));
   res.json({ ok: true });
@@ -793,7 +845,8 @@ io.on('connection', socket => {
   let joinedGameId = null;
   let myPid = null;
   // pid аккаунта по cookie-сессии (один раз на подключение) — для гейта онлайна
-  socket.data.accountPid = accountPidFromSession(parseCookies(socket.handshake.headers.cookie)[SESSION_COOKIE]);
+  // cookie рукопожатия, а без неё — handshake.auth.session (Telegram WebView держит токен сам)
+  socket.data.accountPid = accountPidFromSession(sessionTokenOf(socket.handshake.headers.cookie, null, socket.handshake.auth));
 
   // подписка на браузер лобби (с главной страницы)
   socket.on('lobbies:subscribe', (payload, ack) => {
@@ -1021,9 +1074,13 @@ io.on('connection', socket => {
       || socket.handshake.headers.origin
       || `http://localhost:${PORT}`;
     // prof.mailNudge !== false — старые записи без колонки считаем согласием (так и было раньше)
-    sendNudgeEmail(email, target.nick, `${origin}/game/${game.id}`, normLang(prof?.lang) || SOURCE_LANG,
-      prof?.mailNudge !== false)
-      .then(sent => ack?.({ ok: true, emailSent: sent }));
+    const gameUrl = `${origin}/game/${game.id}`, lang = normLang(prof?.lang) || SOURCE_LANG;
+    // письмо и/или сообщение от бота — у кого что есть; те же согласие и кулдаун, что у письма
+    const tgAllowed = prof?.tgChat && prof?.mailNudge !== false && mayMailNudge('tg:' + prof.tgChat);
+    Promise.all([
+      sendNudgeEmail(email, target.nick, gameUrl, lang, prof?.mailNudge !== false),
+      tgAllowed && telegramBot ? telegramBot.sendNudge(prof.tgChat, target.nick, gameUrl, lang) : Promise.resolve(false)
+    ]).then(([emailSent, tgSent]) => ack?.({ ok: true, emailSent, tgSent }));
   });
 
   // отключение: лобби НЕ удаляем — оно продолжает ждать (хост мог «свернуть» и вернётся).
@@ -1127,6 +1184,8 @@ async function bootstrap() {
     console.error('   Локально база (SQLite) создаётся сама. На проде проверь DATABASE_URL / DB_* (и DB_SSL при необходимости).');
     process.exit(1);
   }
+  // Telegram-бот: напоминания «твой ход» и ответ на /start (long polling, если не выключен)
+  if (telegramBot && process.env.TELEGRAM_POLLING !== '0') telegramBot.startPolling();
   server.listen(PORT, () => {
     console.log(`⚓ Sea Battle ${versionLabel()}: http://localhost:${PORT}`);
     // Молча проглотить SB_DEBUG на проде — худшее, что можно сделать: человек будет уверен,
